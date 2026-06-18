@@ -885,7 +885,7 @@ function Library({ ctx }) {
     </div>
     <div style={S.list}>{shown.length === 0 && <div style={S.empty}>这里还没有词 🌱</div>}
       {shown.map((w) => { const p = posInfo(w.pos); const done = w.mastered || (w.srs && w.srs.level >= MASTER_LEVEL); const open = editing === w.id;
-        return (<div key={w.id} className="card" style={{ ...S.wordRow, ...(w.hl ? { background: w.hl } : {}) }}>
+        return [(<div key={w.id} className="card" style={{ ...S.wordRow, ...(w.hl ? { background: w.hl } : {}) }}>
           <span style={{ ...S.dot, background: p.color + "33" }} onClick={() => speakJa(w.term)}>{p.emoji}</span>
           <div style={{ flex: 1 }} onClick={() => { play("tap"); setEditing(open ? null : w.id); }}>
             <span style={S.wTerm}>{termWithLoan(w)}</span><span style={S.wReading}>{w.reading}</span>
@@ -893,7 +893,7 @@ function Library({ ctx }) {
             <div style={{ fontSize: 13, color: "#7a6244" }}>{w.meaning}{w.source ? " · 📍" + w.source : ""}</div>
           </div>
           <div style={S.wStat}><span style={S.statPill}>练{w.seen || 0}</span>{(w.wrong || 0) > 0 && <span style={{ ...S.statPill, background: "#fbeae2", color: "#c4684f" }}>错{w.wrong}</span>}</div>
-        </div>).concat(open ? [<div key={w.id + "edit"} className="card slide-up" style={S.editPanel}>
+        </div>)].concat(open ? [<div key={w.id + "edit"} className="card slide-up" style={S.editPanel}>
           <div style={S.editRow}><span style={S.editLabel}>掌握</span>
             <button className="pressable" style={{ ...S.toggle, ...(done ? S.toggleOn : {}) }} onClick={() => { updateWord(w.id, (x) => ({ ...x, mastered: !done })); play("tap"); }}>{done ? "已掌握 ✓（跳过复习）" : "标为已掌握"}</button></div>
           <div style={S.editRow}><span style={S.editLabel}>高亮</span><div style={{ display: "flex", gap: 6 }}>
