@@ -1,0 +1,6 @@
+# 只发布能跑 App 的文件；设计文档与本地配置保持私密
+# （PRD 等文档含个人/商业敏感信息，绝不推到公开仓库）
+*
+!index.html
+!kotomo.jsx
+!.gitignore

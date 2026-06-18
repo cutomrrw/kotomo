@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="词崽">
+<meta name="theme-color" content="#fdf6ec">
+<title>ことも · 词崽</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='88'%3E%F0%9F%90%B1%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; padding: 0; background: #fdf6ec; -webkit-tap-highlight-color: transparent; }
+  #root { min-height: 100vh; }
+  #boot { min-height: 100vh; display: grid; place-items: center; font-family: 'Zen Maru Gothic','PingFang SC','Microsoft YaHei',sans-serif; color: #9b8674; text-align: center; }
+  #boot .cat { font-size: 64px; animation: bob 1.4s ease-in-out infinite; }
+  #boot .msg { margin-top: 10px; font-size: 14px; }
+  #boot .err { max-width: 300px; font-size: 13px; line-height: 1.8; padding: 0 24px; }
+  @keyframes bob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+</style>
+</head>
+<body>
+<div id="root"><div id="boot"><div><div class="cat">🐱</div><div class="msg">词崽加载中…</div></div></div></div>
+
+<!-- React / Babel 走 CDN（首次需联网；之后核心功能离线可用） -->
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
+
+<script>
+// index.html 是部署外壳：运行时读取 kotomo.jsx → 浏览器内用 Babel 转译 → 渲染。
+// 好处：源码只有 kotomo.jsx 一份，改它即生效，本文件不重复代码、不会分叉。
+(async function () {
+  function fail(msg) {
+    document.getElementById('root').innerHTML =
+      '<div id="boot"><div class="err"><div class="cat">🙀</div><div class="msg">词崽没能启动</div><br>' + msg + '</div></div>';
+  }
+  try {
+    if (!window.React || !window.ReactDOM) { fail('没连上 React CDN（unpkg）。换个网络或稍后再试一次。'); return; }
+    if (!window.Babel) { fail('没连上 Babel CDN（unpkg）。换个网络或稍后再试一次。'); return; }
+
+    const res = await fetch('kotomo.jsx?v=' + Date.now()); // 加时间戳避开缓存，改完代码刷新即更新
+    if (!res.ok) { fail('找不到 kotomo.jsx（请确认它和 index.html 在同一个文件夹里）。'); return; }
+    let src = await res.text();
+
+    // 去掉给打包器用的 import / export，改为直接使用浏览器全局 React
+    src = src.replace(/^\s*import\b[^\n]*from\s+["']react["'][^\n]*$/m, '');
+    src = src.replace(/export\s+default\s+function\s+App/, 'function App');
+
+    const out = Babel.transform(src, { presets: ['react'], filename: 'kotomo.jsx' }).code;
+
+    const { useState, useEffect, useCallback, useMemo, useRef } = React;
+    const factory = new Function(
+      'React', 'useState', 'useEffect', 'useCallback', 'useMemo', 'useRef',
+      out + '\n;return App;'
+    );
+    const App = factory(React, useState, useEffect, useCallback, useMemo, useRef);
+
+    ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+  } catch (e) {
+    console.error('[kotomo] 启动失败', e);
+    fail('出错了：' + ((e && e.message) || e));
+  }
+})();
+</script>
+</body>
+</html>
