@@ -158,7 +158,7 @@ async function loadState() { try { const v = await Store.get(SKEY); return v ? J
 async function saveState(s) { try { await Store.set(SKEY, JSON.stringify(s)); return true; } catch (e) { console.error("[kotomo] saveState 失败", e); return false; } }
 
 // ── AI 调用（OpenAI 与 Anthropic 都支持，按密钥前缀自动识别）─────────────
-const OPENAI_MODEL = "gpt-5.4-mini";          // OpenAI：又快又便宜，足够查词；想更准可换 gpt-5.4 / gpt-5.5
+const OPENAI_MODEL = "gpt-5.4";               // OpenAI：查词/读音准确度优先（学习类应用错读音=学错，比省钱重要）；想更省可降 gpt-5.4-mini，想更强可升 gpt-5.5
 const ANTHROPIC_MODEL = "claude-haiku-4-5";   // Anthropic：又快又便宜；想更准可换 claude-sonnet-4-6 / claude-opus-4-8
 const AKEY = "kotomo:aikey";                  // API 密钥单独存（不进词库状态、不随数据导出）
 // 判家：sk-ant- 开头 = Anthropic(Claude)；其余 sk-（含 sk-proj-/sk-svcacct-/sk-admin-）当作 OpenAI
@@ -898,8 +898,8 @@ function TypeInput({ aiReal, dir, onRows, play }) {
     const t = term.trim(); if (!t) return; setBusy(true); play("tap");
     let row;
     const sys = dir === "zh"
-      ? "用户给一个中文词，请给出对应最常用的日语说法。输出 JSON：{term:日语,reading:平假名读音(假名,不要罗马音),meaning:用户给的中文,pos:noun|verb|adj|phrase|other,freq:是否高频(bool),loan:若是片假名外来词则{from:语言码,word:原词}否则null}。只输出 JSON。"
-      : "用户给一个日语词。输出 JSON：{term:该日语词(规范写法),reading:平假名读音(假名,不要罗马音),meaning:中文意思,pos:noun|verb|adj|phrase|other,freq:是否高频(bool),loan:若是片假名外来词则{from:语言码,word:原词}否则null}。只输出 JSON。";
+      ? "用户给一个中文词，给出日语母语者实际使用的最常用说法。要求：term 用规范的日语写法（该用汉字就用日语规范汉字，不要照搬中文字形，例如『古董』日语写『骨董品』；外来词用片假名）；reading 是准确的平假名读音，逐字核对促音っ/长音/浊音半浊音（不要罗马音）。输出 JSON：{term,reading,meaning:用户给的中文,pos:noun|verb|adj|phrase|other,freq:是否高频(bool),loan:若是片假名外来词则{from:语言码,word:原词}否则null}。只输出 JSON。"
+      : "用户给一个日语词。要求：term 用日语规范写法；reading 是准确的平假名读音，逐字核对促音っ/长音/浊音半浊音（不要罗马音）；meaning 用地道中文。输出 JSON：{term,reading,meaning,pos:noun|verb|adj|phrase|other,freq:是否高频(bool),loan:若是片假名外来词则{from:语言码,word:原词}否则null}。只输出 JSON。";
     const offline = () => dir === "zh" ? { term: "", reading: "", meaning: t, pos: "other", freq: false } : localAutoFill(t);
     if (aiReal) { try { row = JSON.parse(stripFence(await callAI(sys, t))); } catch { row = await offline(); } }
     else row = await offline();
@@ -926,8 +926,8 @@ function VoiceInput({ aiReal, dir, onRows, play }) {
   const toggle = () => { if (!recRef.current) return; if (listening) { recRef.current.stop(); setListening(false); } else { setHeard(""); try { recRef.current.lang = dir === "zh" ? "zh-CN" : "ja-JP"; recRef.current.start(); setListening(true); play("listen"); } catch {} } };
   const process = async () => { if (!heard.trim()) return; setBusy(true); play("tap"); let rows = [];
     const sys = dir === "zh"
-      ? "用户说的是中文。把内容拆成词，每个给出对应最常用的日语，输出 JSON 数组 {term:日语,reading:平假名(不要罗马音),meaning:中文,pos,freq,loan}。只输出 JSON。"
-      : "用户说的是日语。把内容拆成日语词条，每项 {term,reading:平假名(不要罗马音),meaning:中文,pos,freq,loan}。只输出 JSON 数组。";
+      ? "用户说的是中文。把内容拆成词，每个给日语母语者最常用的说法：term 用规范日语写法（别照搬中文字形，如『古董』写『骨董品』），reading 准确平假名（逐字核对促音/长音/浊音，不要罗马音）。输出 JSON 数组 {term,reading,meaning:中文,pos,freq,loan}。只输出 JSON。"
+      : "用户说的是日语。拆成日语词条，每项 term 用规范写法、reading 准确平假名（核对促音/长音/浊音，不要罗马音）、meaning 地道中文：{term,reading,meaning,pos,freq,loan}。只输出 JSON 数组。";
     const offline = (w) => dir === "zh" ? Promise.resolve({ term: "", reading: "", meaning: w, pos: "other", freq: false }) : localAutoFill(w);
     if (aiReal) { try { rows = JSON.parse(stripFence(await callAI(sys, heard))); } catch { rows = await Promise.all(heard.split(/[\s、。,，]+/).filter(Boolean).map(offline)); } }
     else rows = await Promise.all(heard.split(/[\s、。,，]+/).filter(Boolean).map(offline));
