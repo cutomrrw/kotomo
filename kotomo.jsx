@@ -165,19 +165,24 @@ async function saveApiKey(v) { try { await Store.set(AKEY, (v || "").trim()); re
 async function callClaude(system, userMsg) {
   const key = await getApiKey();
   if (!key) throw new Error("未配置 API 密钥");
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": key,
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true", // 浏览器直连（个人自用；密钥只在你本机）
-    },
-    body: JSON.stringify({ model: AI_MODEL, max_tokens: 1000, system, messages: [{ role: "user", content: userMsg }] }),
-  });
-  if (!res.ok) throw new Error("AI 请求失败 " + res.status);
-  const data = await res.json();
-  return data.content.filter((b) => b.type === "text").map((b) => b.text).join("\n");
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 30000); // 30 秒超时，避免请求挂死冻住页面
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": key,
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true", // 浏览器直连（个人自用；密钥只在你本机）
+      },
+      body: JSON.stringify({ model: AI_MODEL, max_tokens: 1000, system, messages: [{ role: "user", content: userMsg }] }),
+      signal: ctrl.signal,
+    });
+    if (!res.ok) throw new Error("AI 请求失败 " + res.status);
+    const data = await res.json();
+    return data.content.filter((b) => b.type === "text").map((b) => b.text).join("\n");
+  } finally { clearTimeout(timer); }
 }
 const stripFence = (t) => t.replace(/```json|```/g, "").trim();
 
@@ -188,7 +193,11 @@ function loadKuromoji() {
   if (_kuroPromise) return _kuroPromise;
   _kuroPromise = new Promise((resolve, reject) => {
     if (typeof window === "undefined" || !window.kuromoji) { reject(new Error("kuromoji 未加载")); return; }
-    window.kuromoji.builder({ dicPath: "https://unpkg.com/kuromoji@0.1.2/dict/" }).build((err, tk) => {
+    let done = false;
+    // 30 秒超时：网络太慢/CDN 不可达时不再无限等，降级到"无读音"，避免页面卡死
+    const timer = setTimeout(() => { if (!done) { done = true; _kuroPromise = null; reject(new Error("离线词典加载超时")); } }, 30000);
+    window.kuromoji.builder({ dicPath: "https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict/" }).build((err, tk) => {
+      if (done) return; done = true; clearTimeout(timer);
       if (err) { _kuroPromise = null; reject(err); return; }
       _kuroTk = tk; resolve(tk);
     });
@@ -748,6 +757,8 @@ const ResStat = ({ label, val, tone }) => (<div className="card" style={S.resSta
 function AddWords({ ctx }) {
   const { st, play, addWords } = ctx;
   const aiReal = st.settings.aiReal;
+  // 离线档：进加词页就后台预载 kuromoji 词典，避免转换时才现下载导致卡顿
+  useEffect(() => { if (!aiReal) loadKuromoji().catch(() => {}); }, [aiReal]);
   const [tab, setTab] = useState("type");
   const [draft, setDraft] = useState([]);
   const addDraft = (rows) => setDraft((d) => [...rows, ...d]);
