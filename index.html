@@ -30,8 +30,7 @@
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
-<!-- 离线日语分词词典（kuromoji）：没网/没配 AI 密钥时补读音+词性 -->
-<script src="https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/build/kuromoji.js"></script>
+<!-- 离线词典 kuromoji 在 Web Worker 内按需加载（见 kotomo.jsx），主线程不再引入，避免构建卡顿 -->
 
 <script>
 // index.html 是部署外壳：运行时读取 kotomo.jsx → 浏览器内用 Babel 转译 → 渲染。

@@ -186,37 +186,62 @@ async function callClaude(system, userMsg) {
 }
 const stripFence = (t) => t.replace(/```json|```/g, "").trim();
 
-// ── 离线词典 kuromoji（没网/没配密钥时兜底：补读音(假名)+词性，不给中文意思）──
-let _kuroTk = null, _kuroPromise = null;
+// ── 离线词典 kuromoji（跑在 Web Worker：十几MB词典的下载与构建都在后台线程，绝不卡住界面）──
+let _kuroWorker = null, _kuroReady = null, _kuroReqId = 0;
+const _kuroReqs = {};
+const KURO_WORKER_SRC = [
+  'importScripts("https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/build/kuromoji.js");',
+  'var tk=null;',
+  'self.onmessage=function(e){var d=e.data;',
+  ' if(d.type==="init"){',
+  '  kuromoji.builder({dicPath:"https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict/"}).build(function(err,t){',
+  '   if(err){self.postMessage({type:"ready",ok:false});return;}',
+  '   tk=t;self.postMessage({type:"ready",ok:true});});',
+  ' }else if(d.type==="tok"){',
+  '  if(!tk){self.postMessage({type:"res",id:d.id,tokens:null});return;}',
+  '  var toks=tk.tokenize(d.text).map(function(x){return {reading:x.reading,surface_form:x.surface_form,pos:x.pos};});',
+  '  self.postMessage({type:"res",id:d.id,tokens:toks});}',
+  '};'
+].join("\n");
 function loadKuromoji() {
-  if (_kuroTk) return Promise.resolve(_kuroTk);
-  if (_kuroPromise) return _kuroPromise;
-  _kuroPromise = new Promise((resolve, reject) => {
-    if (typeof window === "undefined" || !window.kuromoji) { reject(new Error("kuromoji 未加载")); return; }
-    let done = false;
-    // 30 秒超时：网络太慢/CDN 不可达时不再无限等，降级到"无读音"，避免页面卡死
-    const timer = setTimeout(() => { if (!done) { done = true; _kuroPromise = null; reject(new Error("离线词典加载超时")); } }, 30000);
-    window.kuromoji.builder({ dicPath: "https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict/" }).build((err, tk) => {
-      if (done) return; done = true; clearTimeout(timer);
-      if (err) { _kuroPromise = null; reject(err); return; }
-      _kuroTk = tk; resolve(tk);
-    });
+  if (_kuroReady) return _kuroReady;
+  _kuroReady = new Promise((resolve, reject) => {
+    try {
+      if (typeof Worker === "undefined") { _kuroReady = null; reject(new Error("不支持 Worker")); return; }
+      _kuroWorker = new Worker(URL.createObjectURL(new Blob([KURO_WORKER_SRC], { type: "application/javascript" })));
+      let settled = false;
+      const timer = setTimeout(() => { if (!settled) { settled = true; _kuroReady = null; reject(new Error("离线词典加载超时")); } }, 40000);
+      _kuroWorker.onmessage = (e) => {
+        const m = e.data;
+        if (m.type === "ready") { if (settled) return; settled = true; clearTimeout(timer); if (m.ok) resolve(true); else { _kuroReady = null; reject(new Error("词典构建失败")); } }
+        else if (m.type === "res") { const cb = _kuroReqs[m.id]; if (cb) { delete _kuroReqs[m.id]; cb(m.tokens); } }
+      };
+      _kuroWorker.onerror = (err) => { if (!settled) { settled = true; clearTimeout(timer); _kuroReady = null; reject(err); } };
+      _kuroWorker.postMessage({ type: "init" });
+    } catch (e) { _kuroReady = null; reject(e); }
   });
-  return _kuroPromise;
+  return _kuroReady;
+}
+function kuroTokenize(text) {
+  return new Promise((resolve) => {
+    const id = ++_kuroReqId; _kuroReqs[id] = resolve;
+    try { _kuroWorker.postMessage({ type: "tok", id, text }); } catch { delete _kuroReqs[id]; resolve(null); return; }
+    setTimeout(() => { if (_kuroReqs[id]) { delete _kuroReqs[id]; resolve(null); } }, 8000);
+  });
 }
 const kataToHira = (s) => (s || "").replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60));
 const KURO_POS = { "名詞": "noun", "動詞": "verb", "形容詞": "adj", "感動詞": "phrase" };
 async function localAutoFill(term) {
   const t = (term || "").trim();
   try {
-    const tk = await loadKuromoji();
-    const toks = tk.tokenize(t);
+    await loadKuromoji();
+    const toks = await kuroTokenize(t);
     if (toks && toks.length) {
       const reading = kataToHira(toks.map((x) => (x.reading && x.reading !== "*") ? x.reading : x.surface_form).join(""));
       const pos = toks.length === 1 ? (KURO_POS[toks[0].pos] || "other") : "phrase";
       return { term: t, reading, meaning: "", pos, freq: false };
     }
-  } catch (e) { console.warn("[kotomo] kuromoji 离线注音失败（无网/CDN 不可达）", e); }
+  } catch (e) { console.warn("[kotomo] kuromoji 离线注音不可用", e); }
   return { term: t, reading: "", meaning: "", pos: "other", freq: false };
 }
 const MOCK_DICT = {
