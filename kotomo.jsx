@@ -785,16 +785,19 @@ function AddWords({ ctx }) {
   // 离线档：进加词页就后台预载 kuromoji 词典，避免转换时才现下载导致卡顿
   useEffect(() => { if (!aiReal) loadKuromoji().catch(() => {}); }, [aiReal]);
   const [tab, setTab] = useState("type");
+  const [dir, setDir] = useState("ja"); // 录入方向：ja=日→中（输入日语），zh=中→日（输入中文）
   const [draft, setDraft] = useState([]);
   const addDraft = (rows) => setDraft((d) => [...rows, ...d]);
   const editD = (i, k, v) => setDraft((d) => d.map((r, idx) => idx === i ? { ...r, [k]: v } : r));
   const delD = (i) => setDraft((d) => d.filter((_, idx) => idx !== i));
   const commit = () => { addWords(draft); setDraft([]); play("win"); ctx.setView("library"); };
   return (<div className="fade-in"><BackRow ctx={ctx} title="🎙️ 加词" />
+    {tab !== "expand" && <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>{[["ja", "日 → 中（输入日语）"], ["zh", "中 → 日（输入中文）"]].map(([k, l]) => (
+      <button key={k} className="pressable" style={{ ...S.seg, flex: 1, ...(dir === k ? S.segOn : {}) }} onClick={() => { setDir(k); play("tap"); }}>{l}</button>))}</div>}
     <div style={S.segRow}>{[["type", "⌨️ 打字"], ["voice", "🎙️ 语音"], ["expand", "✨ 展开学习"]].map(([k, l]) => (
       <button key={k} style={{ ...S.seg, ...(tab === k ? S.segOn : {}) }} onClick={() => { setTab(k); play("tap"); }}>{l}</button>))}</div>
-    {tab === "type" && <TypeInput aiReal={aiReal} onRows={addDraft} play={play} />}
-    {tab === "voice" && <VoiceInput aiReal={aiReal} onRows={addDraft} play={play} />}
+    {tab === "type" && <TypeInput aiReal={aiReal} dir={dir} onRows={addDraft} play={play} />}
+    {tab === "voice" && <VoiceInput aiReal={aiReal} dir={dir} onRows={addDraft} play={play} />}
     {tab === "expand" && <ExpandTool ctx={ctx} />}
     {draft.length > 0 && tab !== "expand" && (<div style={{ marginTop: 16 }}>
       <div style={S.sectTitle}>📥 待确认 ({draft.length}) · 点⭐标高频，🔤标外来词</div>
@@ -811,41 +814,47 @@ function AddWords({ ctx }) {
   </div>);
 }
 
-function TypeInput({ aiReal, onRows, play }) {
+function TypeInput({ aiReal, dir, onRows, play }) {
   const [term, setTerm] = useState(""), [busy, setBusy] = useState(false);
   const add = async () => {
     const t = term.trim(); if (!t) return; setBusy(true); play("tap");
     let row;
-    const sys = "你是日语词库助手。给定一个日语词或中文词，输出 JSON：{term:日语,reading:平假名读音(假名，不要罗马音),meaning:中文意思,pos:noun|verb|adj|phrase|other,freq:是否高频(bool),loan:若是片假名外来词则{from:语言码,word:原词}否则null}。只输出 JSON。";
-    if (aiReal) { try { row = JSON.parse(stripFence(await callClaude(sys, t))); } catch { row = await localAutoFill(t); } }
-    else row = await localAutoFill(t);
+    const sys = dir === "zh"
+      ? "用户给一个中文词，请给出对应最常用的日语说法。输出 JSON：{term:日语,reading:平假名读音(假名,不要罗马音),meaning:用户给的中文,pos:noun|verb|adj|phrase|other,freq:是否高频(bool),loan:若是片假名外来词则{from:语言码,word:原词}否则null}。只输出 JSON。"
+      : "用户给一个日语词。输出 JSON：{term:该日语词(规范写法),reading:平假名读音(假名,不要罗马音),meaning:中文意思,pos:noun|verb|adj|phrase|other,freq:是否高频(bool),loan:若是片假名外来词则{from:语言码,word:原词}否则null}。只输出 JSON。";
+    const offline = () => dir === "zh" ? { term: "", reading: "", meaning: t, pos: "other", freq: false } : localAutoFill(t);
+    if (aiReal) { try { row = JSON.parse(stripFence(await callClaude(sys, t))); } catch { row = await offline(); } }
+    else row = await offline();
     onRows([row]); setTerm(""); setBusy(false); play("coin");
   };
   return (<div className="card" style={S.padCard}>
-    <div style={S.howto}>打一个词，{aiReal ? "AI 自动补读音(假名)/意思/词性" : "离线补读音(假名)和词性，意思请自己填"}。</div>
+    <div style={S.howto}>{dir === "zh" ? (aiReal ? "打一个中文词，AI 给出对应日语 + 读音(假名)" : "中→日 需要开 AI（离线只支持日→中，会把中文记到意思栏）") : (aiReal ? "打一个日语词，AI 补读音(假名)/意思/词性" : "打一个日语词，离线补读音(假名)和词性，意思自己填")}。</div>
     <div style={{ display: "flex", gap: 8 }}>
-      <input style={S.field} value={term} placeholder="例如 トイレ 或 厕所" onChange={(e) => setTerm(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} />
+      <input style={S.field} value={term} placeholder={dir === "zh" ? "例如 厕所、好吃" : "例如 トイレ、美味しい"} onChange={(e) => setTerm(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} />
       <button className="pressable" style={S.addBtn} onClick={add} disabled={busy}>{busy ? "…" : "＋"}</button>
     </div>
     <div style={S.tip}>加进"待确认"后可以编辑，确认无误再入库。</div>
   </div>);
 }
 
-function VoiceInput({ aiReal, onRows, play }) {
+function VoiceInput({ aiReal, dir, onRows, play }) {
   const [listening, setListening] = useState(false), [heard, setHeard] = useState(""), [supported, setSupported] = useState(true), [busy, setBusy] = useState(false);
   const recRef = useRef(null);
   useEffect(() => { const SR = window.SpeechRecognition || window.webkitSpeechRecognition; if (!SR) { setSupported(false); return; }
     const r = new SR(); r.lang = "ja-JP"; r.interimResults = true; r.continuous = true;
     r.onresult = (e) => { let t = ""; for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript; setHeard(t); };
     r.onend = () => setListening(false); recRef.current = r; return () => { try { r.stop(); } catch {} }; }, []);
-  const toggle = () => { if (!recRef.current) return; if (listening) { recRef.current.stop(); setListening(false); } else { setHeard(""); try { recRef.current.start(); setListening(true); play("listen"); } catch {} } };
+  const toggle = () => { if (!recRef.current) return; if (listening) { recRef.current.stop(); setListening(false); } else { setHeard(""); try { recRef.current.lang = dir === "zh" ? "zh-CN" : "ja-JP"; recRef.current.start(); setListening(true); play("listen"); } catch {} } };
   const process = async () => { if (!heard.trim()) return; setBusy(true); play("tap"); let rows = [];
-    const sys = "把用户说的内容拆成日语词条，每项 {term,reading:平假名(不要罗马音),meaning:中文,pos,freq,loan}。只输出 JSON 数组。";
-    if (aiReal) { try { rows = JSON.parse(stripFence(await callClaude(sys, heard))); } catch { rows = await Promise.all(heard.split(/[\s、。,，]+/).filter(Boolean).map(localAutoFill)); } }
-    else rows = await Promise.all(heard.split(/[\s、。,，]+/).filter(Boolean).map(localAutoFill));
+    const sys = dir === "zh"
+      ? "用户说的是中文。把内容拆成词，每个给出对应最常用的日语，输出 JSON 数组 {term:日语,reading:平假名(不要罗马音),meaning:中文,pos,freq,loan}。只输出 JSON。"
+      : "用户说的是日语。把内容拆成日语词条，每项 {term,reading:平假名(不要罗马音),meaning:中文,pos,freq,loan}。只输出 JSON 数组。";
+    const offline = (w) => dir === "zh" ? Promise.resolve({ term: "", reading: "", meaning: w, pos: "other", freq: false }) : localAutoFill(w);
+    if (aiReal) { try { rows = JSON.parse(stripFence(await callClaude(sys, heard))); } catch { rows = await Promise.all(heard.split(/[\s、。,，]+/).filter(Boolean).map(offline)); } }
+    else rows = await Promise.all(heard.split(/[\s、。,，]+/).filter(Boolean).map(offline));
     onRows(rows); setHeard(""); setBusy(false); play("coin"); };
   return (<div className="card" style={S.padCard}>
-    <div style={S.howto}>看剧/逛街听到的词，直接说出来（日语为主），自动转成词条。会五十音的你，说日语最快。</div>
+    <div style={S.howto}>{dir === "zh" ? "说中文，转成对应的日语词条（中→日 需开 AI）。" : "看剧/逛街听到的日语词，直接说出来，自动转成词条。"}</div>
     {!supported && <div style={S.warnBox}>此浏览器不支持语音，请用 Chrome，或改"打字"。</div>}
     <button className={"pressable " + (listening ? "pulse-rec" : "")} style={{ ...S.micBtn, background: listening ? C.blush : C.honey, boxShadow: "0 6px 0 " + (listening ? "#c97a64" : C.honeyDk) }} onClick={toggle} disabled={!supported}>
       <span style={{ fontSize: 30 }}>{listening ? "🔴" : "🎙️"}</span><span>{listening ? "聆听中…点击停止" : "点击说话"}</span></button>
