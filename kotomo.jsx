@@ -881,12 +881,16 @@ function AddWords({ ctx }) {
       <div style={S.sectTitle}>📥 待确认 ({draft.length}) · 点⭐标高频，🔤标外来词</div>
       <div style={S.list}>{draft.map((r, i) => (
         <div key={i} className="card" style={S.draftRow}>
-          <select value={r.pos} onChange={(e) => editD(i, "pos", e.target.value)} style={S.draftPos}>{POS.map((p) => <option key={p.key} value={p.key}>{p.emoji}{p.label}</option>)}</select>
-          <input style={S.draftIn} value={r.term} placeholder="单词" onChange={(e) => editD(i, "term", e.target.value)} />
-          <input style={S.draftIn} value={r.reading} placeholder="读音" onChange={(e) => editD(i, "reading", e.target.value)} />
-          <input style={S.draftIn} value={r.meaning} placeholder="意思" onChange={(e) => editD(i, "meaning", e.target.value)} />
-          <button style={{ ...S.miniBtn, opacity: r.freq ? 1 : 0.3 }} onClick={() => editD(i, "freq", !r.freq)}>⭐</button>
-          <button style={S.miniDel} onClick={() => delD(i)}>✕</button></div>))}</div>
+          <div style={S.draftHead}>
+            <select value={r.pos} onChange={(e) => editD(i, "pos", e.target.value)} style={S.draftPos}>{POS.map((p) => <option key={p.key} value={p.key}>{p.emoji}{p.label}</option>)}</select>
+            <div style={{ flex: 1 }} />
+            <button style={{ ...S.draftStar, ...(r.freq ? S.draftStarOn : {}) }} onClick={() => editD(i, "freq", !r.freq)}>⭐ 高频</button>
+            <button style={S.draftDel} onClick={() => delD(i)}>✕ 删</button>
+          </div>
+          <label style={S.draftField}><span style={S.draftLabel}>单词</span><input style={S.draftIn} value={r.term} placeholder="日语" onChange={(e) => editD(i, "term", e.target.value)} /></label>
+          <label style={S.draftField}><span style={S.draftLabel}>读音</span><input style={S.draftIn} value={r.reading} placeholder="假名" onChange={(e) => editD(i, "reading", e.target.value)} /></label>
+          <label style={S.draftField}><span style={S.draftLabel}>意思</span><input style={S.draftIn} value={r.meaning} placeholder="中文" onChange={(e) => editD(i, "meaning", e.target.value)} /></label>
+        </div>))}</div>
       <button className="pressable" style={{ ...S.bigBtn, marginTop: 12 }} onClick={commit}>✅ 全部加入（{draft.filter((r) => r.term.trim()).length} 词）</button>
     </div>)}
   </div>);
@@ -1181,8 +1185,8 @@ const BackRow = ({ ctx, title }) => (<div style={S.backRow}><button className="p
 const S = {
   shell: { minHeight: "100vh", background: "linear-gradient(180deg,#fdf3e3 0%," + C.cream + " 45%)", color: C.ink, fontFamily: "'Zen Maru Gothic','PingFang SC','Microsoft YaHei',sans-serif", position: "relative", overflow: "hidden" },
   bg: { position: "fixed", inset: 0, zIndex: 0, overflow: "hidden", pointerEvents: "none" },
-  main: { position: "relative", zIndex: 1, maxWidth: 600, margin: "0 auto", padding: "8px 16px 60px" },
-  top: { position: "relative", zIndex: 2, maxWidth: 600, margin: "0 auto", padding: "14px 16px 6px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 },
+  main: { position: "relative", zIndex: 1, maxWidth: 600, margin: "0 auto", padding: "8px calc(16px + env(safe-area-inset-right)) calc(60px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left))" },
+  top: { position: "relative", zIndex: 2, maxWidth: 600, margin: "0 auto", padding: "calc(14px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) 6px calc(16px + env(safe-area-inset-left))", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 },
   brand: { display: "flex", alignItems: "center", gap: 9 },
   brandMark: { width: 38, height: 38, borderRadius: 12, background: C.honey, color: "#fff", display: "grid", placeItems: "center", fontSize: 19, fontWeight: 800, boxShadow: "0 4px 0 " + C.honeyDk },
   brandName: { fontWeight: 800, fontSize: 15 }, brandSub: { fontSize: 11, color: C.inkSoft },
@@ -1270,10 +1274,15 @@ const S = {
   heardBox: { background: "#fdf2e0", borderRadius: 13, padding: "11px 15px", fontSize: 15, fontWeight: 700, color: C.ink },
 
   list: { display: "flex", flexDirection: "column", gap: 10 },
-  draftRow: { display: "flex", gap: 5, alignItems: "center", borderRadius: 12, padding: 7 },
-  draftPos: { border: "2px solid #ecdfca", borderRadius: 8, padding: "6px 3px", fontFamily: "inherit", fontWeight: 700, fontSize: 11, background: "#fff", flexShrink: 0 },
-  draftIn: { flex: 1, minWidth: 0, border: "2px solid #ecdfca", borderRadius: 8, padding: "7px 6px", fontSize: 13, outline: "none", fontFamily: "inherit", boxSizing: "border-box" },
-  miniBtn: { background: "none", border: "none", cursor: "pointer", fontSize: 15, flexShrink: 0 }, miniDel: { background: "none", border: "none", color: C.blush, fontWeight: 800, cursor: "pointer", fontSize: 15, flexShrink: 0 },
+  draftRow: { display: "flex", flexDirection: "column", gap: 9, borderRadius: 14, padding: 13 },
+  draftHead: { display: "flex", alignItems: "center", gap: 8 },
+  draftPos: { border: "2px solid #ecdfca", borderRadius: 10, padding: "8px 10px", fontFamily: "inherit", fontWeight: 700, fontSize: 13, background: "#fff", color: C.ink, flexShrink: 0 },
+  draftStar: { background: "#fff", border: "2px solid #ecdfca", borderRadius: 10, padding: "7px 11px", fontSize: 12.5, fontWeight: 800, color: C.inkSoft, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 },
+  draftStarOn: { background: "#fff5e6", borderColor: C.honey, color: C.honeyDk },
+  draftDel: { background: "#fff", border: "2px solid #f0ddd5", borderRadius: 10, padding: "7px 11px", fontSize: 12.5, fontWeight: 800, color: C.blush, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 },
+  draftField: { display: "flex", alignItems: "center", gap: 9 },
+  draftLabel: { width: 32, flexShrink: 0, fontSize: 12.5, fontWeight: 800, color: "#7a6244" },
+  draftIn: { flex: 1, minWidth: 0, border: "2px solid #ecdfca", borderRadius: 10, padding: "10px 12px", fontSize: 15, outline: "none", fontFamily: "inherit", background: "#fff", boxSizing: "border-box" },
 
   chipWrap: { display: "flex", flexWrap: "wrap", gap: 8 },
   wordChip: { border: "2px solid #ecdfca", background: "#fff", borderRadius: 12, padding: "9px 13px", fontWeight: 800, fontSize: 15, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 3px 0 #efe2cd" },
