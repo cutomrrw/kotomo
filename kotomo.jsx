@@ -157,16 +157,59 @@ async function loadState() { try { const v = await Store.get(SKEY); return v ? J
 // 返回 true/false：失败不再静默吞，交给上层提示用户（避免数据无声丢失）
 async function saveState(s) { try { await Store.set(SKEY, JSON.stringify(s)); return true; } catch (e) { console.error("[kotomo] saveState 失败", e); return false; } }
 
-// ── AI 调用（真 / 模拟兜底）─────────────────────────────
+// ── AI 调用（真 Claude）─────────────────────────────────
+const AI_MODEL = "claude-haiku-4-5"; // 又快又便宜，足够查词；想更准可换 claude-sonnet-4-6 / claude-opus-4-8
+const AKEY = "kotomo:aikey";          // API 密钥单独存（不进词库状态、不随数据导出）
+async function getApiKey() { try { return (await Store.get(AKEY)) || ""; } catch { return ""; } }
+async function saveApiKey(v) { try { await Store.set(AKEY, (v || "").trim()); return true; } catch { return false; } }
 async function callClaude(system, userMsg) {
+  const key = await getApiKey();
+  if (!key) throw new Error("未配置 API 密钥");
   const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1000, system, messages: [{ role: "user", content: userMsg }] }),
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": key,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true", // 浏览器直连（个人自用；密钥只在你本机）
+    },
+    body: JSON.stringify({ model: AI_MODEL, max_tokens: 1000, system, messages: [{ role: "user", content: userMsg }] }),
   });
+  if (!res.ok) throw new Error("AI 请求失败 " + res.status);
   const data = await res.json();
   return data.content.filter((b) => b.type === "text").map((b) => b.text).join("\n");
 }
 const stripFence = (t) => t.replace(/```json|```/g, "").trim();
+
+// ── 离线词典 kuromoji（没网/没配密钥时兜底：补读音(假名)+词性，不给中文意思）──
+let _kuroTk = null, _kuroPromise = null;
+function loadKuromoji() {
+  if (_kuroTk) return Promise.resolve(_kuroTk);
+  if (_kuroPromise) return _kuroPromise;
+  _kuroPromise = new Promise((resolve, reject) => {
+    if (typeof window === "undefined" || !window.kuromoji) { reject(new Error("kuromoji 未加载")); return; }
+    window.kuromoji.builder({ dicPath: "https://unpkg.com/kuromoji@0.1.2/dict/" }).build((err, tk) => {
+      if (err) { _kuroPromise = null; reject(err); return; }
+      _kuroTk = tk; resolve(tk);
+    });
+  });
+  return _kuroPromise;
+}
+const kataToHira = (s) => (s || "").replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60));
+const KURO_POS = { "名詞": "noun", "動詞": "verb", "形容詞": "adj", "感動詞": "phrase" };
+async function localAutoFill(term) {
+  const t = (term || "").trim();
+  try {
+    const tk = await loadKuromoji();
+    const toks = tk.tokenize(t);
+    if (toks && toks.length) {
+      const reading = kataToHira(toks.map((x) => (x.reading && x.reading !== "*") ? x.reading : x.surface_form).join(""));
+      const pos = toks.length === 1 ? (KURO_POS[toks[0].pos] || "other") : "phrase";
+      return { term: t, reading, meaning: "", pos, freq: false };
+    }
+  } catch (e) { console.warn("[kotomo] kuromoji 离线注音失败（无网/CDN 不可达）", e); }
+  return { term: t, reading: "", meaning: "", pos: "other", freq: false };
+}
 const MOCK_DICT = {
   "猫":["ねこ","neko","noun"],"狗":["いぬ","inu","noun"],"水":["みず","mizu","noun"],"吃":["たべる","taberu","verb"],
   "喝":["のむ","nomu","verb"],"可爱":["かわいい","kawaii","adj"],"谢谢":["ありがとう","arigatou","phrase"],"你好":["こんにちは","konnichiwa","phrase"],
@@ -737,12 +780,13 @@ function TypeInput({ aiReal, onRows, play }) {
   const add = async () => {
     const t = term.trim(); if (!t) return; setBusy(true); play("tap");
     let row;
-    if (aiReal) { try { const sys = "你是日语词库助手。给定一个日语词或中文词，输出 JSON：{term:日语,reading:罗马音,meaning:中文,pos:noun|verb|adj|phrase|other,freq:是否高频(bool),loan:若是片假名外来词则{from:语言码,word:原词}否则null}。只输出 JSON。"; row = JSON.parse(stripFence(await callClaude(sys, t))); } catch { row = mockAutoFill(t); } }
-    else row = mockAutoFill(t);
+    const sys = "你是日语词库助手。给定一个日语词或中文词，输出 JSON：{term:日语,reading:平假名读音(假名，不要罗马音),meaning:中文意思,pos:noun|verb|adj|phrase|other,freq:是否高频(bool),loan:若是片假名外来词则{from:语言码,word:原词}否则null}。只输出 JSON。";
+    if (aiReal) { try { row = JSON.parse(stripFence(await callClaude(sys, t))); } catch { row = await localAutoFill(t); } }
+    else row = await localAutoFill(t);
     onRows([row]); setTerm(""); setBusy(false); play("coin");
   };
   return (<div className="card" style={S.padCard}>
-    <div style={S.howto}>打一个词（日语或中文都行），{aiReal ? "AI" : "系统"}自动补读音、意思、词性，外来词自动标英文来源。</div>
+    <div style={S.howto}>打一个词，{aiReal ? "AI 自动补读音(假名)/意思/词性" : "离线补读音(假名)和词性，意思请自己填"}。</div>
     <div style={{ display: "flex", gap: 8 }}>
       <input style={S.field} value={term} placeholder="例如 トイレ 或 厕所" onChange={(e) => setTerm(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} />
       <button className="pressable" style={S.addBtn} onClick={add} disabled={busy}>{busy ? "…" : "＋"}</button>
@@ -760,8 +804,9 @@ function VoiceInput({ aiReal, onRows, play }) {
     r.onend = () => setListening(false); recRef.current = r; return () => { try { r.stop(); } catch {} }; }, []);
   const toggle = () => { if (!recRef.current) return; if (listening) { recRef.current.stop(); setListening(false); } else { setHeard(""); try { recRef.current.start(); setListening(true); play("listen"); } catch {} } };
   const process = async () => { if (!heard.trim()) return; setBusy(true); play("tap"); let rows = [];
-    if (aiReal) { try { const sys = "把用户说的内容拆成日语词条，每项 {term,reading,meaning,pos,freq,loan}。只输出 JSON 数组。"; rows = JSON.parse(stripFence(await callClaude(sys, heard))); } catch { rows = heard.split(/[\s、。,，]+/).filter(Boolean).map(mockAutoFill); } }
-    else rows = heard.split(/[\s、。,，]+/).filter(Boolean).map(mockAutoFill);
+    const sys = "把用户说的内容拆成日语词条，每项 {term,reading:平假名(不要罗马音),meaning:中文,pos,freq,loan}。只输出 JSON 数组。";
+    if (aiReal) { try { rows = JSON.parse(stripFence(await callClaude(sys, heard))); } catch { rows = await Promise.all(heard.split(/[\s、。,，]+/).filter(Boolean).map(localAutoFill)); } }
+    else rows = await Promise.all(heard.split(/[\s、。,，]+/).filter(Boolean).map(localAutoFill));
     onRows(rows); setHeard(""); setBusy(false); play("coin"); };
   return (<div className="card" style={S.padCard}>
     <div style={S.howto}>看剧/逛街听到的词，直接说出来（日语为主），自动转成词条。会五十音的你，说日语最快。</div>
@@ -976,13 +1021,24 @@ function MiniCalendar({ calendar }) {
 // ── 设置 ───────────────────────────────────────────────
 function Settings({ ctx }) {
   const { st, play, setSetting } = ctx;
+  const [aiKey, setAiKey] = useState(""); const [keyMsg, setKeyMsg] = useState("");
+  useEffect(() => { getApiKey().then((k) => setAiKey(k || "")); }, []);
+  const saveKey = async () => { await saveApiKey(aiKey); setKeyMsg("密钥已保存 ✓"); play("pop"); setTimeout(() => setKeyMsg(""), 2500); };
   return (<div className="fade-in"><BackRow ctx={ctx} title="⚙️ 设置" />
     <div className="card" style={S.setCard}>
       <Row label="音效" hint="清脆解压的按键音"><Switch on={st.settings.sound} onClick={() => { setSetting("sound", !st.settings.sound); if (!st.settings.sound) Sfx.pop(); }} /></Row>
-      <Row label="AI 模式" hint="真Claude(需联网) / 模拟(随处可用)"><Switch on={st.settings.aiReal} label={st.settings.aiReal ? "真" : "拟"} onClick={() => { setSetting("aiReal", !st.settings.aiReal); play("pop"); }} /></Row>
+      <Row label="AI 模式" hint="真AI(需密钥+联网，补意思/关联词/展开) / 离线(kuromoji 只补读音和词性)"><Switch on={st.settings.aiReal} label={st.settings.aiReal ? "真" : "拟"} onClick={() => { setSetting("aiReal", !st.settings.aiReal); play("pop"); }} /></Row>
+      <Row label="AI 密钥" hint="粘贴你的 Anthropic API key，只存本机、不上传">
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <input style={{ ...S.field, width: 138, fontSize: 12 }} type="password" value={aiKey} placeholder="sk-ant-…" onChange={(e) => setAiKey(e.target.value)} />
+          <button className="pressable" style={S.addBtn} onClick={saveKey}>存</button>
+        </div>
+      </Row>
       <Row label="低能量模式" hint="状态不好时主动开，温柔不评判"><div style={S.energyWrap}>{[["low", "🌙 低能"], ["normal", "☀️ 正常"], ["super", "🔥 超人"]].map(([m, l]) => (<button key={m} style={{ ...S.energyBtn, padding: "6px 10px", fontSize: 12, ...(st.settings.energyMode === m ? S.energyOn : {}) }} onClick={() => { setSetting("energyMode", m); play("tap"); }}>{l}</button>))}</div></Row>
     </div>
-    <div style={S.setNote}>当前版本：第 0 步验证版 · 数据存在本机 · 语言：日语<br/>云同步、拍照、付费为后续版本。</div>
+    {keyMsg && <div style={{ ...S.setNote, color: C.matchaDk, fontWeight: 800 }}>{keyMsg}</div>}
+    <div style={S.setNote}>开「真AI」要先在上面贴 Anthropic 密钥（console.anthropic.com 生成，按用量付费、很便宜）。没密钥或没网时自动用离线 kuromoji（只补读音和词性，意思自己填）。</div>
+    <div style={S.setNote}>当前版本：第 0 步验证版 · 数据存在本机 · 语言：日语<br/>云同步、拍照为后续版本。</div>
     <div style={S.setNote}>ことも（词崽）· 你遇到的词，才是你该学的词。</div>
   </div>);
 }
