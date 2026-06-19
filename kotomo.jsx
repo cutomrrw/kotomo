@@ -291,16 +291,31 @@ function applyAnswer(w, correct) {
 }
 // 掌握计数：用户手动标 mastered 也算掌握；或 SRS 到阈值
 const countMastered = (words) => words.filter((w) => w.mastered || (w.srs && w.srs.level >= MASTER_LEVEL)).length;
+const _due = (words) => { const t = now(); return words.filter((w) => !w.mastered && w.srs && w.srs.dueAt <= t); };
 function dueWords(words, mode) {
-  const t = now();
-  let due = words.filter((w) => !w.mastered && w.srs && w.srs.dueAt <= t);
-  // 错题/低level 优先
-  due.sort((a, b) => (b.wrong || 0) - (a.wrong || 0) || (a.srs.level - b.srs.level));
-  if (mode === "low") return due.slice(0, 5);            // 低能：极少
-  if (mode === "super") return due;                       // 超人：全清
-  return due.slice(0, 20);                                // 正常：削峰到20
+  let due = _due(words).sort((a, b) => (b.wrong || 0) - (a.wrong || 0) || (a.srs.level - b.srs.level));
+  if (mode === "low") return due.slice(0, 5);
+  if (mode === "super") return due;
+  return due.slice(0, 20);
 }
-const wrongWords = (words) => words.filter((w) => (w.wrong || 0) > 0 && !w.mastered);
+const wrongWords = (words) => words.filter((w) => ((w.wrong || 0) > 0 || w.hesitant) && !w.mastered);
+// 复习选词：到期词优先（犹豫/错多/level低/到期久 在前），不够就用其余未掌握词凑够一组，
+// 所以"开始复习"永远不止 1 个、且没到期也能"再复习/巩固"（无限复习）；最后打乱呈现顺序。
+function reviewPool(words, mode, wrongOnly) {
+  const t = now();
+  const reviewable = words.filter((w) => !w.mastered);
+  const score = (w) => (w.hesitant ? 100 : 0) + (w.wrong || 0) * 10 + (MASTER_LEVEL - ((w.srs && w.srs.level) || 0)) + ((w.srs && w.srs.dueAt <= t) ? 2 : 0);
+  const byPrio = (arr) => [...arr].sort((a, b) => score(b) - score(a));
+  if (wrongOnly) return shuffle(byPrio(reviewable.filter((w) => (w.wrong || 0) > 0 || w.hesitant)).slice(0, mode === "low" ? 5 : 40));
+  const cap = mode === "low" ? 5 : mode === "super" ? reviewable.length : 20;
+  let sel = byPrio(_due(words)).slice(0, cap);
+  const target = Math.min(reviewable.length, mode === "low" ? 5 : 8);
+  if (sel.length < target) {
+    const ids = new Set(sel.map((w) => w.id));
+    sel = sel.concat(byPrio(reviewable.filter((w) => !ids.has(w.id))).slice(0, target - sel.length));
+  }
+  return shuffle(sel);
+}
 
 // ── 宠物 ──────────────────────────────────────────────
 const SEGMENTS = [
@@ -411,10 +426,17 @@ export default function App() {
   const ownWordCount = useMemo(() => st.words.filter((w) => !w.isSeed).length, [st.words]);
 
   // 完成一轮复习：写回 SRS、月历、连胜、心情
-  const finishReview = useCallback((results, energyUsed) => {
+  const finishReview = useCallback((results, hesitantIds, energyUsed) => {
     patch((s) => {
       const map = {}; results.forEach((r) => { map[r.id] = r.correct; });
-      const words = s.words.map((w) => map[w.id] === undefined ? w : applyAnswer(w, map[w.id]));
+      const hes = new Set(hesitantIds || []);
+      const words = s.words.map((w) => {
+        if (map[w.id] === undefined) return w;
+        let nw = applyAnswer(w, map[w.id]);
+        if (hes.has(w.id)) nw = { ...nw, hesitant: true };           // 长按标的"犹豫词"
+        else if (map[w.id] === true && w.hesitant) nw = { ...nw, hesitant: false }; // 这次确信答对 → 摘掉犹豫
+        return nw;
+      });
       // 月历
       const today = todayStr();
       const level = energyUsed === "low" ? "light" : energyUsed === "super" ? "super" : "full";
@@ -500,6 +522,7 @@ function Home({ ctx }) {
   const { st, play, mastered, seg, decor, mood, nav } = ctx;
   const due = useMemo(() => dueWords(st.words, st.settings.energyMode), [st.words, st.settings.energyMode]);
   const wrongs = useMemo(() => wrongWords(st.words), [st.words]);
+  const canReview = useMemo(() => st.words.some((w) => !w.mastered), [st.words]);
   const ns = nextSeg(mastered);
   const goalTotal = st.settings.energyMode === "low" ? 5 : st.settings.energyMode === "super" ? Math.max(due.length, 1) : 20;
   const todayLevel = st.streak.calendar[todayStr()];
@@ -541,14 +564,14 @@ function Home({ ctx }) {
       <EnergyPicker mode={st.settings.energyMode} onPick={(m) => { ctx.setSetting("energyMode", m); play("tap"); }} />
     </div>
 
-    <button style={{ ...S.bigBtn, marginBottom: 11 }} className="pressable" disabled={due.length === 0} onClick={() => { ctx.setReviewWrongOnly(false); nav("review"); }}>
-      {due.length === 0 ? "🌙 今天复习完啦" : "📖 开始复习 · 消除 " + due.length + " 个词"}</button>
+    <button style={{ ...S.bigBtn, marginBottom: 11 }} className="pressable" disabled={!canReview} onClick={() => { ctx.setReviewWrongOnly(false); nav("review"); }}>
+      {!canReview ? "🌸 词都掌握啦，加点新词吧" : due.length > 0 ? "📖 开始复习 · 消除 " + due.length + " 个词" : "🔄 再复习一组 · 巩固"}</button>
 
     <div style={S.reviewRow}>
       <button className="pressable" style={S.reviewBig} onClick={() => nav("center")}>
         <span style={{ fontSize: 20 }}>🌟</span><div style={{ textAlign: "left" }}><div style={{ fontWeight: 800 }}>复习中心</div><div style={S.reviewSub}>统计 · 排序 · 强化</div></div></button>
       <button className="pressable" style={{ ...S.reviewBig, background: "#fbeae2", borderColor: C.blush, boxShadow: "0 5px 0 #e7c0b3" }} disabled={wrongs.length === 0} onClick={() => { ctx.setReviewWrongOnly(true); nav("review"); }}>
-        <span style={{ fontSize: 20 }}>❗</span><div style={{ textAlign: "left" }}><div style={{ fontWeight: 800 }}>错题强化</div><div style={S.reviewSub}>{wrongs.length} 个易错</div></div></button>
+        <span style={{ fontSize: 20 }}>❗</span><div style={{ textAlign: "left" }}><div style={{ fontWeight: 800 }}>错题强化</div><div style={S.reviewSub}>{wrongs.length} 个易错/犹豫</div></div></button>
     </div>
 
     <div style={S.toolRow}>
@@ -583,23 +606,22 @@ const Splash = () => (<div style={{ ...S.shell, display: "grid", placeItems: "ce
 // 把到期词分成 词/句子/语法 三组，词走连连看+卡片，句子走填空，语法走情境
 function ReviewSession({ ctx }) {
   const { st, play, finishReview, reviewWrongOnly } = ctx;
-  const pool = useMemo(() => {
-    if (reviewWrongOnly) return wrongWords(st.words);
-    return dueWords(st.words, st.settings.energyMode);
-  }, [st.words, st.settings.energyMode, reviewWrongOnly]);
+  const pool = useMemo(() => reviewPool(st.words, st.settings.energyMode, reviewWrongOnly), [st.words, st.settings.energyMode, reviewWrongOnly]);
 
   // 构建题目队列：词优先用连连看分批(5个一组)，剩余零头用卡片；句子填空；语法情境
   const queue = useMemo(() => buildQueue(pool), [pool]);
   const [qi, setQi] = useState(0);
   const [hearts, setHearts] = useState(5);
   const resultsRef = useRef({}); // id -> correct(bool)，一个词若任一次错则记错
+  const hesitantRef = useRef({}); // id -> true：长按标"犹豫"，按错处理且记进犹豫词
   const recordResult = (id, correct) => { if (resultsRef.current[id] === undefined) resultsRef.current[id] = correct; else if (!correct) resultsRef.current[id] = false; };
+  const markHesitate = (id) => { hesitantRef.current[id] = true; recordResult(id, false); play("wrong"); vibrate(30); };
 
   if (pool.length === 0) return <EmptyReview ctx={ctx} />;
   const done = qi >= queue.length || hearts <= 0;
   if (done) {
     const results = Object.entries(resultsRef.current).map(([id, correct]) => ({ id, correct }));
-    return <ReviewResult ctx={ctx} results={results} hearts={hearts} onDone={() => finishReview(results, st.settings.energyMode)} />;
+    return <ReviewResult ctx={ctx} results={results} hearts={hearts} onDone={() => finishReview(results, Object.keys(hesitantRef.current), st.settings.energyMode)} />;
   }
   const q = queue[qi];
   const advance = () => { play("pop"); setQi((x) => x + 1); };
@@ -612,10 +634,11 @@ function ReviewSession({ ctx }) {
       <div style={S.hearts}>{"❤️".repeat(Math.max(0, hearts))}<span style={{ opacity: .25 }}>{"🤍".repeat(Math.max(0, 5 - hearts))}</span></div>
     </div>
     {reviewWrongOnly && <div style={S.wrongBanner}>❗ 错题强化中 · 答对才算消灭</div>}
-    {q.kind === "match" && <MatchRound key={qi} items={q.items} play={play} onResult={recordResult} onDone={advance} onWrong={loseHeart} />}
-    {q.kind === "card" && <CardRound key={qi} item={q.item} pool={pool} play={play} onResult={recordResult} onNext={advance} onWrong={loseHeart} />}
-    {q.kind === "fill" && <FillRound key={qi} item={q.item} pool={pool} play={play} onResult={recordResult} onNext={advance} onWrong={loseHeart} />}
-    {q.kind === "grammar" && <GrammarRound key={qi} item={q.item} pool={pool} play={play} onResult={recordResult} onNext={advance} onWrong={loseHeart} />}
+    <div style={{ fontSize: 11.5, color: C.inkSoft, textAlign: "center", margin: "2px 0 8px" }}>不确定的词，长按它 →「犹豫词」，会更高频回来考你（防排除法蒙混）</div>
+    {q.kind === "match" && <MatchRound key={qi} items={q.items} all={st.words} play={play} onResult={recordResult} onDone={advance} onWrong={loseHeart} onHesitate={markHesitate} />}
+    {q.kind === "card" && <CardRound key={qi} item={q.item} all={st.words} play={play} onResult={recordResult} onNext={advance} onWrong={loseHeart} onHesitate={markHesitate} />}
+    {q.kind === "fill" && <FillRound key={qi} item={q.item} all={st.words} play={play} onResult={recordResult} onNext={advance} onWrong={loseHeart} onHesitate={markHesitate} />}
+    {q.kind === "grammar" && <GrammarRound key={qi} item={q.item} all={st.words} play={play} onResult={recordResult} onNext={advance} onWrong={loseHeart} onHesitate={markHesitate} />}
   </div>);
 }
 function buildQueue(pool) {
@@ -636,11 +659,16 @@ function buildQueue(pool) {
 }
 
 // 连连看：左日(含外来词括号) 右中，配对消除
-function MatchRound({ items, play, onResult, onDone, onWrong }) {
+function MatchRound({ items, all, play, onResult, onDone, onWrong, onHesitate }) {
   const [left] = useState(() => shuffle(items));
   const [right] = useState(() => shuffle(items));
   const [selL, setSelL] = useState(null), [selR, setSelR] = useState(null);
   const [matched, setMatched] = useState([]); const [wrongPair, setWrongPair] = useState(null);
+  const [hes, setHes] = useState({});
+  const lpTimer = useRef(null), lpFired = useRef(false);
+  const markHes = (id) => { if (onHesitate) onHesitate(id); setHes((h) => ({ ...h, [id]: true })); };
+  const lpStart = (id) => { lpFired.current = false; lpTimer.current = setTimeout(() => { lpFired.current = true; markHes(id); }, 450); };
+  const lpCancel = () => { if (lpTimer.current) { clearTimeout(lpTimer.current); lpTimer.current = null; } };
   useEffect(() => { if (selL && selR) {
     if (selL === selR) { play("match"); vibrate(15); onResult(selL, true); setMatched((m) => [...m, selL]); setSelL(null); setSelR(null); }
     else { play("wrong"); vibrate([20, 40, 20]); onResult(selL, false); onResult(selR, false); onWrong(); setWrongPair({ l: selL, r: selR }); setTimeout(() => { setWrongPair(null); setSelL(null); setSelR(null); }, 550); }
@@ -650,10 +678,12 @@ function MatchRound({ items, play, onResult, onDone, onWrong }) {
     const isM = matched.includes(w.id); const sel = side === "L" ? selL : selR; const isSel = sel === w.id;
     const isWrong = wrongPair && ((side === "L" && wrongPair.l === w.id) || (side === "R" && wrongPair.r === w.id));
     const label = side === "L" ? termWithLoan(w) : w.meaning; const sub = side === "L" ? w.reading : "";
-    return (<button key={w.id + side} disabled={isM} className={"pressable " + (isWrong ? "shake" : "")} style={{ ...S.tile, ...(isM ? S.tileDone : {}), ...(isSel ? S.tileSel : {}) }}
-      onClick={() => { if (isM) return; play("tap"); if (side === "L") { setSelL(w.id); speakJa(w.term); } else setSelR(w.id); }}>
+    return (<button key={w.id + side} disabled={isM} className={"pressable " + (isWrong ? "shake" : "")} style={{ ...S.tile, ...(isM ? S.tileDone : {}), ...(isSel ? S.tileSel : {}), ...(hes[w.id] ? { borderColor: C.grape, borderWidth: 2 } : {}) }}
+      onTouchStart={() => lpStart(w.id)} onTouchEnd={lpCancel} onTouchMove={lpCancel}
+      onContextMenu={(e) => { e.preventDefault(); markHes(w.id); }}
+      onClick={() => { if (lpFired.current) { lpFired.current = false; return; } if (isM) return; play("tap"); if (side === "L") { setSelL(w.id); speakJa(w.term); } else setSelR(w.id); }}>
       {isM ? <div style={{ fontWeight: 800, fontSize: 20 }}>✓</div> : <>
-        <div style={{ fontWeight: 800, fontSize: label.length > 6 ? 14 : label.length > 4 ? 16 : 18, lineHeight: 1.15, width: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</div>
+        <div style={{ fontWeight: 800, fontSize: label.length > 6 ? 14 : label.length > 4 ? 16 : 18, lineHeight: 1.15, width: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{hes[w.id] ? "🤔 " : ""}{label}</div>
         <div style={{ fontSize: 10.5, color: C.inkSoft, height: 13, lineHeight: "13px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", width: "100%" }}>{sub || ""}</div>
       </>}</button>);
   };
@@ -667,24 +697,26 @@ function MatchRound({ items, play, onResult, onDone, onWrong }) {
 }
 
 // 卡片四选一：双向(中日/日中)+读音穿插，防蒙(形近义近干扰+反应时间)
-function CardRound({ item, pool, play, onResult, onNext, onWrong }) {
+function CardRound({ item, all, play, onResult, onNext, onWrong, onHesitate }) {
   const askForeign = useMemo(() => Math.random() < 0.5, [item]);
   const opts = useMemo(() => {
-    const others = shuffle(pool.filter((x) => x.id !== item.id))
-      .sort((a, b) => sim(b, item) - sim(a, item)).slice(0, 3); // 形近/义近优先做干扰项
+    const others = shuffle((all || []).filter((x) => x.id !== item.id))
+      .sort((a, b) => sim(b, item) - sim(a, item)).slice(0, 3); // 干扰项从整个词库取（形近/义近优先）
     return shuffle([item, ...others]);
-  }, [item, pool]);
-  const [picked, setPicked] = useState(null), [checked, setChecked] = useState(false), [shk, setShk] = useState(0);
-  const t0 = useRef(now());
+  }, [item, all]);
+  const [picked, setPicked] = useState(null), [checked, setChecked] = useState(false), [shk, setShk] = useState(0), [hesMarked, setHesMarked] = useState(false);
+  const lpTimer = useRef(null), lpFired = useRef(false);
+  const markHes = () => { if (onHesitate) onHesitate(item.id); setHesMarked(true); };
+  const lpStart = () => { lpFired.current = false; lpTimer.current = setTimeout(() => { lpFired.current = true; markHes(); }, 450); };
+  const lpCancel = () => { if (lpTimer.current) { clearTimeout(lpTimer.current); lpTimer.current = null; } };
   const prompt = askForeign ? termWithLoan(item) : item.meaning;
   const sub = askForeign ? item.reading : "";
   const check = () => { if (!picked) return; const correct = picked.id === item.id; setChecked(true);
-    const fast = now() - t0.current < 1500; // 反应时间：秒选=更确信
-    onResult(item.id, correct && (fast || true)); // 记录对错（反应时间用于未来微调，这里保留对错）
+    onResult(item.id, correct);
     if (correct) { play("correct"); } else { play("wrong"); vibrate([20, 40, 20]); onWrong(); setShk((s) => s + 1); } };
   const proceed = () => { setChecked(false); setPicked(null); onNext(); };
   return (<div className="fade-in">
-    <div style={S.roundTag}>🃏 {askForeign ? "这个日语词是什么意思？" : "用日语怎么说？"}</div>
+    <div style={S.roundTag}>🃏 {askForeign ? "这个日语词是什么意思？" : "用日语怎么说？"}{hesMarked ? " · 🤔已标犹豫" : ""}</div>
     <div key={shk} className={checked && picked && picked.id !== item.id ? "shake" : ""}>
       <div className="card pop-in" style={S.bigCard}>
         <div style={S.cardWord} onClick={() => askForeign && speakJa(item.term)}>{prompt}{askForeign && <span style={{ fontSize: 20 }}> 🔊</span>}</div>
@@ -694,7 +726,10 @@ function CardRound({ item, pool, play, onResult, onNext, onWrong }) {
       const label = askForeign ? o.meaning : termWithLoan(o); const osub = askForeign ? "" : o.reading;
       let stt = "idle"; if (checked) { if (o.id === item.id) stt = "right"; else if (picked && picked.id === o.id) stt = "wrong"; }
       const mp = { idle: { borderColor: picked && picked.id === o.id ? C.honey : "#ecdfca", background: picked && picked.id === o.id ? "#fdf2e0" : "#fff" }, right: { borderColor: C.matchaDk, background: "#eaf4e0" }, wrong: { borderColor: C.blush, background: "#fbeae2" } };
-      return (<button key={o.id} className="pressable" style={{ ...S.opt, ...mp[stt] }} onClick={() => { if (!checked) { setPicked(o); play("tap"); } }}>
+      return (<button key={o.id} className="pressable" style={{ ...S.opt, ...mp[stt] }}
+        onTouchStart={lpStart} onTouchEnd={lpCancel} onTouchMove={lpCancel}
+        onContextMenu={(e) => { e.preventDefault(); markHes(); }}
+        onClick={() => { if (lpFired.current) { lpFired.current = false; return; } if (!checked) { setPicked(o); play("tap"); } }}>
         <div style={{ fontWeight: 800, fontSize: osub ? 18 : 16 }}>{label}</div>{osub && <div style={{ fontSize: 12, color: C.inkSoft }}>{osub}</div>}</button>); })}</div>
     {checked && picked && picked.id !== item.id && <div className="slide-up" style={S.fb}>正确：{item.term}（{item.reading}）{item.loan ? "← " + item.loan.word + " " : ""}— {item.meaning}</div>}
     <button className="pressable" disabled={!picked} style={{ ...S.bigBtn, opacity: picked ? 1 : 0.45 }} onClick={checked ? proceed : check}>{checked ? "下一个 →" : "检查"}</button>
@@ -704,9 +739,9 @@ function CardRound({ item, pool, play, onResult, onNext, onWrong }) {
 function sim(a, b) { let s = 0; if (a.pos === b.pos) s += 1; const t1 = a.term || "", t2 = b.term || ""; if (t1[0] && t1[0] === t2[0]) s += 1; if (Math.abs(t1.length - t2.length) <= 1) s += 0.5; return s; }
 
 // 句子填空：把句子里某词挖空，四选一
-function FillRound({ item, pool, play, onResult, onNext, onWrong }) {
+function FillRound({ item, all, play, onResult, onNext, onWrong, onHesitate }) {
   // 句子形态：term 是整句，meaning 是中文。简单实现：让用户"看中文选正确日语句"（句子较短时）
-  const opts = useMemo(() => { const others = shuffle(pool.filter((x) => x.id !== item.id && x.type === "sentence")).slice(0, 3); const base = others.length >= 1 ? others : shuffle(pool.filter((x) => x.id !== item.id)).slice(0, 3); return shuffle([item, ...base]); }, [item, pool]);
+  const opts = useMemo(() => { const others = shuffle((all || []).filter((x) => x.id !== item.id && x.type === "sentence")).slice(0, 3); const base = others.length >= 1 ? others : shuffle((all || []).filter((x) => x.id !== item.id)).slice(0, 3); return shuffle([item, ...base]); }, [item, all]);
   const [picked, setPicked] = useState(null), [checked, setChecked] = useState(false);
   const check = () => { if (!picked) return; const correct = picked.id === item.id; setChecked(true); onResult(item.id, correct); if (correct) play("correct"); else { play("wrong"); onWrong(); } };
   return (<div className="fade-in">
@@ -723,8 +758,8 @@ function FillRound({ item, pool, play, onResult, onNext, onWrong }) {
 }
 
 // 语法情境：给语法点，选正确用法（第0步与填空类似，用 meaning 作题干）
-function GrammarRound({ item, pool, play, onResult, onNext, onWrong }) {
-  const opts = useMemo(() => { const others = shuffle(pool.filter((x) => x.id !== item.id)).slice(0, 3); return shuffle([item, ...others]); }, [item, pool]);
+function GrammarRound({ item, all, play, onResult, onNext, onWrong, onHesitate }) {
+  const opts = useMemo(() => { const others = shuffle((all || []).filter((x) => x.id !== item.id)).slice(0, 3); return shuffle([item, ...others]); }, [item, all]);
   const [picked, setPicked] = useState(null), [checked, setChecked] = useState(false);
   const check = () => { if (!picked) return; const correct = picked.id === item.id; setChecked(true); onResult(item.id, correct); if (correct) play("correct"); else { play("wrong"); onWrong(); } };
   return (<div className="fade-in">
