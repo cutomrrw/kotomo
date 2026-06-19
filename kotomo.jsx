@@ -157,31 +157,74 @@ async function loadState() { try { const v = await Store.get(SKEY); return v ? J
 // 返回 true/false：失败不再静默吞，交给上层提示用户（避免数据无声丢失）
 async function saveState(s) { try { await Store.set(SKEY, JSON.stringify(s)); return true; } catch (e) { console.error("[kotomo] saveState 失败", e); return false; } }
 
-// ── AI 调用（真 Claude）─────────────────────────────────
-const AI_MODEL = "claude-haiku-4-5"; // 又快又便宜，足够查词；想更准可换 claude-sonnet-4-6 / claude-opus-4-8
-const AKEY = "kotomo:aikey";          // API 密钥单独存（不进词库状态、不随数据导出）
+// ── AI 调用（OpenAI 与 Anthropic 都支持，按密钥前缀自动识别）─────────────
+const OPENAI_MODEL = "gpt-5.4-mini";          // OpenAI：又快又便宜，足够查词；想更准可换 gpt-5.4 / gpt-5.5
+const ANTHROPIC_MODEL = "claude-haiku-4-5";   // Anthropic：又快又便宜；想更准可换 claude-sonnet-4-6 / claude-opus-4-8
+const AKEY = "kotomo:aikey";                  // API 密钥单独存（不进词库状态、不随数据导出）
+// 判家：sk-ant- 开头 = Anthropic(Claude)；其余 sk-（含 sk-proj-/sk-svcacct-/sk-admin-）当作 OpenAI
+const providerOf = (key) => ((key || "").trim().startsWith("sk-ant-") ? "anthropic" : "openai");
 async function getApiKey() { try { return (await Store.get(AKEY)) || ""; } catch { return ""; } }
 async function saveApiKey(v) { try { await Store.set(AKEY, (v || "").trim()); return true; } catch { return false; } }
-async function callClaude(system, userMsg) {
-  const key = await getApiKey();
+
+async function callAI(system, userMsg) {
+  const key = (await getApiKey()).trim();
   if (!key) throw new Error("未配置 API 密钥");
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 30000); // 30 秒超时，避免请求挂死冻住页面
   try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
+    if (providerOf(key) === "anthropic") {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": key,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true", // 浏览器直连（个人自用；密钥只在你本机）
+        },
+        body: JSON.stringify({ model: ANTHROPIC_MODEL, max_tokens: 1000, system, messages: [{ role: "user", content: userMsg }] }),
+        signal: ctrl.signal,
+      });
+      if (!res.ok) throw new Error("AI 请求失败 " + res.status);
+      const data = await res.json();
+      return data.content.filter((b) => b.type === "text").map((b) => b.text).join("\n");
+    }
+    // OpenAI：浏览器可直连，无需特殊头（密钥错误时聊天端点会被当成 CORS 报错，故在保存时用 validateKey 先校验）
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": key,
-        "anthropic-version": "2023-06-01",
-        "anthropic-dangerous-direct-browser-access": "true", // 浏览器直连（个人自用；密钥只在你本机）
-      },
-      body: JSON.stringify({ model: AI_MODEL, max_tokens: 1000, system, messages: [{ role: "user", content: userMsg }] }),
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + key },
+      body: JSON.stringify({
+        model: OPENAI_MODEL,
+        max_completion_tokens: 4096,
+        messages: [{ role: "system", content: system }, { role: "user", content: userMsg }],
+      }),
       signal: ctrl.signal,
     });
     if (!res.ok) throw new Error("AI 请求失败 " + res.status);
     const data = await res.json();
-    return data.content.filter((b) => b.type === "text").map((b) => b.text).join("\n");
+    const text = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+    if (!text) throw new Error("AI 返回为空");
+    return text;
+  } finally { clearTimeout(timer); }
+}
+
+// 保存密钥时校验：用 GET /v1/models —— 即使密钥错误也带 CORS 头、能拿到清晰的 401，
+// 避免聊天端点遇到错误密钥时只抛模糊的 CORS 错误，让用户摸不着头脑。
+async function validateKey(key) {
+  key = (key || "").trim();
+  if (!key) return { ok: false, msg: "请先粘贴密钥" };
+  const prov = providerOf(key);
+  const label = prov === "anthropic" ? "Claude" : "OpenAI";
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 12000);
+  try {
+    const res = prov === "anthropic"
+      ? await fetch("https://api.anthropic.com/v1/models", { headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" }, signal: ctrl.signal })
+      : await fetch("https://api.openai.com/v1/models", { headers: { "Authorization": "Bearer " + key }, signal: ctrl.signal });
+    if (res.ok) return { ok: true, provider: prov, msg: "✓ " + label + " 密钥有效" };
+    if (res.status === 401 || res.status === 403) return { ok: false, provider: prov, msg: "✗ " + label + " 密钥无效，请检查" };
+    return { ok: true, provider: prov, msg: "已保存（" + label + "，服务返回 " + res.status + "）" };
+  } catch (e) {
+    return { ok: null, provider: prov, msg: "已保存（" + label + "），但没连上网、暂时无法验证" };
   } finally { clearTimeout(timer); }
 }
 const stripFence = (t) => t.replace(/```json|```/g, "").trim();
@@ -858,7 +901,7 @@ function TypeInput({ aiReal, dir, onRows, play }) {
       ? "用户给一个中文词，请给出对应最常用的日语说法。输出 JSON：{term:日语,reading:平假名读音(假名,不要罗马音),meaning:用户给的中文,pos:noun|verb|adj|phrase|other,freq:是否高频(bool),loan:若是片假名外来词则{from:语言码,word:原词}否则null}。只输出 JSON。"
       : "用户给一个日语词。输出 JSON：{term:该日语词(规范写法),reading:平假名读音(假名,不要罗马音),meaning:中文意思,pos:noun|verb|adj|phrase|other,freq:是否高频(bool),loan:若是片假名外来词则{from:语言码,word:原词}否则null}。只输出 JSON。";
     const offline = () => dir === "zh" ? { term: "", reading: "", meaning: t, pos: "other", freq: false } : localAutoFill(t);
-    if (aiReal) { try { row = JSON.parse(stripFence(await callClaude(sys, t))); } catch { row = await offline(); } }
+    if (aiReal) { try { row = JSON.parse(stripFence(await callAI(sys, t))); } catch { row = await offline(); } }
     else row = await offline();
     onRows([row]); setTerm(""); setBusy(false); play("coin");
   };
@@ -886,7 +929,7 @@ function VoiceInput({ aiReal, dir, onRows, play }) {
       ? "用户说的是中文。把内容拆成词，每个给出对应最常用的日语，输出 JSON 数组 {term:日语,reading:平假名(不要罗马音),meaning:中文,pos,freq,loan}。只输出 JSON。"
       : "用户说的是日语。把内容拆成日语词条，每项 {term,reading:平假名(不要罗马音),meaning:中文,pos,freq,loan}。只输出 JSON 数组。";
     const offline = (w) => dir === "zh" ? Promise.resolve({ term: "", reading: "", meaning: w, pos: "other", freq: false }) : localAutoFill(w);
-    if (aiReal) { try { rows = JSON.parse(stripFence(await callClaude(sys, heard))); } catch { rows = await Promise.all(heard.split(/[\s、。,，]+/).filter(Boolean).map(offline)); } }
+    if (aiReal) { try { rows = JSON.parse(stripFence(await callAI(sys, heard))); } catch { rows = await Promise.all(heard.split(/[\s、。,，]+/).filter(Boolean).map(offline)); } }
     else rows = await Promise.all(heard.split(/[\s、。,，]+/).filter(Boolean).map(offline));
     onRows(rows); setHeard(""); setBusy(false); play("coin"); };
   return (<div className="card" style={S.padCard}>
@@ -910,12 +953,12 @@ function ExpandTool({ ctx }) {
   const reset = () => { setPicked(null); setData(null); setRelated(null); setSel({}); setRelSel({}); };
   // 深挖：例句/近义/语法
   const run = async (w) => { setPicked(w); setBusy(true); play("tap"); setData(null); setRelated(null); setSel({}); let d;
-    if (aiReal) { try { const sys = "你是日语老师。给定一个日语词，输出 JSON：{examples:[{jp,zh}](2条简单例句),synonyms:[{term,reading,meaning}](1-2个近义/相关词),grammar:[{point,note}](1个相关语法点)}。只输出 JSON。"; d = JSON.parse(stripFence(await callClaude(sys, w.term + "（" + w.meaning + "）"))); } catch { d = mockExpand(w); } }
+    if (aiReal) { try { const sys = "你是日语老师。给定一个日语词，输出 JSON：{examples:[{jp,zh}](2条简单例句),synonyms:[{term,reading,meaning}](1-2个近义/相关词),grammar:[{point,note}](1个相关语法点)}。只输出 JSON。"; d = JSON.parse(stripFence(await callAI(sys, w.term + "（" + w.meaning + "）"))); } catch { d = mockExpand(w); } }
     else d = mockExpand(w);
     setData(d); setBusy(false); play("pop"); };
   // 关联词推荐（Pingo式）：一次推一批，批量勾选
   const runRelated = async (w) => { setPicked(w); setBusy(true); play("tap"); setData(null); setRelated(null); setRelSel({}); let rows;
-    if (aiReal) { try { const have = st.words.map((x) => x.term).join("、"); const sys = "你是日语词库教练。给定一个日语词，推荐 15-20 个【相关/常一起出现/同场景】的实用日语词（避开用户已有的）。输出 JSON 数组 {term,reading,meaning,pos,freq}。只输出 JSON。"; rows = JSON.parse(stripFence(await callClaude(sys, "词：" + w.term + "（" + w.meaning + "）。已有：" + have))); } catch { rows = mockRelated(w); } }
+    if (aiReal) { try { const have = st.words.map((x) => x.term).join("、"); const sys = "你是日语词库教练。给定一个日语词，推荐 15-20 个【相关/常一起出现/同场景】的实用日语词（避开用户已有的）。输出 JSON 数组 {term,reading,meaning,pos,freq}。只输出 JSON。"; rows = JSON.parse(stripFence(await callAI(sys, "词：" + w.term + "（" + w.meaning + "）。已有：" + have))); } catch { rows = mockRelated(w); } }
     else rows = mockRelated(w);
     const have = new Set(st.words.map((x) => x.term));
     setRelated(rows.filter((r) => !have.has(r.term)).slice(0, 20)); setBusy(false); play("pop"); };
@@ -1105,21 +1148,27 @@ function Settings({ ctx }) {
   const { st, play, setSetting } = ctx;
   const [aiKey, setAiKey] = useState(""); const [keyMsg, setKeyMsg] = useState("");
   useEffect(() => { getApiKey().then((k) => setAiKey(k || "")); }, []);
-  const saveKey = async () => { await saveApiKey(aiKey); setKeyMsg("密钥已保存 ✓"); play("pop"); setTimeout(() => setKeyMsg(""), 2500); };
+  const saveKey = async () => {
+    await saveApiKey(aiKey); play("pop"); setKeyMsg("校验中…");
+    const r = await validateKey(aiKey);
+    if (r.ok === true) setSetting("aiReal", true);   // 密钥有效就自动开「真AI」，省掉一步
+    setKeyMsg(r.msg + (r.ok === true ? "，已开启真 AI ✨" : ""));
+    setTimeout(() => setKeyMsg(""), 5000);
+  };
   return (<div className="fade-in"><BackRow ctx={ctx} title="⚙️ 设置" />
     <div className="card" style={S.setCard}>
       <Row label="音效" hint="清脆解压的按键音"><Switch on={st.settings.sound} onClick={() => { setSetting("sound", !st.settings.sound); if (!st.settings.sound) Sfx.pop(); }} /></Row>
       <Row label="AI 模式" hint="真AI(需密钥+联网，补意思/关联词/展开) / 离线(kuromoji 只补读音和词性)"><Switch on={st.settings.aiReal} label={st.settings.aiReal ? "真" : "拟"} onClick={() => { setSetting("aiReal", !st.settings.aiReal); play("pop"); }} /></Row>
-      <Row label="AI 密钥" hint="粘贴你的 Anthropic API key，只存本机、不上传">
+      <Row label="AI 密钥" hint="OpenAI(sk-…) 或 Claude(sk-ant-…)，贴哪家就用哪家，只存本机不上传">
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <input style={{ ...S.field, width: 138, fontSize: 12 }} type="password" value={aiKey} placeholder="sk-ant-…" onChange={(e) => setAiKey(e.target.value)} />
+          <input style={{ ...S.field, width: 138, fontSize: 12 }} type="password" value={aiKey} placeholder="sk-… 或 sk-ant-…" onChange={(e) => setAiKey(e.target.value)} />
           <button className="pressable" style={S.addBtn} onClick={saveKey}>存</button>
         </div>
       </Row>
       <Row label="低能量模式" hint="状态不好时主动开，温柔不评判"><div style={S.energyWrap}>{[["low", "🌙 低能"], ["normal", "☀️ 正常"], ["super", "🔥 超人"]].map(([m, l]) => (<button key={m} style={{ ...S.energyBtn, padding: "6px 10px", fontSize: 12, ...(st.settings.energyMode === m ? S.energyOn : {}) }} onClick={() => { setSetting("energyMode", m); play("tap"); }}>{l}</button>))}</div></Row>
     </div>
-    {keyMsg && <div style={{ ...S.setNote, color: C.matchaDk, fontWeight: 800 }}>{keyMsg}</div>}
-    <div style={S.setNote}>开「真AI」要先在上面贴 Anthropic 密钥（console.anthropic.com 生成，按用量付费、很便宜）。没密钥或没网时自动用离线 kuromoji（只补读音和词性，意思自己填）。</div>
+    {keyMsg && <div style={{ ...S.setNote, color: keyMsg.indexOf("✗") === 0 ? C.blush : C.matchaDk, fontWeight: 800 }}>{keyMsg}</div>}
+    <div style={S.setNote}>开「真AI」需要密钥：OpenAI（platform.openai.com 生成，<b>sk-</b> 开头）或 Anthropic Claude（console.anthropic.com 生成，<b>sk-ant-</b> 开头）都行，贴哪家就自动用哪家，按用量付费、很便宜（查一个词不到一分钱）。没密钥或没网时自动降级离线 kuromoji（只补读音和词性，意思自己填）。</div>
     <div style={S.setNote}>当前版本：第 0 步验证版 · 数据存在本机 · 语言：日语<br/>云同步、拍照为后续版本。</div>
     <div style={S.setNote}>ことも（词崽）· 你遇到的词，才是你该学的词。</div>
   </div>);
