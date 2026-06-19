@@ -839,6 +839,7 @@ function TypeInput({ aiReal, dir, onRows, play }) {
 
 function VoiceInput({ aiReal, dir, onRows, play }) {
   const [listening, setListening] = useState(false), [heard, setHeard] = useState(""), [supported, setSupported] = useState(true), [busy, setBusy] = useState(false);
+  const isIOS = typeof navigator !== "undefined" && /iphone|ipad|ipod/i.test(navigator.userAgent || "");
   const recRef = useRef(null);
   useEffect(() => { const SR = window.SpeechRecognition || window.webkitSpeechRecognition; if (!SR) { setSupported(false); return; }
     const r = new SR(); r.lang = "ja-JP"; r.interimResults = true; r.continuous = true;
@@ -856,6 +857,7 @@ function VoiceInput({ aiReal, dir, onRows, play }) {
   return (<div className="card" style={S.padCard}>
     <div style={S.howto}>{dir === "zh" ? "说中文，转成对应的日语词条（中→日 需开 AI）。" : "看剧/逛街听到的日语词，直接说出来，自动转成词条。"}</div>
     {!supported && <div style={S.warnBox}>此浏览器不支持语音，请用 Chrome，或改"打字"。</div>}
+    {isIOS && <div style={S.tip}>iPhone 网页版每次会问麦克风权限（苹果系统对网页的限制，非故障）。嫌烦可改用「打字」，AI/离线一样自动补全。</div>}
     <button className={"pressable " + (listening ? "pulse-rec" : "")} style={{ ...S.micBtn, background: listening ? C.blush : C.honey, boxShadow: "0 6px 0 " + (listening ? "#c97a64" : C.honeyDk) }} onClick={toggle} disabled={!supported}>
       <span style={{ fontSize: 30 }}>{listening ? "🔴" : "🎙️"}</span><span>{listening ? "聆听中…点击停止" : "点击说话"}</span></button>
     {heard && <div style={S.heardBox}>"{heard}"</div>}
