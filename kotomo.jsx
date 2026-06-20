@@ -453,7 +453,7 @@ export default function App() {
 
   const addWords = useCallback((rows) => {
     patch((s) => ({ ...s, words: [...s.words, ...rows.filter((r) => r.term && r.term.trim()).map((r) => ({
-      id: uid(), type: r.type || "word", term: r.term.trim(), reading: (r.reading || "").trim(), meaning: (r.meaning || "").trim(),
+      id: r.id || uid(), type: r.type || "word", term: r.term.trim(), reading: (r.reading || "").trim(), meaning: (r.meaning || "").trim(),
       pos: r.pos || "other", freq: !!r.freq, loan: r.loan || null, mastered: false, source: (r.source || "").trim(),
       expanded: r.expanded || null, isSeed: false, seen: 0, wrong: 0, srs: { level: 0, dueAt: now(), lastReviewedAt: 0 },
     }))] }));
@@ -865,25 +865,28 @@ function AddWords({ ctx }) {
   const [tab, setTab] = useState("type");
   const [dir, setDir] = useState("ja"); // 录入方向：ja=日→中（输入日语），zh=中→日（输入中文）
   const [draft, setDraft] = useState([]);
+  const [expandWord, setExpandWord] = useState(null); // 某条"待确认"点✨展开时的目标词
   const addDraft = (rows) => setDraft((d) => [...rows, ...d]);
   const editD = (i, k, v) => setDraft((d) => d.map((r, idx) => idx === i ? { ...r, [k]: v } : r));
   const delD = (i) => setDraft((d) => d.filter((_, idx) => idx !== i));
+  // ✨展开：先把当前这批待确认词存进库（被点的那条带固定 id，其余正常入库），再进入"展开学习"对它深挖/推荐关联词，避免丢草稿
+  const expandDraft = (i) => { const r = draft[i]; if (!r || !r.term || !r.term.trim()) return; const id = uid(); addWords(draft.map((d, idx) => idx === i ? { ...d, id } : d)); setDraft([]); setExpandWord({ ...r, id }); setTab("expand"); play("tap"); };
   const commit = () => { addWords(draft); setDraft([]); play("win"); ctx.setView("library"); };
   return (<div className="fade-in"><BackRow ctx={ctx} title="🎙️ 加词" />
     {tab !== "expand" && <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>{[["ja", "日 → 中（输入日语）"], ["zh", "中 → 日（输入中文）"]].map(([k, l]) => (
       <button key={k} className="pressable" style={{ ...S.seg, flex: 1, ...(dir === k ? S.segOn : {}) }} onClick={() => { setDir(k); play("tap"); }}>{l}</button>))}</div>}
     <div style={S.segRow}>{[["type", "⌨️ 打字"], ["voice", "🎙️ 语音"], ["expand", "✨ 展开学习"]].map(([k, l]) => (
-      <button key={k} style={{ ...S.seg, ...(tab === k ? S.segOn : {}) }} onClick={() => { setTab(k); play("tap"); }}>{l}</button>))}</div>
+      <button key={k} style={{ ...S.seg, ...(tab === k ? S.segOn : {}) }} onClick={() => { setTab(k); setExpandWord(null); play("tap"); }}>{l}</button>))}</div>
     {tab === "type" && <TypeInput aiReal={aiReal} dir={dir} onRows={addDraft} play={play} />}
     {tab === "voice" && <VoiceInput aiReal={aiReal} dir={dir} onRows={addDraft} play={play} />}
-    {tab === "expand" && <ExpandTool ctx={ctx} />}
+    {tab === "expand" && <ExpandTool ctx={ctx} initialWord={expandWord} />}
     {draft.length > 0 && tab !== "expand" && (<div style={{ marginTop: 16 }}>
       <div style={S.sectTitle}>📥 待确认 ({draft.length}) · 点⭐标高频，🔤标外来词</div>
       <div style={S.list}>{draft.map((r, i) => (
         <div key={i} className="card" style={S.draftRow}>
           <div style={S.draftHead}>
             <select value={r.pos} onChange={(e) => editD(i, "pos", e.target.value)} style={S.draftPos}>{POS.map((p) => <option key={p.key} value={p.key}>{p.emoji}{p.label}</option>)}</select>
-            <div style={{ flex: 1 }} />
+            <button style={S.draftExpand} onClick={() => expandDraft(i)}>✨ 展开</button>
             <button style={{ ...S.draftStar, ...(r.freq ? S.draftStarOn : {}) }} onClick={() => editD(i, "freq", !r.freq)}>⭐ 高频</button>
             <button style={S.draftDel} onClick={() => delD(i)}>✕ 删</button>
           </div>
@@ -948,10 +951,10 @@ function VoiceInput({ aiReal, dir, onRows, play }) {
 }
 
 // 展开学习：选词库里一个词 → AI铺开例句/近义/语法 → 勾选收割进该词
-function ExpandTool({ ctx }) {
+function ExpandTool({ ctx, initialWord }) {
   const { st, play, updateWord } = ctx;
   const aiReal = st.settings.aiReal;
-  const [picked, setPicked] = useState(null), [busy, setBusy] = useState(false), [data, setData] = useState(null), [sel, setSel] = useState({});
+  const [picked, setPicked] = useState(initialWord || null), [busy, setBusy] = useState(false), [data, setData] = useState(null), [sel, setSel] = useState({});
   const [related, setRelated] = useState(null), [relSel, setRelSel] = useState({});
   const words = st.words.filter((w) => (w.type || "word") === "word");
   const reset = () => { setPicked(null); setData(null); setRelated(null); setSel({}); setRelSel({}); };
@@ -1283,7 +1286,8 @@ const S = {
 
   list: { display: "flex", flexDirection: "column", gap: 10 },
   draftRow: { display: "flex", flexDirection: "column", gap: 9, borderRadius: 14, padding: 13 },
-  draftHead: { display: "flex", alignItems: "center", gap: 8 },
+  draftHead: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 },
+  draftExpand: { background: "#f4fbee", border: "2px solid #cdeccd", borderRadius: 10, padding: "7px 11px", fontSize: 12.5, fontWeight: 800, color: C.matchaDk, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 },
   draftPos: { border: "2px solid #ecdfca", borderRadius: 10, padding: "8px 10px", fontFamily: "inherit", fontWeight: 700, fontSize: 13, background: "#fff", color: C.ink, flexShrink: 0 },
   draftStar: { background: "#fff", border: "2px solid #ecdfca", borderRadius: 10, padding: "7px 11px", fontSize: 12.5, fontWeight: 800, color: C.inkSoft, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 },
   draftStarOn: { background: "#fff5e6", borderColor: C.honey, color: C.honeyDk },
