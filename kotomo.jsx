@@ -157,6 +157,27 @@ async function loadState() { try { const v = await Store.get(SKEY); return v ? J
 // 返回 true/false：失败不再静默吞，交给上层提示用户（避免数据无声丢失）
 async function saveState(s) { try { await Store.set(SKEY, JSON.stringify(s)); return true; } catch (e) { console.error("[kotomo] saveState 失败", e); return false; } }
 
+// ── 开发者日志：手机上没浏览器控制台，把报错/关键事件记到本机（"设置 → 开发者日志"可查、可复制发给开发者）──
+const LOGKEY = "kotomo:logs";
+let _logs = [], _logsReady = false, _pending = [];
+const _safeStr = (o) => { try { return typeof o === "string" ? o : JSON.stringify(o); } catch { return String(o); } };
+const _capLogs = () => { if (_logs.length > 80) _logs = _logs.slice(-80); };
+const _persistLogs = () => { try { Store.set(LOGKEY, JSON.stringify(_logs)); } catch (e) {} };
+function logEvent(level, msg, detail) {
+  const e = { t: now(), level: level || "info", msg: String(msg == null ? "" : msg), detail: detail == null ? "" : _safeStr(detail) };
+  if (!_logsReady) { _pending.push(e); if (_pending.length > 80) _pending = _pending.slice(-80); return; } // 落盘前先缓冲，避免覆盖掉上次会话的历史
+  _logs.push(e); _capLogs(); _persistLogs();
+}
+(async () => { try { _logs = JSON.parse((await Store.get(LOGKEY)) || "[]"); } catch { _logs = []; } if (_pending.length) { _logs = _logs.concat(_pending); _pending = []; } _capLogs(); _logsReady = true; _persistLogs(); })();
+const getLogs = () => _logs;
+async function clearLogs() { _logs = []; _logsReady = true; _pending = []; try { await Store.set(LOGKEY, "[]"); } catch (e) {} }
+// 兜底捕获全局未处理错误（即使白屏/崩溃也留痕）
+if (typeof window !== "undefined" && !window.__kotomoLogHooked) {
+  window.__kotomoLogHooked = true;
+  window.addEventListener("error", (ev) => logEvent("error", "未捕获错误：" + ((ev && ev.message) || ev), (ev && ev.filename) ? (ev.filename + ":" + ev.lineno) : ""));
+  window.addEventListener("unhandledrejection", (ev) => logEvent("error", "未处理的异步错误", (ev && ev.reason && (ev.reason.message || ev.reason)) || ""));
+}
+
 // ── AI 调用（OpenAI 与 Anthropic 都支持，按密钥前缀自动识别）─────────────
 const OPENAI_MODEL = "gpt-5.4";               // OpenAI：查词/读音准确度优先（学习类应用错读音=学错，比省钱重要）；想更省可降 gpt-5.4-mini，想更强可升 gpt-5.5
 const ANTHROPIC_MODEL = "claude-haiku-4-5";   // Anthropic：又快又便宜；想更准可换 claude-sonnet-4-6 / claude-opus-4-8
@@ -186,7 +207,9 @@ async function callAI(system, userMsg) {
       });
       if (!res.ok) throw new Error("AI 请求失败 " + res.status);
       const data = await res.json();
-      return data.content.filter((b) => b.type === "text").map((b) => b.text).join("\n");
+      const out = data.content.filter((b) => b.type === "text").map((b) => b.text).join("\n");
+      logEvent("info", "AI 返回成功（Claude）", "");
+      return out;
     }
     // OpenAI：浏览器可直连，无需特殊头（密钥错误时聊天端点会被当成 CORS 报错，故在保存时用 validateKey 先校验）
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -203,8 +226,9 @@ async function callAI(system, userMsg) {
     const data = await res.json();
     const text = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
     if (!text) throw new Error("AI 返回为空");
+    logEvent("info", "AI 返回成功（OpenAI）", "");
     return text;
-  } finally { clearTimeout(timer); }
+  } catch (e) { logEvent("error", "AI 请求失败（" + providerOf(key) + "）", (e && e.message) || e); throw e; } finally { clearTimeout(timer); }
 }
 
 // 保存密钥时校验：用 GET /v1/models —— 即使密钥错误也带 CORS 头、能拿到清晰的 401，
@@ -922,29 +946,50 @@ function TypeInput({ aiReal, dir, onRows, play }) {
   </div>);
 }
 
+// 语音识别错误码 → 给非技术用户看的人话
+const voiceErrMsg = (c) => ({
+  "not-allowed": "麦克风没授权：点弹窗「允许」，或到 iPhone 设置→Safari→麦克风 改成允许。",
+  "service-not-allowed": "iPhone「加到主屏」的网页常被系统禁用语音。请改用「打字」，或在 Safari 里打开本网页再试。",
+  "no-speech": "没听到说话声，靠近麦克风、大声一点再说一次？",
+  "audio-capture": "找不到麦克风，检查一下设备。",
+  "network": "语音服务联网失败，检查网络后再试。",
+  "aborted": "识别被中断了，再点一次说话。",
+}[c] || ("识别没成功（" + c + "），可改用「打字」。"));
+
 function VoiceInput({ aiReal, dir, onRows, play }) {
-  const [listening, setListening] = useState(false), [heard, setHeard] = useState(""), [supported, setSupported] = useState(true), [busy, setBusy] = useState(false);
+  const [listening, setListening] = useState(false), [heard, setHeard] = useState(""), [supported, setSupported] = useState(true), [busy, setBusy] = useState(false), [err, setErr] = useState("");
   const isIOS = typeof navigator !== "undefined" && /iphone|ipad|ipod/i.test(navigator.userAgent || "");
-  const recRef = useRef(null);
-  useEffect(() => { const SR = window.SpeechRecognition || window.webkitSpeechRecognition; if (!SR) { setSupported(false); return; }
+  const recRef = useRef(null), heardRef = useRef("");
+  useEffect(() => { const SR = window.SpeechRecognition || window.webkitSpeechRecognition; if (!SR) { setSupported(false); logEvent("warn", "本浏览器不支持语音识别", (typeof navigator !== "undefined" && navigator.userAgent) || ""); return; }
     const r = new SR(); r.lang = "ja-JP"; r.interimResults = true; r.continuous = true;
-    r.onresult = (e) => { let t = ""; for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript; setHeard(t); };
-    r.onend = () => setListening(false); recRef.current = r; return () => { try { r.stop(); } catch {} }; }, []);
-  const toggle = () => { if (!recRef.current) return; if (listening) { recRef.current.stop(); setListening(false); } else { setHeard(""); try { recRef.current.lang = dir === "zh" ? "zh-CN" : "ja-JP"; recRef.current.start(); setListening(true); play("listen"); } catch {} } };
-  const process = async () => { if (!heard.trim()) return; setBusy(true); play("tap"); let rows = [];
+    r.onresult = (e) => { let t = ""; for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript; heardRef.current = t; setHeard(t); };
+    r.onerror = (e) => { const code = (e && e.error) || "unknown"; logEvent("error", "语音识别出错", "code=" + code + " lang=" + r.lang); setListening(false); setErr(voiceErrMsg(code)); };
+    r.onend = () => { setListening(false); if (!heardRef.current.trim()) { logEvent("warn", "语音结束但没听到内容", "lang=" + r.lang); setErr((p) => p || "没听到内容，靠近麦克风再说一次？（iPhone 主屏网页可能被系统禁用语音，可改打字）"); } };
+    recRef.current = r; return () => { try { r.stop(); } catch (e) {} }; }, []);
+  const toggle = () => { if (!recRef.current) return; if (listening) { recRef.current.stop(); setListening(false); } else { setHeard(""); heardRef.current = ""; setErr(""); try { recRef.current.lang = dir === "zh" ? "zh-CN" : "ja-JP"; recRef.current.start(); setListening(true); play("listen"); logEvent("info", "语音开始聆听", "lang=" + recRef.current.lang); } catch (e) { logEvent("error", "语音启动失败", (e && e.message) || e); setErr("麦克风启动失败：" + ((e && e.message) || e)); } } };
+  const process = async () => { if (!heard.trim()) return; setBusy(true); play("tap"); setErr(""); let rows = [];
     const sys = dir === "zh"
       ? "用户说的是中文。把内容拆成词，每个给日语母语者最常用的说法：term 用规范日语写法（别照搬中文字形，如『古董』写『骨董品』），reading 准确平假名（逐字核对促音/长音/浊音，不要罗马音）。输出 JSON 数组 {term,reading,meaning:中文,pos,freq,loan}。只输出 JSON。"
       : "用户说的是日语。拆成日语词条，每项 term 用规范写法、reading 准确平假名（核对促音/长音/浊音，不要罗马音）、meaning 地道中文：{term,reading,meaning,pos,freq,loan}。只输出 JSON 数组。";
     const offline = (w) => dir === "zh" ? Promise.resolve({ term: "", reading: "", meaning: w, pos: "other", freq: false }) : localAutoFill(w);
-    if (aiReal) { try { rows = JSON.parse(stripFence(await callAI(sys, heard))); } catch { rows = await Promise.all(heard.split(/[\s、。,，]+/).filter(Boolean).map(offline)); } }
-    else rows = await Promise.all(heard.split(/[\s、。,，]+/).filter(Boolean).map(offline));
-    onRows(rows); setHeard(""); setBusy(false); play("coin"); };
+    try {
+      if (aiReal) { try { rows = JSON.parse(stripFence(await callAI(sys, heard))); } catch (e) { logEvent("warn", "语音转换 AI 失败，回退离线", (e && e.message) || e); rows = await Promise.all(heard.split(/[\s、。,，]+/).filter(Boolean).map(offline)); } }
+      else rows = await Promise.all(heard.split(/[\s、。,，]+/).filter(Boolean).map(offline));
+      if (!Array.isArray(rows)) rows = (rows && rows.term) ? [rows] : [];
+      rows = rows.filter((r) => r && (r.term || r.meaning));
+      logEvent("info", "语音转成词条", "听到「" + heard + "」→ " + rows.length + " 条");
+      if (rows.length === 0) setErr("没能转出词条（" + (dir === "zh" ? "中→日需开真AI" : "换种说法或改打字试试") + "）。");
+      else { onRows(rows); setHeard(""); heardRef.current = ""; }
+    } catch (e) { logEvent("error", "语音转换失败", (e && e.message) || e); setErr("转换出错：" + ((e && e.message) || e)); }
+    finally { setBusy(false); play("coin"); }
+  };
   return (<div className="card" style={S.padCard}>
     <div style={S.howto}>{dir === "zh" ? "说中文，转成对应的日语词条（中→日 需开 AI）。" : "看剧/逛街听到的日语词，直接说出来，自动转成词条。"}</div>
     {!supported && <div style={S.warnBox}>此浏览器不支持语音，请用 Chrome，或改"打字"。</div>}
     {isIOS && <div style={S.tip}>iPhone 网页版每次会问麦克风权限（苹果系统对网页的限制，非故障）。嫌烦可改用「打字」，AI/离线一样自动补全。</div>}
     <button className={"pressable " + (listening ? "pulse-rec" : "")} style={{ ...S.micBtn, background: listening ? C.blush : C.honey, boxShadow: "0 6px 0 " + (listening ? "#c97a64" : C.honeyDk) }} onClick={toggle} disabled={!supported}>
       <span style={{ fontSize: 30 }}>{listening ? "🔴" : "🎙️"}</span><span>{listening ? "聆听中…点击停止" : "点击说话"}</span></button>
+    {err && <div style={S.warnBox}>{err}</div>}
     {heard && <div style={S.heardBox}>"{heard}"</div>}
     {heard && <button className="pressable" style={{ ...S.bigBtn }} onClick={process} disabled={busy}>{busy ? "转换中…" : "✨ 转成词条"}</button>}
   </div>);
@@ -1159,6 +1204,42 @@ function MiniCalendar({ calendar }) {
 }
 
 // ── 设置 ───────────────────────────────────────────────
+// 开发者日志查看器：列出本机记录的报错/事件，可复制发给开发者、可清空
+const fmtLogTime = (t) => { const d = new Date(t); const p = (n) => String(n).padStart(2, "0"); return p(d.getMonth() + 1) + "-" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds()); };
+const _logColor = (lv) => lv === "error" ? "#c4684f" : lv === "warn" ? C.honeyDk : C.matchaDk;
+function fallbackCopy(text) { try { const ta = document.createElement("textarea"); ta.value = text; ta.style.position = "fixed"; ta.style.top = "0"; ta.style.opacity = "0"; document.body.appendChild(ta); ta.focus(); ta.select(); document.execCommand("copy"); document.body.removeChild(ta); return true; } catch (e) { return false; } }
+function LogViewer({ play }) {
+  const [open, setOpen] = useState(false), [tick, setTick] = useState(0), [msg, setMsg] = useState("");
+  const logs = getLogs().slice().reverse();
+  const copyAll = () => {
+    const text = getLogs().map((l) => fmtLogTime(l.t) + " [" + l.level + "] " + l.msg + (l.detail ? " | " + l.detail : "")).join("\n") || "（暂无日志）";
+    const ok = () => { setMsg("已复制 ✓ 可粘贴发给开发者"); play && play("pop"); setTimeout(() => setMsg(""), 2500); };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(ok).catch(() => { setMsg(fallbackCopy(text) ? "已复制 ✓" : "复制失败，请长按下方文字手动复制"); });
+    else setMsg(fallbackCopy(text) ? "已复制 ✓" : "复制失败，请长按下方文字手动复制");
+  };
+  const clear = async () => { await clearLogs(); setMsg("已清空"); setTick((x) => x + 1); play && play("tap"); setTimeout(() => setMsg(""), 1500); };
+  return (<div style={{ marginTop: 14 }}>
+    <button className="pressable" style={{ width: "100%", border: "none", background: "#f3e8d6", color: "#7a6244", borderRadius: 12, padding: "11px 13px", fontWeight: 800, fontSize: 13, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }} onClick={() => { setOpen((o) => !o); setTick((x) => x + 1); play && play("tap"); }}>🛠 开发者日志（{getLogs().length}）· 出错时这里记原因 {open ? "▲" : "▼"}</button>
+    {open && <div style={{ marginTop: 8 }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+        <button className="pressable" style={{ background: C.honey, color: "#fff", border: "none", borderRadius: 12, padding: "8px 14px", fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 4px 0 " + C.honeyDk }} onClick={copyAll}>📋 复制全部</button>
+        <button className="pressable" style={{ border: "2px solid #ecdfca", background: "#fff", color: C.inkSoft, borderRadius: 12, padding: "8px 14px", fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }} onClick={() => { setTick((x) => x + 1); play && play("tap"); }}>↻ 刷新</button>
+        <button className="pressable" style={{ border: "2px solid #f0ddd5", background: "#fff", color: C.blush, borderRadius: 12, padding: "8px 14px", fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }} onClick={clear}>🗑️ 清空</button>
+      </div>
+      {msg && <div style={{ ...S.setNote, color: C.matchaDk, fontWeight: 800 }}>{msg}</div>}
+      {logs.length === 0 ? <div style={S.empty}>暂无日志 — 出问题时这里会自动记录 🌱</div> :
+        <div style={{ maxHeight: 320, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6 }}>{logs.map((l, i) => (
+          <div key={i} style={{ background: "#fff", border: "1px solid #eee2cf", borderRadius: 10, padding: "8px 10px", fontSize: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+              <span style={{ fontWeight: 800, color: _logColor(l.level) }}>{l.level === "error" ? "● 错误" : l.level === "warn" ? "● 注意" : "● 信息"}</span>
+              <span style={{ color: C.inkSoft }}>{fmtLogTime(l.t)}</span></div>
+            <div style={{ fontWeight: 700, color: C.ink, marginTop: 2 }}>{l.msg}</div>
+            {l.detail && <div style={{ color: C.inkSoft, marginTop: 2, wordBreak: "break-all" }}>{l.detail}</div>}
+          </div>))}</div>}
+    </div>}
+  </div>);
+}
+
 function Settings({ ctx }) {
   const { st, play, setSetting } = ctx;
   const [aiKey, setAiKey] = useState(""); const [keyMsg, setKeyMsg] = useState("");
@@ -1184,6 +1265,7 @@ function Settings({ ctx }) {
     </div>
     {keyMsg && <div style={{ ...S.setNote, color: keyMsg.indexOf("✗") === 0 ? C.blush : C.matchaDk, fontWeight: 800 }}>{keyMsg}</div>}
     <div style={S.setNote}>开「真AI」需要密钥：OpenAI（platform.openai.com 生成，<b>sk-</b> 开头）或 Anthropic Claude（console.anthropic.com 生成，<b>sk-ant-</b> 开头）都行，贴哪家就自动用哪家，按用量付费、很便宜（查一个词不到一分钱）。没密钥或没网时自动降级离线 kuromoji（只补读音和词性，意思自己填）。</div>
+    <LogViewer play={play} />
     <div style={S.setNote}>当前版本：第 0 步验证版 · 数据存在本机 · 语言：日语<br/>云同步、拍照为后续版本。</div>
     <div style={S.setNote}>ことも（词崽）· 你遇到的词，才是你该学的词。</div>
   </div>);
