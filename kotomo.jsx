@@ -896,7 +896,7 @@ function AddWords({ ctx }) {
   // ✨展开：先把当前这批待确认词存进库（被点的那条带固定 id，其余正常入库），再进入"展开学习"对它深挖/推荐关联词，避免丢草稿
   const expandDraft = (i) => { const r = draft[i]; if (!r || !r.term || !r.term.trim()) return; const id = uid(); addWords(draft.map((d, idx) => idx === i ? { ...d, id } : d)); setDraft([]); setExpandWord({ ...r, id }); setTab("expand"); play("tap"); };
   const commit = () => { addWords(draft); setDraft([]); play("win"); ctx.setView("library"); };
-  return (<div className="fade-in"><BackRow ctx={ctx} title="🎙️ 加词" />
+  return (<div className="fade-in"><BackRow ctx={ctx} title="🎙️ 加词" onBack={tab === "expand" ? () => { setExpandWord(null); ctx.setView("library"); } : undefined} />
     {tab !== "expand" && <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>{[["ja", "日 → 中（输入日语）"], ["zh", "中 → 日（输入中文）"]].map(([k, l]) => (
       <button key={k} className="pressable" style={{ ...S.seg, flex: 1, ...(dir === k ? S.segOn : {}) }} onClick={() => { setDir(k); play("tap"); }}>{l}</button>))}</div>}
     <div style={S.segRow}>{[["type", "⌨️ 打字"], ["voice", "🎙️ 语音"], ["expand", "✨ 展开学习"]].map(([k, l]) => (
@@ -1003,6 +1003,7 @@ function ExpandTool({ ctx, initialWord }) {
   const [related, setRelated] = useState(null), [relSel, setRelSel] = useState({});
   const words = st.words.filter((w) => (w.type || "word") === "word");
   const reset = () => { setPicked(null); setData(null); setRelated(null); setSel({}); setRelSel({}); };
+  const backToMenu = () => { setData(null); setRelated(null); setSel({}); setRelSel({}); }; // 返回到这个词的菜单（不丢词、不回选词器）
   // 深挖：例句/近义/语法
   const run = async (w) => { setPicked(w); setBusy(true); play("tap"); setData(null); setRelated(null); setSel({}); let d;
     if (aiReal) { try { const sys = "你是日语老师。给定一个日语词，输出 JSON：{examples:[{jp,zh}](2条简单例句),synonyms:[{term,reading,meaning}](1-2个近义/相关词),grammar:[{point,note}](1个相关语法点)}。只输出 JSON。"; d = JSON.parse(stripFence(await callAI(sys, w.term + "（" + w.meaning + "）"))); } catch { d = mockExpand(w); } }
@@ -1062,7 +1063,7 @@ function ExpandTool({ ctx, initialWord }) {
           <div style={{ flex: 1, textAlign: "left", overflow: "hidden" }}><div style={{ fontWeight: 800, fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{termWithLoan(r)}</div><div style={{ fontSize: 11, color: C.inkSoft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.meaning}</div></div></button>); })}</div>
       <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
         <button className="pressable" disabled={relCount === 0} style={{ ...S.bigBtn, flex: 1, opacity: relCount ? 1 : 0.5 }} onClick={harvestRelated}>✅ 加入 {relCount} 个词</button>
-        <button className="pressable" style={S.ghostBtn} onClick={reset}>← 返回</button></div>
+        <button className="pressable" style={S.ghostBtn} onClick={backToMenu}>← 返回</button></div>
     </div>)}
 
     {/* 深挖结果 */}
@@ -1079,7 +1080,7 @@ function ExpandTool({ ctx, initialWord }) {
           <span style={S.checkbox}>{sel["gr" + i] ? "☑️" : "⬜"}</span><div><span style={{ fontWeight: 800 }}>{g.point}</span><div style={{ fontSize: 12, color: C.inkSoft }}>{g.note}</div></div></label>))}</>}
       <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
         <button className="pressable" style={{ ...S.bigBtn, flex: 1 }} onClick={harvest}>✅ 收割勾选项</button>
-        <button className="pressable" style={S.ghostBtn} onClick={reset}>← 返回</button></div>
+        <button className="pressable" style={S.ghostBtn} onClick={backToMenu}>← 返回</button></div>
     </div>)}
   </div>);
 }
@@ -1273,7 +1274,7 @@ function Settings({ ctx }) {
 const Row = ({ label, hint, children }) => (<div style={S.setRow}><div><div style={{ fontWeight: 800 }}>{label}</div><div style={{ fontSize: 12, color: C.inkSoft }}>{hint}</div></div>{children}</div>);
 const Switch = ({ on, label, onClick }) => (<button className="pressable" style={{ ...S.switch, background: on ? C.matcha : "#d8cdbb" }} onClick={onClick}><span style={{ ...S.switchKnob, transform: on ? "translateX(20px)" : "translateX(0)" }} />{label && <span style={S.switchLabel}>{label}</span>}</button>);
 
-const BackRow = ({ ctx, title }) => (<div style={S.backRow}><button className="pressable" style={S.backBtn} onClick={() => { ctx.play("tap"); ctx.setView("home"); }}>← 返回</button><h2 style={S.pageTitle}>{title}</h2></div>);
+const BackRow = ({ ctx, title, onBack }) => (<div style={S.backRow}><button className="pressable" style={S.backBtn} onClick={() => { ctx.play("tap"); onBack ? onBack() : ctx.setView("home"); }}>← 返回</button><h2 style={S.pageTitle}>{title}</h2></div>);
 
 const S = {
   shell: { minHeight: "100vh", background: "linear-gradient(180deg,#fdf3e3 0%," + C.cream + " 45%)", color: C.ink, fontFamily: "'Zen Maru Gothic','PingFang SC','Microsoft YaHei',sans-serif", position: "relative", overflow: "hidden" },
