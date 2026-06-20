@@ -1041,6 +1041,7 @@ const HL_COLORS = ["", "#ffe6a8", "#cdeccd", "#cfe4f0", "#f0d2e4"]; // 高亮笔
 function Library({ ctx }) {
   const { st, play, updateWord, delWord } = ctx;
   const [filter, setFilter] = useState("all");
+  const [order, setOrder] = useState("new"); // new=从新到旧（默认，先看最近加的）, old=从旧到新
   const [editing, setEditing] = useState(null);
   const words = st.words;
   const shown = filter === "all" ? words
@@ -1048,8 +1049,15 @@ function Library({ ctx }) {
     : filter === "loan" ? words.filter((w) => w.loan)
     : filter === "mastered" ? words.filter((w) => w.mastered || (w.srs && w.srs.level >= MASTER_LEVEL))
     : words.filter((w) => (w.pos || "other") === filter);
+  // 词库按加入先后排（words 数组本身是从旧到新追加的）：从新到旧=倒序，从旧到新=原序
+  const ordered = order === "new" ? [...shown].reverse() : shown;
   return (<div className="fade-in"><BackRow ctx={ctx} title="📚 我的词库" />
     <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.matcha, boxShadow: "0 5px 0 " + C.matchaDk }} onClick={() => { play("tap"); ctx.setView("add"); }}>🎙️ 去加词（打字/语音/展开）</button>
+    <div style={{ ...S.filterRow, marginBottom: 8 }}>
+      <span style={{ fontSize: 12.5, fontWeight: 800, color: "#7a6244", alignSelf: "center", marginRight: 2 }}>排序</span>
+      <Chip on={order === "new"} onClick={() => { setOrder("new"); play("tap"); }}>🆕 从新到旧</Chip>
+      <Chip on={order === "old"} onClick={() => { setOrder("old"); play("tap"); }}>📜 从旧到新</Chip>
+    </div>
     <div style={S.filterRow}>
       <Chip on={filter === "all"} onClick={() => { setFilter("all"); play("tap"); }}>全部 {words.length}</Chip>
       <Chip on={filter === "freq"} onClick={() => { setFilter("freq"); play("tap"); }}>⭐高频 {words.filter((w) => w.freq).length}</Chip>
@@ -1057,8 +1065,8 @@ function Library({ ctx }) {
       <Chip on={filter === "mastered"} onClick={() => { setFilter("mastered"); play("tap"); }}>🌸已掌握 {countMastered(words)}</Chip>
       {POS.map((p) => { const n = words.filter((w) => (w.pos || "other") === p.key).length; if (!n) return null; return <Chip key={p.key} on={filter === p.key} onClick={() => { setFilter(p.key); play("tap"); }}>{p.emoji}{p.label} {n}</Chip>; })}
     </div>
-    <div style={S.list}>{shown.length === 0 && <div style={S.empty}>这里还没有词 🌱</div>}
-      {shown.map((w) => { const p = posInfo(w.pos); const done = w.mastered || (w.srs && w.srs.level >= MASTER_LEVEL); const open = editing === w.id;
+    <div style={S.list}>{ordered.length === 0 && <div style={S.empty}>这里还没有词 🌱</div>}
+      {ordered.map((w) => { const p = posInfo(w.pos); const done = w.mastered || (w.srs && w.srs.level >= MASTER_LEVEL); const open = editing === w.id;
         return [(<div key={w.id} className="card" style={{ ...S.wordRow, ...(w.hl ? { background: w.hl } : {}) }}>
           <span style={{ ...S.dot, background: p.color + "33" }} onClick={() => speakJa(w.term)}>{p.emoji}</span>
           <div style={{ flex: 1 }} onClick={() => { play("tap"); setEditing(open ? null : w.id); }}>
