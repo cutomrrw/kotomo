@@ -895,7 +895,7 @@ function AddWords({ ctx }) {
   const editD = (i, k, v) => setDraft((d) => d.map((r, idx) => idx === i ? { ...r, [k]: v } : r));
   const delD = (i) => setDraft((d) => d.filter((_, idx) => idx !== i));
   // ✨展开：先把当前这批待确认词存进库（被点的那条带固定 id，其余正常入库），再进入"展开学习"对它深挖/推荐关联词，避免丢草稿
-  const expandDraft = (i) => { const r = draft[i]; if (!r || !r.term || !r.term.trim()) return; const id = uid(); addWords(draft.map((d, idx) => idx === i ? { ...d, id } : d)); setDraft([]); setExpandWord({ ...r, id }); setTab("expand"); play("tap"); };
+  const expandDraft = (i) => { const r = draft[i]; if (!r || !r.term || !r.term.trim()) return; const id = uid(); addWords([{ ...r, id }]); setDraft((d) => d.filter((_, idx) => idx !== i)); setExpandWord({ ...r, id }); setTab("expand"); play("tap"); }; // 只把被点的这条入库，其余待确认保留
   const commit = () => { addWords(draft); setDraft([]); play("win"); ctx.setView("library"); };
   return (<div className="fade-in"><BackRow ctx={ctx} title="🎙️ 加词" onBack={tab === "expand" ? () => { if (expandBackRef.current && expandBackRef.current()) return; setExpandWord(null); setTab("type"); } : undefined} />
     {tab !== "expand" && <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>{[["ja", "日 → 中（输入日语）"], ["zh", "中 → 日（输入中文）"]].map(([k, l]) => (
@@ -904,7 +904,7 @@ function AddWords({ ctx }) {
       <button key={k} style={{ ...S.seg, ...(tab === k ? S.segOn : {}) }} onClick={() => { setTab(k); setExpandWord(null); play("tap"); }}>{l}</button>))}</div>
     {tab === "type" && <TypeInput aiReal={aiReal} dir={dir} onRows={addDraft} play={play} />}
     {tab === "voice" && <VoiceInput aiReal={aiReal} dir={dir} onRows={addDraft} play={play} />}
-    {tab === "expand" && <ExpandTool ctx={ctx} initialWord={expandWord} backRef={expandBackRef} />}
+    {tab === "expand" && <ExpandTool ctx={ctx} initialWord={expandWord} backRef={expandBackRef} onDone={() => { setExpandWord(null); setTab("type"); }} />}
     {draft.length > 0 && tab !== "expand" && (<div style={{ marginTop: 16 }}>
       <div style={S.sectTitle}>📥 待确认 ({draft.length}) · 点⭐标高频，🔤标外来词</div>
       <div style={S.list}>{draft.map((r, i) => (
@@ -1009,7 +1009,7 @@ function VoiceInput({ aiReal, dir, onRows, play }) {
 }
 
 // 展开学习：选词库里一个词 → AI铺开例句/近义/语法 → 勾选收割进该词
-function ExpandTool({ ctx, initialWord, backRef }) {
+function ExpandTool({ ctx, initialWord, backRef, onDone }) {
   const { st, play, updateWord } = ctx;
   const aiReal = st.settings.aiReal;
   const [picked, setPicked] = useState(initialWord || null), [busy, setBusy] = useState(false), [data, setData] = useState(null), [sel, setSel] = useState({});
@@ -1041,12 +1041,12 @@ function ExpandTool({ ctx, initialWord, backRef }) {
     const keepEx = (data.examples || []).filter((_, i) => sel["ex" + i]);
     const keepGr = (data.grammar || []).filter((_, i) => sel["gr" + i]);
     if (keepEx.length || keepGr.length) updateWord(picked.id, (w) => ({ ...w, expanded: { examples: keepEx, synonyms: [], grammar: keepGr } }));
-    play("win"); reset(); ctx.setView("library");
+    play("win"); reset(); onDone ? onDone() : ctx.setView("library");
   };
   const harvestRelated = () => {
     const add = related.filter((_, i) => relSel[i]);
     if (add.length) ctx.addWords(add);
-    play("win"); reset(); ctx.setView("library");
+    play("win"); reset(); onDone ? onDone() : ctx.setView("library");
   };
   const toggle = (k) => { play("tap"); setSel((s) => ({ ...s, [k]: !s[k] })); };
   const toggleRel = (i) => { play("tap"); setRelSel((s) => ({ ...s, [i]: !s[i] })); };
