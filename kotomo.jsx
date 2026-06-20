@@ -890,35 +890,38 @@ function AddWords({ ctx }) {
   const [dir, setDir] = useState("ja"); // 录入方向：ja=日→中（输入日语），zh=中→日（输入中文）
   const [draft, setDraft] = useState([]);
   const [expandWord, setExpandWord] = useState(null); // 某条"待确认"点✨展开时的目标词
+  const expandBackRef = useRef(null); // 展开学习的"返回"逐级处理：结果→该词菜单→(手动模式)选词器→交还父级退出
   const addDraft = (rows) => setDraft((d) => [...rows, ...d]);
   const editD = (i, k, v) => setDraft((d) => d.map((r, idx) => idx === i ? { ...r, [k]: v } : r));
   const delD = (i) => setDraft((d) => d.filter((_, idx) => idx !== i));
   // ✨展开：先把当前这批待确认词存进库（被点的那条带固定 id，其余正常入库），再进入"展开学习"对它深挖/推荐关联词，避免丢草稿
   const expandDraft = (i) => { const r = draft[i]; if (!r || !r.term || !r.term.trim()) return; const id = uid(); addWords(draft.map((d, idx) => idx === i ? { ...d, id } : d)); setDraft([]); setExpandWord({ ...r, id }); setTab("expand"); play("tap"); };
   const commit = () => { addWords(draft); setDraft([]); play("win"); ctx.setView("library"); };
-  return (<div className="fade-in"><BackRow ctx={ctx} title="🎙️ 加词" onBack={tab === "expand" ? () => { setExpandWord(null); ctx.setView("library"); } : undefined} />
+  return (<div className="fade-in"><BackRow ctx={ctx} title="🎙️ 加词" onBack={tab === "expand" ? () => { if (expandBackRef.current && expandBackRef.current()) return; setExpandWord(null); setTab("type"); } : undefined} />
     {tab !== "expand" && <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>{[["ja", "日 → 中（输入日语）"], ["zh", "中 → 日（输入中文）"]].map(([k, l]) => (
       <button key={k} className="pressable" style={{ ...S.seg, flex: 1, ...(dir === k ? S.segOn : {}) }} onClick={() => { setDir(k); play("tap"); }}>{l}</button>))}</div>}
     <div style={S.segRow}>{[["type", "⌨️ 打字"], ["voice", "🎙️ 语音"], ["expand", "✨ 展开学习"]].map(([k, l]) => (
       <button key={k} style={{ ...S.seg, ...(tab === k ? S.segOn : {}) }} onClick={() => { setTab(k); setExpandWord(null); play("tap"); }}>{l}</button>))}</div>
     {tab === "type" && <TypeInput aiReal={aiReal} dir={dir} onRows={addDraft} play={play} />}
     {tab === "voice" && <VoiceInput aiReal={aiReal} dir={dir} onRows={addDraft} play={play} />}
-    {tab === "expand" && <ExpandTool ctx={ctx} initialWord={expandWord} />}
+    {tab === "expand" && <ExpandTool ctx={ctx} initialWord={expandWord} backRef={expandBackRef} />}
     {draft.length > 0 && tab !== "expand" && (<div style={{ marginTop: 16 }}>
       <div style={S.sectTitle}>📥 待确认 ({draft.length}) · 点⭐标高频，🔤标外来词</div>
       <div style={S.list}>{draft.map((r, i) => (
         <div key={i} className="card" style={S.draftRow}>
           <div style={S.draftHead}>
+            {r.type === "sentence" && <span style={S.draftBadge}>📝 整句</span>}
             <select value={r.pos} onChange={(e) => editD(i, "pos", e.target.value)} style={S.draftPos}>{POS.map((p) => <option key={p.key} value={p.key}>{p.emoji}{p.label}</option>)}</select>
-            <button style={S.draftExpand} onClick={() => expandDraft(i)}>✨ 展开</button>
+            {r.type !== "sentence" && <button style={S.draftExpand} onClick={() => expandDraft(i)}>✨ 展开</button>}
             <button style={{ ...S.draftStar, ...(r.freq ? S.draftStarOn : {}) }} onClick={() => editD(i, "freq", !r.freq)}>⭐ 高频</button>
             <button style={S.draftDel} onClick={() => delD(i)}>✕ 删</button>
           </div>
-          <label style={S.draftField}><span style={S.draftLabel}>单词</span><input style={S.draftIn} value={r.term} placeholder="日语" onChange={(e) => editD(i, "term", e.target.value)} /></label>
+          <label style={S.draftField}><span style={S.draftLabel}>{r.type === "sentence" ? "句子" : "单词"}</span><input style={S.draftIn} value={r.term} placeholder={r.type === "sentence" ? "日语整句" : "日语"} onChange={(e) => editD(i, "term", e.target.value)} /></label>
           <label style={S.draftField}><span style={S.draftLabel}>读音</span><input style={S.draftIn} value={r.reading} placeholder="假名" onChange={(e) => editD(i, "reading", e.target.value)} /></label>
           <label style={S.draftField}><span style={S.draftLabel}>意思</span><input style={S.draftIn} value={r.meaning} placeholder="中文" onChange={(e) => editD(i, "meaning", e.target.value)} /></label>
+          {r.note && <div style={S.draftNote}>✏️ 纠错：{r.note}</div>}
         </div>))}</div>
-      <button className="pressable" style={{ ...S.bigBtn, marginTop: 12 }} onClick={commit}>✅ 全部加入（{draft.filter((r) => r.term.trim()).length} 词）</button>
+      <button className="pressable" style={{ ...S.bigBtn, marginTop: 12 }} onClick={commit}>✅ 全部加入（{draft.filter((r) => (r.term || "").trim()).length} 条）</button>
     </div>)}
   </div>);
 }
@@ -968,16 +971,26 @@ function VoiceInput({ aiReal, dir, onRows, play }) {
     recRef.current = r; return () => { try { r.stop(); } catch (e) {} }; }, []);
   const toggle = () => { if (!recRef.current) return; if (listening) { recRef.current.stop(); setListening(false); } else { setHeard(""); heardRef.current = ""; setErr(""); try { recRef.current.lang = dir === "zh" ? "zh-CN" : "ja-JP"; recRef.current.start(); setListening(true); play("listen"); logEvent("info", "语音开始聆听", "lang=" + recRef.current.lang); } catch (e) { logEvent("error", "语音启动失败", (e && e.message) || e); setErr("麦克风启动失败：" + ((e && e.message) || e)); } } };
   const process = async () => { if (!heard.trim()) return; setBusy(true); play("tap"); setErr(""); let rows = [];
+    // 整句也要出来 + 纠错：让 AI 同时返回 纠正后的整句(sentence) 和 拆出的词(words)
     const sys = dir === "zh"
-      ? "用户说的是中文。把内容拆成词，每个给日语母语者最常用的说法：term 用规范日语写法（别照搬中文字形，如『古董』写『骨董品』），reading 准确平假名（逐字核对促音/长音/浊音，不要罗马音）。输出 JSON 数组 {term,reading,meaning:中文,pos,freq,loan}。只输出 JSON。"
-      : "用户说的是日语。拆成日语词条，每项 term 用规范写法、reading 准确平假名（核对促音/长音/浊音，不要罗马音）、meaning 地道中文：{term,reading,meaning,pos,freq,loan}。只输出 JSON 数组。";
+      ? "用户念了一句中文（语音识别，可能有错字）。请：①给地道的日语整句说法；②整句假名读音；③拆出其中关键的日语词。输出 JSON：{sentence:{term:日语整句,reading:整句假名,meaning:对应中文,note:\"\"},words:[{term,reading:准确平假名,meaning:中文,pos,freq,loan}...]}。term 用规范日语写法。若用户只说了一个词而非整句，sentence 置 null。只输出 JSON。"
+      : "用户念了一句日语（语音识别，可能有错别字/漏字/同音错）。请：①把它纠正成正确通顺的日语整句；②整句假名读音；③整句中文翻译；④拆出其中值得学的词。输出 JSON：{sentence:{term:纠正后的日语整句,reading:整句假名读音,meaning:中文翻译,note:若识别明显有误就用中文简述纠正了什么、否则空字符串},words:[{term,reading:准确平假名,meaning:中文,pos,freq,loan}...]}。若用户只说了一个词而非整句，sentence 置 null。只输出 JSON。";
     const offline = (w) => dir === "zh" ? Promise.resolve({ term: "", reading: "", meaning: w, pos: "other", freq: false }) : localAutoFill(w);
     try {
-      if (aiReal) { try { rows = JSON.parse(stripFence(await callAI(sys, heard))); } catch (e) { logEvent("warn", "语音转换 AI 失败，回退离线", (e && e.message) || e); rows = await Promise.all(heard.split(/[\s、。,，]+/).filter(Boolean).map(offline)); } }
-      else rows = await Promise.all(heard.split(/[\s、。,，]+/).filter(Boolean).map(offline));
-      if (!Array.isArray(rows)) rows = (rows && rows.term) ? [rows] : [];
+      if (aiReal) {
+        try {
+          const d = JSON.parse(stripFence(await callAI(sys, heard)));
+          if (Array.isArray(d)) rows = d.slice(); // 兼容：模型直接给了词数组（旧格式）
+          else {
+            if (d && d.sentence && d.sentence.term) rows.push({ type: "sentence", term: d.sentence.term, reading: d.sentence.reading || "", meaning: d.sentence.meaning || "", pos: "phrase", freq: false, note: d.sentence.note || "" });
+            if (d && Array.isArray(d.words)) rows = rows.concat(d.words);
+          }
+        } catch (e) { logEvent("warn", "语音转换 AI 失败，回退离线", (e && e.message) || e); rows = await Promise.all(heard.split(/[\s、。,，]+/).filter(Boolean).map(offline)); }
+      } else rows = await Promise.all(heard.split(/[\s、。,，]+/).filter(Boolean).map(offline));
+      if (!Array.isArray(rows)) rows = [];
       rows = rows.filter((r) => r && (r.term || r.meaning));
-      logEvent("info", "语音转成词条", "听到「" + heard + "」→ " + rows.length + " 条");
+      const sentCount = rows.filter((r) => r.type === "sentence").length;
+      logEvent("info", "语音转成词条", "听到「" + heard + "」→ " + rows.length + " 条" + (sentCount ? "（含整句）" : ""));
       if (rows.length === 0) setErr("没能转出词条（" + (dir === "zh" ? "中→日需开真AI" : "换种说法或改打字试试") + "）。");
       else { onRows(rows); setHeard(""); heardRef.current = ""; }
     } catch (e) { logEvent("error", "语音转换失败", (e && e.message) || e); setErr("转换出错：" + ((e && e.message) || e)); }
@@ -996,7 +1009,7 @@ function VoiceInput({ aiReal, dir, onRows, play }) {
 }
 
 // 展开学习：选词库里一个词 → AI铺开例句/近义/语法 → 勾选收割进该词
-function ExpandTool({ ctx, initialWord }) {
+function ExpandTool({ ctx, initialWord, backRef }) {
   const { st, play, updateWord } = ctx;
   const aiReal = st.settings.aiReal;
   const [picked, setPicked] = useState(initialWord || null), [busy, setBusy] = useState(false), [data, setData] = useState(null), [sel, setSel] = useState({});
@@ -1004,6 +1017,12 @@ function ExpandTool({ ctx, initialWord }) {
   const words = st.words.filter((w) => (w.type || "word") === "word");
   const reset = () => { setPicked(null); setData(null); setRelated(null); setSel({}); setRelSel({}); };
   const backToMenu = () => { setData(null); setRelated(null); setSel({}); setRelSel({}); }; // 返回到这个词的菜单（不丢词、不回选词器）
+  // 把"返回"逐级处理交给父级顶部返回键复用：结果页→该词菜单；(手动选词时)词菜单→选词器；否则交还父级退出
+  useEffect(() => { if (!backRef) return; backRef.current = () => {
+    if (data || related) { backToMenu(); return true; }
+    if (picked && !initialWord) { reset(); return true; }
+    return false;
+  }; });
   // 深挖：例句/近义/语法
   const run = async (w) => { setPicked(w); setBusy(true); play("tap"); setData(null); setRelated(null); setSel({}); let d;
     if (aiReal) { try { const sys = "你是日语老师。给定一个日语词，输出 JSON：{examples:[{jp,zh}](2条简单例句),synonyms:[{term,reading,meaning}](1-2个近义/相关词),grammar:[{point,note}](1个相关语法点)}。只输出 JSON。"; d = JSON.parse(stripFence(await callAI(sys, w.term + "（" + w.meaning + "）"))); } catch { d = mockExpand(w); } }
@@ -1371,6 +1390,8 @@ const S = {
   draftRow: { display: "flex", flexDirection: "column", gap: 9, borderRadius: 14, padding: 13 },
   draftHead: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 },
   draftExpand: { background: "#f4fbee", border: "2px solid #cdeccd", borderRadius: 10, padding: "7px 11px", fontSize: 12.5, fontWeight: 800, color: C.matchaDk, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 },
+  draftBadge: { background: "#eaf2fb", border: "2px solid #cfe4f0", color: "#4d77a8", borderRadius: 10, padding: "6px 9px", fontSize: 12, fontWeight: 800, flexShrink: 0 },
+  draftNote: { fontSize: 11.5, color: C.matchaDk, lineHeight: 1.5, marginTop: 1 },
   draftPos: { border: "2px solid #ecdfca", borderRadius: 10, padding: "8px 10px", fontFamily: "inherit", fontWeight: 700, fontSize: 13, background: "#fff", color: C.ink, flexShrink: 0 },
   draftStar: { background: "#fff", border: "2px solid #ecdfca", borderRadius: 10, padding: "7px 11px", fontSize: 12.5, fontWeight: 800, color: C.inkSoft, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 },
   draftStarOn: { background: "#fff5e6", borderColor: C.honey, color: C.honeyDk },
