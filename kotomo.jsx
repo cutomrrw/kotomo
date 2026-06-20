@@ -29,6 +29,12 @@ const DAY = 864e5;
 const todayStr = () => new Date().toDateString();
 const now = () => Date.now();
 
+// ── 猫 IP「布丁」：手绘灰胖英短(摊手趴 / 耷拉斜眼 / 流鼻涕 / 丑萌)。单文件内联，轻量无滤镜 ──
+const CAT_SVG = `<svg style="width:100%;height:100%;display:block;overflow:visible" viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg" role="img"><defs><radialGradient id="drip" cx="40%" cy="30%" r="70%"><stop offset="0%" stop-color="#ffffff"/><stop offset="55%" stop-color="#dff0f7"/><stop offset="100%" stop-color="#b9dcea"/></radialGradient></defs><ellipse cx="121" cy="206" rx="78" ry="13" fill="#000000" opacity="0.07"/><g stroke="#444444" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"><path d="M60 188 q-22 2 -27 -7 q-4 -9 7 -12 q9 -3 22 1 q4 8 -2 18 Z" fill="#d4d4d4"/><path d="M182 188 q22 2 27 -7 q4 -9 -7 -12 q-9 -3 -22 1 q-4 8 2 18 Z" fill="#d4d4d4"/><path d="M120 96 C 64 96, 30 124, 30 162 C 30 192, 62 204, 120 204 C 178 204, 212 192, 212 162 C 212 124, 176 96, 120 96 Z" fill="#d4d4d4"/><path d="M150 168 q-3 36 24 34 q15 -1 18 -16 q3 -16 -10 -27 q-18 -7 -32 9 Z" fill="#cfcfcf"/><path d="M178 184 q-4 18 16 18 q14 0 17 -13" fill="none" stroke-width="2.6"/><path d="M186 178 q-2 14 12 15" fill="none" stroke-width="2.2"/><path d="M195 174 q-1 12 11 13" fill="none" stroke-width="2.2"/></g><path d="M64 138 q34 -22 70 -8 q26 11 22 36 q-3 22 -30 26 q-44 6 -66 -16 q-14 -18 4 -38 Z" fill="#b6b6b6" opacity="0.6"/><g stroke="#444444" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"><path d="M85 100 q-13 8 -6 24 q5 11 18 6 q9 -4 8 -16 q-1 -16 -20 -14 Z" fill="#d4d4d4"/><path d="M122 96 q14 4 16 22 q1 12 -10 16 q-12 4 -18 -7 q-7 -16 12 -31 Z" fill="#d4d4d4"/><path d="M103 60 C 70 60, 50 82, 50 112 C 50 142, 74 158, 106 158 C 140 158, 162 138, 162 108 C 162 80, 138 60, 103 60 Z" fill="#d4d4d4"/><path d="M61 72 q-9 -22 6 -26 q14 -3 16 17 q-12 1 -22 9 Z" fill="#d4d4d4"/><path d="M146 72 q11 -22 -4 -27 q-15 -3 -18 17 q13 1 22 10 Z" fill="#d4d4d4"/></g><path d="M66 70 q-5 -13 3 -16 q8 -2 9 9 Z" fill="#f0a9b8" opacity="0.75"/><path d="M141 70 q6 -13 -2 -16 q-8 -2 -10 9 Z" fill="#f0a9b8" opacity="0.75"/><ellipse cx="74" cy="124" rx="14" ry="9" fill="#f4a7bd" opacity="0.55"/><ellipse cx="138" cy="120" rx="13" ry="8.5" fill="#f4a7bd" opacity="0.55"/><g><ellipse cx="89" cy="108" rx="13" ry="13.5" fill="#ffffff"/><path d="M76 108 a13 13.5 0 0 1 26 0 Z" fill="#cfa66f"/><circle cx="95" cy="110" r="8.2" fill="#e6a93b"/><circle cx="95" cy="110" r="3.6" fill="#3a2a12"/><circle cx="98" cy="107" r="2.1" fill="#ffffff"/><path d="M75 108 q13 -12 28 -1" fill="none" stroke="#444444" stroke-width="3.2" stroke-linecap="round"/></g><g><ellipse cx="126" cy="105" rx="12.5" ry="13" fill="#ffffff"/><path d="M113.5 105 a12.5 13 0 0 1 25 0 Z" fill="#cfa66f"/><circle cx="132" cy="107" r="7.8" fill="#e6a93b"/><circle cx="132" cy="107" r="3.4" fill="#3a2a12"/><circle cx="135" cy="104" r="2" fill="#ffffff"/><path d="M113 105 q12.5 -11 26 -1" fill="none" stroke="#444444" stroke-width="3.2" stroke-linecap="round"/></g><path d="M101 124 q9 6 18 1" fill="none" stroke="#444444" stroke-width="3" stroke-linecap="round"/><path d="M104 126 L110 132 L116 126 Z" fill="#e58b9c" stroke="#444444" stroke-width="2" stroke-linejoin="round"/><path d="M110 132 q-5 5 -11 4" fill="none" stroke="#444444" stroke-width="2.6" stroke-linecap="round"/><path d="M110 132 q5 5 11 4" fill="none" stroke="#444444" stroke-width="2.6" stroke-linecap="round"/><path d="M99 136 q-2 8 1 14 q3 6 8 4" fill="url(#drip)" stroke="#9cc8da" stroke-width="1.4"/><ellipse cx="101.5" cy="142" rx="2" ry="3" fill="#ffffff" opacity="0.85"/><path d="M68 100 q-12 -2 -22 3" fill="none" stroke="#444444" stroke-width="2" stroke-linecap="round" opacity="0.7"/><path d="M70 106 q-12 1 -22 7" fill="none" stroke="#444444" stroke-width="2" stroke-linecap="round" opacity="0.7"/><path d="M146 98 q11 -2 21 4" fill="none" stroke="#444444" stroke-width="2" stroke-linecap="round" opacity="0.7"/><path d="M145 104 q11 0 20 6" fill="none" stroke="#444444" stroke-width="2" stroke-linecap="round" opacity="0.7"/></svg>`;
+const Cat = ({ size = 100, bob = true }) => (
+  <div style={{ width: size, height: size, display: "inline-block", animation: bob ? "bob 3.5s ease-in-out infinite" : "none" }} dangerouslySetInnerHTML={{ __html: CAT_SVG }} />
+);
+
 // 兴趣场景
 const INTERESTS = [
   { id: "life", emoji: "🍜", label: "吃喝玩乐" },
@@ -615,7 +621,7 @@ function Home({ ctx }) {
       <div style={S.catWrap} className="pressable" onClick={() => { play("happy"); ctx.petLove(); }}>
         {decor.includes("cushion") && <div style={S.dCushion}>🛋️</div>}
         <div style={S.matCushion} />
-        <div style={{ ...S.cat, transform: "scale(" + catSize + ")" }}><div style={S.catEmoji}>🐱</div><div style={S.catFace}>{mood.face}</div></div>
+        <div style={{ ...S.cat, transform: "scale(" + catSize + ")" }}><Cat size={100} /></div>
       </div>
       <div style={S.moodChip}>{seg.emoji} {seg.title} · 已掌握 {mastered} 词</div>
       {ns && <div style={S.segHint}>再掌握 {ns.min - mastered} 个 → {ns.emoji} {ns.title}</div>}
@@ -667,7 +673,7 @@ function NaughtyModal({ text, emoji, onClose }) {
 }
 
 const Bg = () => (<div style={S.bg}><div className="cloud c1">☁️</div><div className="cloud c2">☁️</div></div>);
-const Splash = () => (<div style={{ ...S.shell, display: "grid", placeItems: "center" }}><style>{CSS}</style><div style={{ fontSize: 60 }} className="breathe2">🐱</div></div>);
+const Splash = () => (<div style={{ ...S.shell, display: "grid", placeItems: "center" }}><style>{CSS}</style><div className="breathe2"><Cat size={88} bob={false} /></div></div>);
 
 // ── 复习会话：按内容形态分场 ────────────────────────────
 // 把到期词分成 词/句子/语法 三组，词走连连看+卡片，句子走填空，语法走情境
