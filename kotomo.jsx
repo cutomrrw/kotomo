@@ -25,6 +25,9 @@ const posInfo = (k) => POS.find((p) => p.key === k) || POS[4];
 const isKatakanaWord = (t) => /[゠-ヿ]/.test(t || ""); // 含片假名=外来词
 // 只有"片假名外来词"才显示 term（原词）；汉字/假名词若被误标 loan(常是罗马音)，不显示括号
 const termWithLoan = (w) => { if (!w) return ""; const t = w.term || ""; return (w.loan && w.loan.word && isKatakanaWord(t)) ? (t + "（" + w.loan.word + "）") : t; };
+const isRomaji = (t) => /[A-Za-z]/.test(t || ""); // 含拉丁字母=罗马音(不是规范日文读音)
+// 自动剥掉 term 里夹带的「（罗马音）」(如 送金（Sokin）→ 送金)；剥空则保留原值
+const stripRomajiParen = (t) => { if (!t) return t; const out = String(t).replace(/[\s　]*[（(]\s*[A-Za-z][A-Za-z0-9 '’．.\-]*\s*[)）]/g, "").trim(); return out || t; };
 const uid = () => Math.random().toString(36).slice(2, 9);
 const shuffle = (a) => { const x = [...a]; for (let i = x.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [x[i], x[j]] = [x[j], x[i]]; } return x; };
 const DAY = 864e5;
@@ -138,7 +141,7 @@ const SEED_FIX = (() => {
 const fixSeedWord = (w) => { if (!w || !w.isSeed) return w; const f = SEED_FIX[(w.term || "") + "|" + (w.meaning || "")]; return f ? { ...w, term: f.term, reading: f.reading } : w; };
 // 振假名显示：正体(含外来词括号)为主，含汉字时把平假名读音以小字标在正上方；纯假名词不再标读音
 const JaTerm = ({ w, size = 18, align = "flex-start" }) => {
-  const furi = !!(w && w.reading && hasKanji(w.term) && w.reading !== w.term);
+  const furi = !!(w && w.reading && !isRomaji(w.reading) && hasKanji(w.term) && w.reading !== w.term);
   return (<span style={{ display: "inline-flex", flexDirection: "column", alignItems: align, verticalAlign: "middle", lineHeight: 1.05, marginRight: 6 }}>
     {furi && <span style={{ fontSize: Math.max(9, Math.round(size * 0.5)), color: C.inkSoft, fontWeight: 700, letterSpacing: 0.5 }}>{w.reading}</span>}
     <span style={{ fontSize: size, fontWeight: 800 }}>{termWithLoan(w)}</span>
@@ -182,7 +185,7 @@ const Store = (() => {
     },
   };
 })();
-async function loadState() { try { const v = await Store.get(SKEY); if (!v) return null; const s = JSON.parse(v); if (s && Array.isArray(s.words)) s.words = s.words.map(fixSeedWord); return s; } catch (e) { console.error("[kotomo] loadState 失败", e); return null; } }
+async function loadState() { try { const v = await Store.get(SKEY); if (!v) return null; const s = JSON.parse(v); if (s && Array.isArray(s.words)) s.words = s.words.map((w) => { const x = fixSeedWord(w); const t = stripRomajiParen(x.term); return t !== x.term ? { ...x, term: t } : x; }); return s; } catch (e) { console.error("[kotomo] loadState 失败", e); return null; } }
 // 返回 true/false：失败不再静默吞，交给上层提示用户（避免数据无声丢失）
 async function saveState(s) { try { await Store.set(SKEY, JSON.stringify(s)); return true; } catch (e) { console.error("[kotomo] saveState 失败", e); return false; } }
 
@@ -506,7 +509,7 @@ export default function App() {
 
   const addWords = useCallback((rows) => {
     patch((s) => ({ ...s, words: [...s.words, ...rows.filter((r) => r.term && r.term.trim()).map((r) => ({
-      id: r.id || uid(), type: r.type || "word", term: r.term.trim(), reading: (r.reading || "").trim(), meaning: (r.meaning || "").trim(),
+      id: r.id || uid(), type: r.type || "word", term: stripRomajiParen(r.term.trim()), reading: (r.reading || "").trim(), meaning: (r.meaning || "").trim(),
       pos: r.pos || "other", freq: !!r.freq, loan: r.loan || null, mastered: false, source: (r.source || "").trim(),
       expanded: r.expanded || null, cloze: r.cloze || null, isSeed: false, seen: 0, wrong: 0, srs: { level: 0, dueAt: now(), lastReviewedAt: 0 },
     }))] }));
@@ -806,7 +809,7 @@ function MatchRound({ items, all, play, onResult, onDone, onWrong, onHesitate })
       onContextMenu={(e) => { e.preventDefault(); markHes(w.id); }}
       onClick={() => { if (lpFired.current) { lpFired.current = false; return; } if (isM) return; play("tap"); if (side === "L") { setSelL(w.id); speakJa(w.term); } else setSelR(w.id); }}>
       {isM ? <div style={{ fontWeight: 800, fontSize: 20 }}>✓</div> : <>
-        <div style={{ fontSize: 10, color: C.inkSoft, height: 12, lineHeight: "12px", overflow: "hidden", whiteSpace: "nowrap", width: "100%" }}>{side === "L" && hasKanji(w.term) && w.reading && w.reading !== w.term ? w.reading : ""}</div>
+        <div style={{ fontSize: 10, color: C.inkSoft, height: 12, lineHeight: "12px", overflow: "hidden", whiteSpace: "nowrap", width: "100%" }}>{side === "L" && hasKanji(w.term) && w.reading && !isRomaji(w.reading) && w.reading !== w.term ? w.reading : ""}</div>
         <div style={{ fontWeight: 800, fontSize: label.length > 6 ? 14 : label.length > 4 ? 16 : 18, lineHeight: 1.15, width: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{hes[w.id] ? "🤔 " : ""}{label}</div>
       </>}</button>);
   };
