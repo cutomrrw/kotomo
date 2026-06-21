@@ -485,7 +485,7 @@ export default function App() {
     patch((s) => ({ ...s, words: [...s.words, ...rows.filter((r) => r.term && r.term.trim()).map((r) => ({
       id: r.id || uid(), type: r.type || "word", term: r.term.trim(), reading: (r.reading || "").trim(), meaning: (r.meaning || "").trim(),
       pos: r.pos || "other", freq: !!r.freq, loan: r.loan || null, mastered: false, source: (r.source || "").trim(),
-      expanded: r.expanded || null, isSeed: false, seen: 0, wrong: 0, srs: { level: 0, dueAt: now(), lastReviewedAt: 0 },
+      expanded: r.expanded || null, cloze: r.cloze || null, isSeed: false, seen: 0, wrong: 0, srs: { level: 0, dueAt: now(), lastReviewedAt: 0 },
     }))] }));
   }, []);
   const updateWord = useCallback((id, fn) => patch((s) => ({ ...s, words: s.words.map((w) => w.id === id ? fn(w) : w) })), []);
@@ -679,10 +679,8 @@ const Splash = () => (<div style={{ ...S.shell, display: "grid", placeItems: "ce
 // 把到期词分成 词/句子/语法 三组，词走连连看+卡片，句子走填空，语法走情境
 function ReviewSession({ ctx }) {
   const { st, play, finishReview, reviewWrongOnly } = ctx;
-  const pool = useMemo(() => reviewPool(st.words, st.settings.energyMode, reviewWrongOnly), [st.words, st.settings.energyMode, reviewWrongOnly]);
-
-  // 构建题目队列：词优先用连连看分批(5个一组)，剩余零头用卡片；句子填空；语法情境
-  const queue = useMemo(() => buildQueue(pool), [pool]);
+  // 队列在进入会话时只构建一次：期间即使因缓存挖空题导致 st.words 变化，也不重排、不打断复习
+  const [queue] = useState(() => buildQueue(reviewPool(st.words, st.settings.energyMode, reviewWrongOnly)));
   const [qi, setQi] = useState(0);
   const [hearts, setHearts] = useState(5);
   const resultsRef = useRef({}); // id -> correct(bool)，一个词若任一次错则记错
@@ -690,7 +688,7 @@ function ReviewSession({ ctx }) {
   const recordResult = (id, correct) => { if (resultsRef.current[id] === undefined) resultsRef.current[id] = correct; else if (!correct) resultsRef.current[id] = false; };
   const markHesitate = (id) => { hesitantRef.current[id] = true; recordResult(id, false); play("wrong"); vibrate(30); };
 
-  if (pool.length === 0) return <EmptyReview ctx={ctx} />;
+  if (queue.length === 0) return <EmptyReview ctx={ctx} />;
   const done = qi >= queue.length || hearts <= 0;
   if (done) {
     const results = Object.entries(resultsRef.current).map(([id, correct]) => ({ id, correct }));
@@ -710,7 +708,7 @@ function ReviewSession({ ctx }) {
     <div style={{ fontSize: 11.5, color: C.inkSoft, textAlign: "center", margin: "2px 0 8px" }}>不确定的词，长按它 →「犹豫词」，会更高频回来考你（防排除法蒙混）</div>
     {q.kind === "match" && <MatchRound key={qi} items={q.items} all={st.words} play={play} onResult={recordResult} onDone={advance} onWrong={loseHeart} onHesitate={markHesitate} />}
     {q.kind === "card" && <CardRound key={qi} item={q.item} all={st.words} play={play} onResult={recordResult} onNext={advance} onWrong={loseHeart} onHesitate={markHesitate} />}
-    {q.kind === "fill" && <FillRound key={qi} item={q.item} all={st.words} play={play} onResult={recordResult} onNext={advance} onWrong={loseHeart} onHesitate={markHesitate} />}
+    {q.kind === "fill" && <FillRound key={qi} item={q.item} all={st.words} play={play} onResult={recordResult} onNext={advance} onWrong={loseHeart} onHesitate={markHesitate} updateWord={ctx.updateWord} aiReal={st.settings.aiReal} />}
     {q.kind === "grammar" && <GrammarRound key={qi} item={q.item} all={st.words} play={play} onResult={recordResult} onNext={advance} onWrong={loseHeart} onHesitate={markHesitate} />}
   </div>);
 }
@@ -812,15 +810,69 @@ function CardRound({ item, all, play, onResult, onNext, onWrong, onHesitate }) {
 function sim(a, b) { let s = 0; if (a.pos === b.pos) s += 1; const t1 = a.term || "", t2 = b.term || ""; if (t1[0] && t1[0] === t2[0]) s += 1; if (Math.abs(t1.length - t2.length) <= 1) s += 0.5; return s; }
 
 // 句子填空：把句子里某词挖空，四选一
-function FillRound({ item, all, play, onResult, onNext, onWrong, onHesitate }) {
-  // 句子形态：term 是整句，meaning 是中文。简单实现：让用户"看中文选正确日语句"（句子较短时）
-  const opts = useMemo(() => { const others = shuffle((all || []).filter((x) => x.id !== item.id && x.type === "sentence")).slice(0, 3); const base = others.length >= 1 ? others : shuffle((all || []).filter((x) => x.id !== item.id)).slice(0, 3); return shuffle([item, ...base]); }, [item, all]);
+// 句子智能挖空：让 AI 挖掉句中最关键的生词/核心语法点，出 A/B/C/D 选填题（结果缓存到 word.cloze，复习更准）
+async function genCloze(item) {
+  const sys = "你是日语老师，给一个日语句子出『选词填空』题：挖掉句子里最关键的一个生词或核心语法点，用 4 个选项考察。输出 JSON：{masked:把关键处替换成「＿＿」的整句, answer:被挖掉的正确内容, options:[共4个,含正确答案+3个同类型、易混淆的干扰项], point:用中文简述考察的是哪个词或语法}。只输出 JSON，不要多余文字。";
+  const usr = "句子：" + item.term + "\n中文意思：" + (item.meaning || "");
+  const d = JSON.parse(stripFence(await callAI(sys, usr)));
+  if (!d || !d.masked || !d.answer || !Array.isArray(d.options)) throw new Error("挖空返回格式不对");
+  const ans = String(d.answer).trim();
+  let opts = d.options.map((x) => String(x).trim()).filter(Boolean);
+  if (!opts.includes(ans)) opts.unshift(ans);
+  opts = Array.from(new Set(opts)).slice(0, 4);
+  if (opts.length < 2) throw new Error("选项不足");
+  let masked = String(d.masked);
+  if (!/＿|_{2,}|（\s*[?？]\s*）/.test(masked)) masked = masked + "（＿＿）"; // 兜底：模型没标空就补一个
+  return { masked, answer: ans, options: opts, point: d.point ? String(d.point) : "" };
+}
+
+function FillRound({ item, all, play, onResult, onNext, onWrong, onHesitate, updateWord, aiReal }) {
+  // 句子形态：AI 智能挖空 → 选词填空(A/B/C/D)。挖空结果缓存到 word.cloze；没 AI/出题失败则回退"整句选择"
+  const [cloze, setCloze] = useState(item.cloze || null);
+  const [busy, setBusy] = useState(false);
   const [picked, setPicked] = useState(null), [checked, setChecked] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    if (cloze || !aiReal) return;
+    setBusy(true);
+    genCloze(item).then((c) => { if (!alive) return; setCloze(c); if (updateWord) updateWord(item.id, (w) => ({ ...w, cloze: c })); })
+      .catch((e) => { if (alive) logEvent("warn", "句子挖空失败，回退整句选择", (e && e.message) || e); })
+      .finally(() => { if (alive) setBusy(false); });
+    return () => { alive = false; };
+  }, []);
+  // 选项只算一次（避免每次重渲染重排）。两个都在顶层无条件声明，遵守 hooks 规则
+  const clozeOpts = useMemo(() => (cloze ? shuffle(cloze.options.slice()) : []), [cloze]);
+  const fallbackOpts = useMemo(() => { const others = shuffle((all || []).filter((x) => x.id !== item.id && x.type === "sentence")).slice(0, 3); const base = others.length >= 1 ? others : shuffle((all || []).filter((x) => x.id !== item.id)).slice(0, 3); return shuffle([item, ...base]); }, [item, all]);
+
+  if (busy) return (<div className="fade-in"><div style={S.roundTag}>📝 句子填空</div><div style={S.empty}>✨ AI 正在出题…</div></div>);
+
+  // —— 选词填空模式（AI 智能挖空）——
+  if (cloze) {
+    const segs = cloze.masked.replace(/＿+|_{2,}|（\s*[?？]\s*）|\(\s*[?？]\s*\)/g, " ").split(" ");
+    const blankStyle = { display: "inline-block", minWidth: 44, textAlign: "center", padding: "0 6px", margin: "0 2px", fontWeight: 800, borderBottom: "3px solid " + (checked ? (picked === cloze.answer ? C.matchaDk : C.blush) : C.honey), color: checked ? (picked === cloze.answer ? C.matchaDk : C.blush) : C.honeyDk };
+    const check = () => { if (picked == null) return; const ok = picked === cloze.answer; setChecked(true); onResult(item.id, ok); if (ok) play("correct"); else { play("wrong"); onWrong(); } };
+    return (<div className="fade-in">
+      <div style={S.roundTag}>📝 选词填空</div>
+      <div className="card pop-in" style={S.bigCard}>
+        <div style={{ fontSize: 19, fontWeight: 800, lineHeight: 1.9 }}>{segs.map((s, i) => (<React.Fragment key={i}>{s}{i < segs.length - 1 && <span style={blankStyle} onClick={() => checked && speakJa(item.term)}>{picked != null ? picked : "　？　"}</span>}</React.Fragment>))}</div>
+        {item.meaning && <div style={{ fontSize: 13, color: C.inkSoft, marginTop: 8 }}>{item.meaning}</div>}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{clozeOpts.map((o, i) => {
+        let stt = "idle"; if (checked) { if (o === cloze.answer) stt = "right"; else if (picked === o) stt = "wrong"; }
+        const mp = { idle: { borderColor: picked === o ? C.honey : "#ecdfca", background: picked === o ? "#fdf2e0" : "#fff" }, right: { borderColor: C.matchaDk, background: "#eaf4e0" }, wrong: { borderColor: C.blush, background: "#fbeae2" } };
+        return (<button key={i} className="pressable" style={{ ...S.optWide, ...mp[stt] }} onClick={() => { if (!checked) { setPicked(o); play("tap"); } }}>
+          <span style={{ fontWeight: 800, color: C.honeyDk, marginRight: 10 }}>{"ABCD"[i]}</span><span style={{ fontWeight: 800, fontSize: 17 }}>{o}</span></button>); })}</div>
+      {checked && <div className="slide-up" style={S.fb}>正确：{cloze.answer}{cloze.point ? "　·　" + cloze.point : ""}<div style={{ fontSize: 13, marginTop: 4, color: C.inkSoft, cursor: "pointer" }} onClick={() => speakJa(item.term)}>🔊 {item.term}</div></div>}
+      <button className="pressable" disabled={picked == null} style={{ ...S.bigBtn, opacity: picked != null ? 1 : 0.45 }} onClick={checked ? onNext : check}>{checked ? "下一个 →" : "检查"}</button>
+    </div>);
+  }
+
+  // —— 回退：整句选择（无 AI / 出题失败时）——
   const check = () => { if (!picked) return; const correct = picked.id === item.id; setChecked(true); onResult(item.id, correct); if (correct) play("correct"); else { play("wrong"); onWrong(); } };
   return (<div className="fade-in">
     <div style={S.roundTag}>📝 这句话用日语怎么说？</div>
     <div className="card pop-in" style={S.bigCard}><div style={{ fontSize: 22, fontWeight: 800 }}>{item.meaning}</div></div>
-    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{opts.map((o) => {
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{fallbackOpts.map((o) => {
       let stt = "idle"; if (checked) { if (o.id === item.id) stt = "right"; else if (picked && picked.id === o.id) stt = "wrong"; }
       const mp = { idle: { borderColor: picked && picked.id === o.id ? C.honey : "#ecdfca", background: picked && picked.id === o.id ? "#fdf2e0" : "#fff" }, right: { borderColor: C.matchaDk, background: "#eaf4e0" }, wrong: { borderColor: C.blush, background: "#fbeae2" } };
       return (<button key={o.id} className="pressable" style={{ ...S.optWide, ...mp[stt] }} onClick={() => { if (!checked) { setPicked(o); play("tap"); } }} onDoubleClick={() => speakJa(o.term)}>
