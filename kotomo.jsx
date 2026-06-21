@@ -148,7 +148,7 @@ const JaTerm = ({ w, size = 18, align = "flex-start" }) => {
   </span>);
 };
 // 需要 AI 补正体/读音：term 或 reading 含罗马音/英文字母，或 term 是纯平假名(可能本可写汉字)。片假名/已含汉字的跳过
-const needsKanjiFix = (w) => { if (!w || !w.term) return false; if (/[a-zA-Z]/.test(w.term) || /[a-zA-Z]/.test(w.reading || "")) return true; if (w.loan && w.loan.word && !isKatakanaWord(w.term)) return true; return false; }; // 只补"含罗马音/错标外来词"的；纯假名词本就该是假名，不再误报
+const needsKanjiFix = (w) => { if (!w) return false; const t = (w.term || "").trim(); if (!t) return !!(w.meaning || "").trim(); if (/[a-zA-Z]/.test(t) || /[a-zA-Z]/.test(w.reading || "")) return true; if (w.loan && w.loan.word && !isKatakanaWord(t)) return true; return false; }; // 空term(有中文)→需根据意思生成日语；含罗马音/错标外来词→需修；纯假名词不误报
 // 汉字对照：仅对"含汉字、未标注过"的词；让 AI 判定 中国人按中文字面理解会不会被坑（假朋友陷阱）
 const needsKanjiTip = (w) => (w.type || "word") === "word" && hasKanji(w.term) && !w.kanjiTip;
 async function genKanjiTip(w) {
@@ -1245,8 +1245,8 @@ function Library({ ctx }) {
     for (const w of list) {
       setFixMsg("AI 补全中… " + done + "/" + list.length);
       try {
-        const sys = "给定一个日语词(可能写成了假名/罗马音，或被错误地标成了外来词)和它的中文意思。给出规范写法。输出 JSON：{term:正体(用日语规范汉字、不要中文简体字；纯假名词保持假名；外来词用片假名), reading:平假名读音(不要罗马音), loan:仅当它确实是片假名外来词时填{from:语言码,word:原词}、否则 null}。只输出 JSON。";
-        const d = JSON.parse(stripFence(await callAI(sys, "词：" + w.term + "　中文：" + (w.meaning || ""))));
+        const sys = "给定一个日语词(可能为空/假名/罗马音，或被错误地标成了外来词)和它的中文意思。给出该词规范的日语写法；若日语为空或不可用，就根据中文意思给出对应的日语词。输出 JSON：{term:正体(用日语规范汉字、不要中文简体字；纯假名词保持假名；外来词用片假名), reading:平假名读音(不要罗马音), loan:仅当它确实是片假名外来词时填{from:语言码,word:原词}、否则 null}。只输出 JSON。";
+        const d = JSON.parse(stripFence(await callAI(sys, "日语：" + (w.term || "（空）") + "　中文：" + (w.meaning || ""))));
         if (d && d.term) { updateWord(w.id, (x) => ({ ...x, term: String(d.term).trim(), reading: String(d.reading || "").trim(), loan: (d.loan && d.loan.word) ? { from: d.loan.from || "en", word: String(d.loan.word) } : null })); ok++; }
       } catch (e) { logEvent("warn", "AI 补正体失败", w.term + " / " + ((e && e.message) || e)); }
       done++; setFixMsg("AI 补全中… " + done + "/" + list.length);
@@ -1305,6 +1305,12 @@ function Library({ ctx }) {
           </div>
           <div style={S.wStat}><span style={S.statPill}>练{w.seen || 0}</span>{(w.wrong || 0) > 0 && <span style={{ ...S.statPill, background: "#fbeae2", color: "#c4684f" }}>错{w.wrong}</span>}</div>
         </div>)].concat(open ? [<div key={w.id + "edit"} className="card slide-up" style={S.editPanel}>
+          <div style={S.editRow}><span style={S.editLabel}>单词</span>
+            <input style={S.editInput} defaultValue={w.term} placeholder="日语正体（汉字）" onBlur={(e) => updateWord(w.id, (x) => ({ ...x, term: stripRomajiParen(e.target.value.trim()) }))} /></div>
+          <div style={S.editRow}><span style={S.editLabel}>读音</span>
+            <input style={S.editInput} defaultValue={w.reading} placeholder="平假名读音" onBlur={(e) => updateWord(w.id, (x) => ({ ...x, reading: e.target.value.trim() }))} /></div>
+          <div style={S.editRow}><span style={S.editLabel}>意思</span>
+            <input style={S.editInput} defaultValue={w.meaning} placeholder="中文意思" onBlur={(e) => updateWord(w.id, (x) => ({ ...x, meaning: e.target.value.trim() }))} /></div>
           <div style={S.editRow}><span style={S.editLabel}>掌握</span>
             <button className="pressable" style={{ ...S.toggle, ...(done ? S.toggleOn : {}) }} onClick={() => { updateWord(w.id, (x) => ({ ...x, mastered: !done })); play("tap"); }}>{done ? "已掌握 ✓（跳过复习）" : "标为已掌握"}</button></div>
           <div style={S.editRow}><span style={S.editLabel}>高亮</span><div style={{ display: "flex", gap: 6 }}>
