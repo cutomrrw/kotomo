@@ -148,7 +148,15 @@ const JaTerm = ({ w, size = 18, align = "flex-start" }) => {
   </span>);
 };
 // 需要 AI 补正体/读音：term 或 reading 含罗马音/英文字母，或 term 是纯平假名(可能本可写汉字)。片假名/已含汉字的跳过
-const needsKanjiFix = (w) => { if (!w || !w.term) return false; if (/[a-zA-Z]/.test(w.term) || /[a-zA-Z]/.test(w.reading || "")) return true; if (w.loan && w.loan.word && !isKatakanaWord(w.term)) return true; return /^[぀-ゟーゝゞ・\s]+$/.test(w.term); };
+const needsKanjiFix = (w) => { if (!w || !w.term) return false; if (/[a-zA-Z]/.test(w.term) || /[a-zA-Z]/.test(w.reading || "")) return true; if (w.loan && w.loan.word && !isKatakanaWord(w.term)) return true; return false; }; // 只补"含罗马音/错标外来词"的；纯假名词本就该是假名，不再误报
+// 汉字对照：仅对"含汉字、未标注过"的词；让 AI 判定 中国人按中文字面理解会不会被坑（假朋友陷阱）
+const needsKanjiTip = (w) => (w.type || "word") === "word" && hasKanji(w.term) && !w.kanjiTip;
+async function genKanjiTip(w) {
+  const sys = "你在帮中文母语者学日语。给定一个日语汉字词和它的中文意思，判断中国人按中文字面去理解会不会被坑。分类：trap=同形或近形『异义』、中国人容易误解(假朋友，如 手紙=信、勉強=学习、娘=女儿、大丈夫=没事)；same=汉字写法和中文相同/相近、意思也基本一致、能直接看懂(如 水、病院、銀行)；other=无对应中文汉字写法/和制汉字/差异大、无明显误解风险。输出 JSON：{kind:\"trap\"|\"same\"|\"other\", note:一句简短中文(trap:点出『看着像中文XX、日语里其实是YY』；same:一句『和中文同义，直接看懂』；other:可空)}。只输出 JSON。";
+  const d = JSON.parse(stripFence(await callAI(sys, "日语词：" + w.term + "　中文意思：" + (w.meaning || ""))));
+  const kind = (d && ["trap", "same", "other"].indexOf(d.kind) >= 0) ? d.kind : "other";
+  return { kind, note: (d && d.note) ? String(d.note).trim() : "" };
+}
 function buildSeedWords(interestIds) {
   const words = [];
   interestIds.forEach((id) => {
@@ -511,7 +519,7 @@ export default function App() {
     patch((s) => ({ ...s, words: [...s.words, ...rows.filter((r) => r.term && r.term.trim()).map((r) => ({
       id: r.id || uid(), type: r.type || "word", term: stripRomajiParen(r.term.trim()), reading: (r.reading || "").trim(), meaning: (r.meaning || "").trim(),
       pos: r.pos || "other", freq: !!r.freq, loan: r.loan || null, mastered: false, source: (r.source || "").trim(),
-      expanded: r.expanded || null, cloze: r.cloze || null, isSeed: false, seen: 0, wrong: 0, srs: { level: 0, dueAt: now(), lastReviewedAt: 0 },
+      expanded: r.expanded || null, cloze: r.cloze || null, kanjiTip: r.kanjiTip || null, isSeed: false, seen: 0, wrong: 0, srs: { level: 0, dueAt: now(), lastReviewedAt: 0 },
     }))] }));
   }, []);
   const updateWord = useCallback((id, fn) => patch((s) => ({ ...s, words: s.words.map((w) => w.id === id ? fn(w) : w) })), []);
@@ -857,6 +865,7 @@ function CardRound({ item, all, play, onResult, onNext, onWrong, onHesitate }) {
         onClick={() => { if (lpFired.current) { lpFired.current = false; return; } if (!checked) { setPicked(o); play("tap"); } }}>
         {askForeign ? <div style={{ fontWeight: 800, fontSize: 16 }}>{o.meaning}</div> : <JaTerm w={o} size={18} />}</button>); })}</div>
     {checked && picked && picked.id !== item.id && <div className="slide-up" style={S.fb}>正确：{item.term}（{item.reading}）{item.loan ? "← " + item.loan.word + " " : ""}— {item.meaning}</div>}
+    {checked && item.kanjiTip && item.kanjiTip.kind === "trap" && <div className="slide-up" style={{ ...S.fb, background: "#fbeae2", color: "#c4684f" }}>⚠️ 汉字陷阱：{item.kanjiTip.note || "别按中文字面理解"}</div>}
     <button className="pressable" disabled={!picked} style={{ ...S.bigBtn, opacity: picked ? 1 : 0.45 }} onClick={checked ? proceed : check}>{checked ? "下一个 →" : "检查"}</button>
   </div>);
 }
@@ -1224,9 +1233,11 @@ function Library({ ctx }) {
   const [order, setOrder] = useState("new"); // new=从新到旧（默认，先看最近加的）, old=从旧到新
   const [editing, setEditing] = useState(null);
   const [fixing, setFixing] = useState(false), [fixMsg, setFixMsg] = useState("");
+  const [tipping, setTipping] = useState(false), [tipMsg, setTipMsg] = useState("");
   const aiReal = st.settings.aiReal;
   const words = st.words;
   const fixable = words.filter(needsKanjiFix); // 只有假名/罗马音、缺汉字正体的词
+  const tippable = words.filter(needsKanjiTip); // 含汉字、还没做过"汉字对照"判定的词
   // AI 一键补全：逐个让 AI 把"假名/罗马音"补成 汉字正体 + 平假名读音（带进度）
   const runFix = async () => {
     if (fixing) return; const list = words.filter(needsKanjiFix); if (!list.length) return;
@@ -1242,6 +1253,18 @@ function Library({ ctx }) {
     }
     setFixing(false); setFixMsg("已补全 " + ok + " 个词 ✓"); play("win"); setTimeout(() => setFixMsg(""), 4500);
   };
+  // AI 标注汉字对照：逐个判定 陷阱/同义/无关，缓存到 word.kanjiTip（带进度）
+  const runTips = async () => {
+    if (tipping) return; const list = words.filter(needsKanjiTip); if (!list.length) return;
+    setTipping(true); let done = 0, trap = 0;
+    for (const w of list) {
+      setTipMsg("AI 标注中… " + done + "/" + list.length);
+      try { const tip = await genKanjiTip(w); updateWord(w.id, (x) => ({ ...x, kanjiTip: tip })); if (tip.kind === "trap") trap++; }
+      catch (e) { logEvent("warn", "汉字对照失败", w.term + " / " + ((e && e.message) || e)); }
+      done++; setTipMsg("AI 标注中… " + done + "/" + list.length);
+    }
+    setTipping(false); setTipMsg("标注完成 · 发现 " + trap + " 个汉字陷阱 ⚠️"); play("win"); setTimeout(() => setTipMsg(""), 5000);
+  };
   const shown = filter === "all" ? words
     : filter === "freq" ? words.filter((w) => w.freq)
     : filter === "loan" ? words.filter((w) => w.loan)
@@ -1254,6 +1277,8 @@ function Library({ ctx }) {
     {aiReal && fixable.length > 0 && <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.honey, boxShadow: "0 5px 0 " + C.honeyDk, opacity: fixing ? 0.75 : 1 }} disabled={fixing} onClick={runFix}>{fixing ? (fixMsg || "AI 补全中…") : "🈶 用 AI 补全 " + fixable.length + " 个词的汉字/读音"}</button>}
     {!aiReal && fixable.length > 0 && <div style={{ ...S.setNote, marginBottom: 10 }}>有 {fixable.length} 个词只有假名/罗马音；去「设置」贴上 AI 密钥并开真AI，这里就能一键补成汉字+读音。</div>}
     {!fixing && fixMsg && <div style={{ ...S.setNote, marginBottom: 10, color: C.matchaDk, fontWeight: 800 }}>{fixMsg}</div>}
+    {aiReal && tippable.length > 0 && <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.grape, boxShadow: "0 5px 0 #a87bb8", opacity: tipping ? 0.75 : 1 }} disabled={tipping} onClick={runTips}>{tipping ? (tipMsg || "AI 标注中…") : "🈯 AI 标注汉字陷阱 · " + tippable.length + " 个待查"}</button>}
+    {!tipping && tipMsg && <div style={{ ...S.setNote, marginBottom: 10, color: C.grapeDk || "#8a5fa8", fontWeight: 800 }}>{tipMsg}</div>}
     <div style={{ ...S.filterRow, marginBottom: 8 }}>
       <span style={{ fontSize: 12.5, fontWeight: 800, color: "#7a6244", alignSelf: "center", marginRight: 2 }}>排序</span>
       <Chip on={order === "new"} onClick={() => { setOrder("new"); play("tap"); }}>🆕 从新到旧</Chip>
@@ -1273,7 +1298,10 @@ function Library({ ctx }) {
           <div style={{ flex: 1 }} onClick={() => { play("tap"); setEditing(open ? null : w.id); }}>
             <JaTerm w={w} size={18} />
             {w.freq && <Tag bg="#ffe6a8" fg="#a8761e">高频</Tag>}{done && <Tag bg="#eaf4e0" fg={C.matchaDk}>已掌握</Tag>}
+            {w.kanjiTip && w.kanjiTip.kind === "trap" && <Tag bg="#fbeae2" fg="#c4684f">⚠️汉字陷阱</Tag>}
+            {w.kanjiTip && w.kanjiTip.kind === "same" && <Tag bg="#eaf4e0" fg={C.matchaDk}>✅你已会</Tag>}
             <div style={{ fontSize: 13, color: "#7a6244" }}>{w.meaning}{w.source ? " · 📍" + w.source : ""}</div>
+            {w.kanjiTip && w.kanjiTip.kind === "trap" && w.kanjiTip.note && <div style={{ fontSize: 12, color: "#c4684f", marginTop: 2 }}>⚠️ {w.kanjiTip.note}</div>}
           </div>
           <div style={S.wStat}><span style={S.statPill}>练{w.seen || 0}</span>{(w.wrong || 0) > 0 && <span style={{ ...S.statPill, background: "#fbeae2", color: "#c4684f" }}>错{w.wrong}</span>}</div>
         </div>)].concat(open ? [<div key={w.id + "edit"} className="card slide-up" style={S.editPanel}>
