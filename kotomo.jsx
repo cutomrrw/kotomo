@@ -22,7 +22,9 @@ const POS = [
 ];
 const posInfo = (k) => POS.find((p) => p.key === k) || POS[4];
 // 外来词内嵌显示：トイレ（toilet）
-const termWithLoan = (w) => (w && w.loan && w.loan.word) ? (w.term + "（" + w.loan.word + "）") : (w ? w.term : "");
+const isKatakanaWord = (t) => /[゠-ヿ]/.test(t || ""); // 含片假名=外来词
+// 只有"片假名外来词"才显示 term（原词）；汉字/假名词若被误标 loan(常是罗马音)，不显示括号
+const termWithLoan = (w) => { if (!w) return ""; const t = w.term || ""; return (w.loan && w.loan.word && isKatakanaWord(t)) ? (t + "（" + w.loan.word + "）") : t; };
 const uid = () => Math.random().toString(36).slice(2, 9);
 const shuffle = (a) => { const x = [...a]; for (let i = x.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [x[i], x[j]] = [x[j], x[i]]; } return x; };
 const DAY = 864e5;
@@ -143,7 +145,7 @@ const JaTerm = ({ w, size = 18, align = "flex-start" }) => {
   </span>);
 };
 // 需要 AI 补正体/读音：term 或 reading 含罗马音/英文字母，或 term 是纯平假名(可能本可写汉字)。片假名/已含汉字的跳过
-const needsKanjiFix = (w) => { if (!w || !w.term) return false; if (/[a-zA-Z]/.test(w.term) || /[a-zA-Z]/.test(w.reading || "")) return true; return /^[぀-ゟーゝゞ・\s]+$/.test(w.term); };
+const needsKanjiFix = (w) => { if (!w || !w.term) return false; if (/[a-zA-Z]/.test(w.term) || /[a-zA-Z]/.test(w.reading || "")) return true; if (w.loan && w.loan.word && !isKatakanaWord(w.term)) return true; return /^[぀-ゟーゝゞ・\s]+$/.test(w.term); };
 function buildSeedWords(interestIds) {
   const words = [];
   interestIds.forEach((id) => {
@@ -1040,7 +1042,7 @@ function TypeInput({ aiReal, dir, onRows, play }) {
     let row;
     const sys = dir === "zh"
       ? "用户给一个中文词，给出日语母语者实际使用的最常用说法。要求：term 用规范的日语写法（该用汉字就用日语规范汉字，不要照搬中文字形，例如『古董』日语写『骨董品』；外来词用片假名）；reading 是准确的平假名读音，逐字核对促音っ/长音/浊音半浊音（不要罗马音）。输出 JSON：{term,reading,meaning:用户给的中文,pos:noun|verb|adj|phrase|other,freq:是否高频(bool),loan:若是片假名外来词则{from:语言码,word:原词}否则null}。只输出 JSON。"
-      : "用户给一个日语词。要求：term 用日语规范写法；reading 是准确的平假名读音，逐字核对促音っ/长音/浊音半浊音（不要罗马音）；meaning 用地道中文。输出 JSON：{term,reading,meaning,pos:noun|verb|adj|phrase|other,freq:是否高频(bool),loan:若是片假名外来词则{from:语言码,word:原词}否则null}。只输出 JSON。";
+      : "用户给一个日语词。要求：term 用日语规范写法（日语汉字，不要用中文简体字，如「预」应写「預」）；reading 是准确的平假名读音，逐字核对促音っ/长音/浊音半浊音（不要罗马音）；meaning 用地道中文。输出 JSON：{term,reading,meaning,pos:noun|verb|adj|phrase|other,freq:是否高频(bool),loan:仅当确实是片假名外来词才填{from:语言码,word:原词}、否则null}。只输出 JSON。";
     const offline = () => dir === "zh" ? { term: "", reading: "", meaning: t, pos: "other", freq: false } : localAutoFill(t);
     if (aiReal) { try { row = JSON.parse(stripFence(await callAI(sys, t))); } catch { row = await offline(); } }
     else row = await offline();
@@ -1229,9 +1231,9 @@ function Library({ ctx }) {
     for (const w of list) {
       setFixMsg("AI 补全中… " + done + "/" + list.length);
       try {
-        const sys = "给定一个日语词(可能写成了假名或罗马音)和它的中文意思。给出规范写法。输出 JSON：{term:正体(有汉字就用汉字，纯假名词保持假名，外来词用片假名), reading:平假名读音(不要罗马音)}。只输出 JSON。";
+        const sys = "给定一个日语词(可能写成了假名/罗马音，或被错误地标成了外来词)和它的中文意思。给出规范写法。输出 JSON：{term:正体(用日语规范汉字、不要中文简体字；纯假名词保持假名；外来词用片假名), reading:平假名读音(不要罗马音), loan:仅当它确实是片假名外来词时填{from:语言码,word:原词}、否则 null}。只输出 JSON。";
         const d = JSON.parse(stripFence(await callAI(sys, "词：" + w.term + "　中文：" + (w.meaning || ""))));
-        if (d && d.term) { updateWord(w.id, (x) => ({ ...x, term: String(d.term).trim(), reading: String(d.reading || "").trim() })); ok++; }
+        if (d && d.term) { updateWord(w.id, (x) => ({ ...x, term: String(d.term).trim(), reading: String(d.reading || "").trim(), loan: (d.loan && d.loan.word) ? { from: d.loan.from || "en", word: String(d.loan.word) } : null })); ok++; }
       } catch (e) { logEvent("warn", "AI 补正体失败", w.term + " / " + ((e && e.message) || e)); }
       done++; setFixMsg("AI 补全中… " + done + "/" + list.length);
     }
