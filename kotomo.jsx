@@ -678,12 +678,15 @@ const Splash = () => (<div style={{ ...S.shell, display: "grid", placeItems: "ce
 // ── 复习前：选今天练 单词 / 句子 / 全部 ─────────────────────
 function ReviewSession({ ctx }) {
   const { st, play, reviewWrongOnly } = ctx;
+  const em = st.settings.energyMode;
   const [mode, setMode] = useState(reviewWrongOnly ? "all" : null); // 错题强化直达全部；普通复习先选模式
-  const pool = useMemo(() => reviewPool(st.words, st.settings.energyMode, reviewWrongOnly), [st.words, st.settings.energyMode, reviewWrongOnly]);
+  // 各类的数量按"该类型自己的选词池"算：到期清零也会凑出未掌握的来 → 当天能反复再练（不再因混合截断而显示 0）
+  const isW = (w) => (w.type || "word") !== "sentence", isS = (w) => w.type === "sentence";
+  const nAll = useMemo(() => reviewPool(st.words, em, reviewWrongOnly).length, [st.words, em, reviewWrongOnly]);
+  const nWord = useMemo(() => reviewPool(st.words.filter(isW), em, reviewWrongOnly).length, [st.words, em, reviewWrongOnly]);
+  const nSent = useMemo(() => reviewPool(st.words.filter(isS), em, reviewWrongOnly).length, [st.words, em, reviewWrongOnly]);
   if (mode) return <ReviewRun ctx={ctx} mode={mode} />;
-  if (pool.length === 0) return <EmptyReview ctx={ctx} />;
-  const nWord = pool.filter((w) => (w.type || "word") !== "sentence").length;
-  const nSent = pool.filter((w) => w.type === "sentence").length;
+  if (nAll === 0) return <EmptyReview ctx={ctx} />;
   const Opt = ({ m, emoji, label, n, hint }) => (
     <button className="pressable" disabled={n === 0} style={{ ...S.reviewPick, opacity: n === 0 ? 0.5 : 1 }} onClick={() => { if (n > 0) { play("tap"); setMode(m); } }}>
       <span style={{ fontSize: 28 }}>{emoji}</span>
@@ -694,7 +697,7 @@ function ReviewSession({ ctx }) {
   return (<div className="fade-in"><BackRow ctx={ctx} title="📖 开始复习" />
     <div style={{ textAlign: "center", margin: "4px 0 16px", color: "#7a6244", fontWeight: 800, fontSize: 15 }}>今天想练什么？🐱</div>
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <Opt m="all" emoji="🌈" label="全部" n={pool.length} hint="单词 + 句子，一起练" />
+      <Opt m="all" emoji="🌈" label="全部" n={nAll} hint="单词 + 句子，一起练" />
       <Opt m="word" emoji="📖" label="复习单词" n={nWord} hint="连连看 / 卡片四选一" />
       <Opt m="sentence" emoji="📝" label="复习句子" n={nSent} hint="AI 智能挖空 · 选词填空" />
     </div>
@@ -706,7 +709,7 @@ function ReviewSession({ ctx }) {
 function ReviewRun({ ctx, mode }) {
   const { st, play, finishReview, reviewWrongOnly } = ctx;
   // 队列进入会话只建一次（缓存挖空题改 st.words 也不重排）；mode 决定只练 单词/句子/全部
-  const [queue] = useState(() => { const p = reviewPool(st.words, st.settings.energyMode, reviewWrongOnly); const f = mode === "word" ? p.filter((w) => (w.type || "word") !== "sentence") : mode === "sentence" ? p.filter((w) => w.type === "sentence") : p; return buildQueue(f); });
+  const [queue] = useState(() => { const typed = st.words.filter((w) => mode === "word" ? (w.type || "word") !== "sentence" : mode === "sentence" ? w.type === "sentence" : true); return buildQueue(reviewPool(typed, st.settings.energyMode, reviewWrongOnly)); });
   const [qi, setQi] = useState(0);
   const [hearts, setHearts] = useState(5);
   const resultsRef = useRef({}); // id -> correct(bool)，一个词若任一次错则记错
