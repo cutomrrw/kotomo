@@ -142,6 +142,8 @@ const JaTerm = ({ w, size = 18, align = "flex-start" }) => {
     <span style={{ fontSize: size, fontWeight: 800 }}>{termWithLoan(w)}</span>
   </span>);
 };
+// 需要 AI 补正体/读音：term 或 reading 含罗马音/英文字母，或 term 是纯平假名(可能本可写汉字)。片假名/已含汉字的跳过
+const needsKanjiFix = (w) => { if (!w || !w.term) return false; if (/[a-zA-Z]/.test(w.term) || /[a-zA-Z]/.test(w.reading || "")) return true; return /^[぀-ゟーゝゞ・\s]+$/.test(w.term); };
 function buildSeedWords(interestIds) {
   const words = [];
   interestIds.forEach((id) => {
@@ -1216,7 +1218,25 @@ function Library({ ctx }) {
   const [filter, setFilter] = useState("all");
   const [order, setOrder] = useState("new"); // new=从新到旧（默认，先看最近加的）, old=从旧到新
   const [editing, setEditing] = useState(null);
+  const [fixing, setFixing] = useState(false), [fixMsg, setFixMsg] = useState("");
+  const aiReal = st.settings.aiReal;
   const words = st.words;
+  const fixable = words.filter(needsKanjiFix); // 只有假名/罗马音、缺汉字正体的词
+  // AI 一键补全：逐个让 AI 把"假名/罗马音"补成 汉字正体 + 平假名读音（带进度）
+  const runFix = async () => {
+    if (fixing) return; const list = words.filter(needsKanjiFix); if (!list.length) return;
+    setFixing(true); let done = 0, ok = 0;
+    for (const w of list) {
+      setFixMsg("AI 补全中… " + done + "/" + list.length);
+      try {
+        const sys = "给定一个日语词(可能写成了假名或罗马音)和它的中文意思。给出规范写法。输出 JSON：{term:正体(有汉字就用汉字，纯假名词保持假名，外来词用片假名), reading:平假名读音(不要罗马音)}。只输出 JSON。";
+        const d = JSON.parse(stripFence(await callAI(sys, "词：" + w.term + "　中文：" + (w.meaning || ""))));
+        if (d && d.term) { updateWord(w.id, (x) => ({ ...x, term: String(d.term).trim(), reading: String(d.reading || "").trim() })); ok++; }
+      } catch (e) { logEvent("warn", "AI 补正体失败", w.term + " / " + ((e && e.message) || e)); }
+      done++; setFixMsg("AI 补全中… " + done + "/" + list.length);
+    }
+    setFixing(false); setFixMsg("已补全 " + ok + " 个词 ✓"); play("win"); setTimeout(() => setFixMsg(""), 4500);
+  };
   const shown = filter === "all" ? words
     : filter === "freq" ? words.filter((w) => w.freq)
     : filter === "loan" ? words.filter((w) => w.loan)
@@ -1226,6 +1246,9 @@ function Library({ ctx }) {
   const ordered = order === "new" ? [...shown].reverse() : shown;
   return (<div className="fade-in"><BackRow ctx={ctx} title="📚 我的词库" />
     <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.matcha, boxShadow: "0 5px 0 " + C.matchaDk }} onClick={() => { play("tap"); ctx.setView("add"); }}>🎙️ 去加词（打字/语音/展开）</button>
+    {aiReal && fixable.length > 0 && <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.honey, boxShadow: "0 5px 0 " + C.honeyDk, opacity: fixing ? 0.75 : 1 }} disabled={fixing} onClick={runFix}>{fixing ? (fixMsg || "AI 补全中…") : "🈶 用 AI 补全 " + fixable.length + " 个词的汉字/读音"}</button>}
+    {!aiReal && fixable.length > 0 && <div style={{ ...S.setNote, marginBottom: 10 }}>有 {fixable.length} 个词只有假名/罗马音；去「设置」贴上 AI 密钥并开真AI，这里就能一键补成汉字+读音。</div>}
+    {!fixing && fixMsg && <div style={{ ...S.setNote, marginBottom: 10, color: C.matchaDk, fontWeight: 800 }}>{fixMsg}</div>}
     <div style={{ ...S.filterRow, marginBottom: 8 }}>
       <span style={{ fontSize: 12.5, fontWeight: 800, color: "#7a6244", alignSelf: "center", marginRight: 2 }}>排序</span>
       <Chip on={order === "new"} onClick={() => { setOrder("new"); play("tap"); }}>🆕 从新到旧</Chip>
