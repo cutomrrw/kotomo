@@ -75,53 +75,72 @@ const vibrate = (ms) => { try { if (navigator.vibrate) navigator.vibrate(ms); } 
 const speakJa = (t) => { try { const u = new SpeechSynthesisUtterance(t); u.lang = "ja-JP"; u.rate = 0.85; speechSynthesis.speak(u); } catch {} };
 
 // ── 120 词初始库（六场景 × 20）──────────────────────────
+// 词条格式：[正体(有汉字就用汉字，否则假名/片假名), 平假名读音, 中文, 词性, 是否高频, 外来词?]
 const SEED_BANK = {
   life: [
-    ["ごはん","gohan","米饭/饭","noun",1],["みず","mizu","水","noun",1],["たべる","taberu","吃","verb",1],["のむ","nomu","喝","verb",1],
-    ["おいしい","oishii","好吃的","adj",1],["メニュー","menyuu","菜单","noun",1,["en","menu"]],["ビール","biiru","啤酒","noun",1,["nl","bier"]],
-    ["いただきます","itadakimasu","我开动了","phrase",1],["ごちそうさま","gochisousama","吃饱了/谢款待","phrase",1],["おかわり","okawari","再来一份","noun",0],
-    ["やすい","yasui","便宜的","adj",1],["たかい","takai","贵的/高的","adj",1],["カフェ","kafe","咖啡馆","noun",1,["fr","café"]],
-    ["コーヒー","koohii","咖啡","noun",1,["en","coffee"]],["おかね","okane","钱","noun",1],["かいけい","kaikei","结账","noun",1],
-    ["よやく","yoyaku","预约","noun",1],["せき","seki","座位","noun",1],["おすすめ","osusume","推荐","noun",1],["たのしい","tanoshii","快乐的","adj",1],
+    ["ご飯","ごはん","米饭/饭","noun",1],["水","みず","水","noun",1],["食べる","たべる","吃","verb",1],["飲む","のむ","喝","verb",1],
+    ["おいしい","おいしい","好吃的","adj",1],["メニュー","メニュー","菜单","noun",1,["en","menu"]],["ビール","ビール","啤酒","noun",1,["nl","bier"]],
+    ["いただきます","いただきます","我开动了","phrase",1],["ごちそうさま","ごちそうさま","吃饱了/谢款待","phrase",1],["おかわり","おかわり","再来一份","noun",0],
+    ["安い","やすい","便宜的","adj",1],["高い","たかい","贵的/高的","adj",1],["カフェ","カフェ","咖啡馆","noun",1,["fr","café"]],
+    ["コーヒー","コーヒー","咖啡","noun",1,["en","coffee"]],["お金","おかね","钱","noun",1],["会計","かいけい","结账","noun",1],
+    ["予約","よやく","预约","noun",1],["席","せき","座位","noun",1],["おすすめ","おすすめ","推荐","noun",1],["楽しい","たのしい","快乐的","adj",1],
   ],
   beauty: [
-    ["かわいい","kawaii","可爱的","adj",1],["きれい","kirei","漂亮/干净","adj",1],["けしょう","keshou","化妆","noun",1],["かみ","kami","头发","noun",1],
-    ["ファンデーション","fandeeshon","粉底","noun",0,["en","foundation"]],["くちべに","kuchibeni","口红","noun",1],["はだ","hada","皮肤","noun",1],
-    ["びよういん","biyouin","美容院","noun",1],["まゆげ","mayuge","眉毛","noun",0],["まつげ","matsuge","睫毛","noun",0],
-    ["スキンケア","sukinkea","护肤","noun",1,["en","skincare"]],["かみがた","kamigata","发型","noun",1],["きる","kiru","剪/穿","verb",1],
-    ["にあう","niau","适合/相称","verb",1],["おしゃれ","oshare","时髦","adj",1],["クリーム","kuriimu","面霜","noun",1,["en","cream"]],
-    ["びはく","bihaku","美白","noun",0],["ダイエット","daietto","减肥","noun",1,["en","diet"]],["かがみ","kagami","镜子","noun",1],["ネイル","neiru","美甲","noun",0,["en","nail"]],
+    ["かわいい","かわいい","可爱的","adj",1],["きれい","きれい","漂亮/干净","adj",1],["化粧","けしょう","化妆","noun",1],["髪","かみ","头发","noun",1],
+    ["ファンデーション","ファンデーション","粉底","noun",0,["en","foundation"]],["口紅","くちべに","口红","noun",1],["肌","はだ","皮肤","noun",1],
+    ["美容院","びよういん","美容院","noun",1],["眉毛","まゆげ","眉毛","noun",0],["まつげ","まつげ","睫毛","noun",0],
+    ["スキンケア","スキンケア","护肤","noun",1,["en","skincare"]],["髪型","かみがた","发型","noun",1],["切る","きる","剪/穿","verb",1],
+    ["似合う","にあう","适合/相称","verb",1],["おしゃれ","おしゃれ","时髦","adj",1],["クリーム","クリーム","面霜","noun",1,["en","cream"]],
+    ["美白","びはく","美白","noun",0],["ダイエット","ダイエット","减肥","noun",1,["en","diet"]],["鏡","かがみ","镜子","noun",1],["ネイル","ネイル","美甲","noun",0,["en","nail"]],
   ],
   medical: [
-    ["びょういん","byouin","医院","noun",1],["いたい","itai","疼","adj",1],["くすり","kusuri","药","noun",1],["ねつ","netsu","发烧","noun",1],
-    ["ほけんしょう","hokenshou","保险证","noun",1],["かぜ","kaze","感冒","noun",1],["せき","seki","咳嗽","noun",1],["びょうき","byouki","生病","noun",1],
-    ["いしゃ","isha","医生","noun",1],["かんごし","kangoshi","护士","noun",0],["しょほうせん","shohousen","处方","noun",0],["やっきょく","yakkyoku","药店","noun",1],
-    ["ちゅうしゃ","chuusha","打针","noun",0],["あたまがいたい","atama ga itai","头疼","phrase",1],["はきけ","hakike","恶心","noun",0],
-    ["アレルギー","arerugii","过敏","noun",1,["de","Allergie"]],["けが","kega","受伤","noun",1],["きゅうきゅうしゃ","kyuukyuusha","救护车","noun",0],
-    ["よやく","yoyaku","预约","noun",1],["だいじょうぶ","daijoubu","没事/没关系","adj",1],
+    ["病院","びょういん","医院","noun",1],["痛い","いたい","疼","adj",1],["薬","くすり","药","noun",1],["熱","ねつ","发烧","noun",1],
+    ["保険証","ほけんしょう","保险证","noun",1],["風邪","かぜ","感冒","noun",1],["咳","せき","咳嗽","noun",1],["病気","びょうき","生病","noun",1],
+    ["医者","いしゃ","医生","noun",1],["看護師","かんごし","护士","noun",0],["処方箋","しょほうせん","处方","noun",0],["薬局","やっきょく","药店","noun",1],
+    ["注射","ちゅうしゃ","打针","noun",0],["頭が痛い","あたまがいたい","头疼","phrase",1],["吐き気","はきけ","恶心","noun",0],
+    ["アレルギー","アレルギー","过敏","noun",1,["de","Allergie"]],["怪我","けが","受伤","noun",1],["救急車","きゅうきゅうしゃ","救护车","noun",0],
+    ["予約","よやく","预约","noun",1],["大丈夫","だいじょうぶ","没事/没关系","adj",1],
   ],
   affairs: [
-    ["やくしょ","yakusho","区役所/政府机构","noun",1],["てつづき","tetsuzuki","手续","noun",1],["じゅうしょ","juusho","住址","noun",1],["ぎんこう","ginkou","银行","noun",1],
-    ["しょるい","shorui","文件/资料","noun",1],["はんこ","hanko","印章","noun",1],["こうざ","kouza","账户","noun",0],["みぶんしょう","mibunshou","身份证件","noun",1],
-    ["きにゅう","kinyuu","填写","noun",1],["まどぐち","madoguchi","窗口","noun",1],["ざいりゅうカード","zairyuu kaado","在留卡","noun",1,["en","card"]],
-    ["てんにゅう","tennyuu","迁入","noun",0],["てんしゅつ","tenshutsu","迁出","noun",0],["しょうめいしょ","shoumeisho","证明书","noun",1],["きょか","kyoka","许可","noun",0],
-    ["しんせい","shinsei","申请","noun",1],["ひつよう","hitsuyou","必要","adj",1],["ていしゅつ","teishutsu","提交","noun",1],["よやく","yoyaku","预约","noun",1],["なまえ","namae","名字","noun",1],
+    ["役所","やくしょ","区役所/政府机构","noun",1],["手続き","てつづき","手续","noun",1],["住所","じゅうしょ","住址","noun",1],["銀行","ぎんこう","银行","noun",1],
+    ["書類","しょるい","文件/资料","noun",1],["はんこ","はんこ","印章","noun",1],["口座","こうざ","账户","noun",0],["身分証","みぶんしょう","身份证件","noun",1],
+    ["記入","きにゅう","填写","noun",1],["窓口","まどぐち","窗口","noun",1],["在留カード","ざいりゅうカード","在留卡","noun",1,["en","card"]],
+    ["転入","てんにゅう","迁入","noun",0],["転出","てんしゅつ","迁出","noun",0],["証明書","しょうめいしょ","证明书","noun",1],["許可","きょか","许可","noun",0],
+    ["申請","しんせい","申请","noun",1],["必要","ひつよう","必要","adj",1],["提出","ていしゅつ","提交","noun",1],["予約","よやく","预约","noun",1],["名前","なまえ","名字","noun",1],
   ],
   work: [
-    ["しごと","shigoto","工作","noun",1],["かいぎ","kaigi","会议","noun",1],["メール","meeru","邮件","noun",1,["en","mail"]],["おつかれさま","otsukaresama","辛苦了","phrase",1],
-    ["きゅうりょう","kyuuryou","工资","noun",1],["ざんぎょう","zangyou","加班","noun",1],["やすみ","yasumi","休息/假","noun",1],["どうりょう","douryou","同事","noun",1],
-    ["じょうし","joushi","上司","noun",1],["かくにん","kakunin","确认","noun",1],["れんらく","renraku","联系","noun",1],["しめきり","shimekiri","截止","noun",1],
-    ["パソコン","pasokon","电脑","noun",1,["en","personal computer"]],["でんわ","denwa","电话","noun",1],["しりょう","shiryou","资料","noun",1],
-    ["ミーティング","miitingu","会议","noun",1,["en","meeting"]],["ほうこく","houkoku","报告","noun",1],["そうだん","soudan","商量","noun",1],
-    ["ありがとうございます","arigatou gozaimasu","谢谢(敬)","phrase",1],["よろしくおねがいします","yoroshiku onegaishimasu","请多关照","phrase",1],
+    ["仕事","しごと","工作","noun",1],["会議","かいぎ","会议","noun",1],["メール","メール","邮件","noun",1,["en","mail"]],["お疲れさま","おつかれさま","辛苦了","phrase",1],
+    ["給料","きゅうりょう","工资","noun",1],["残業","ざんぎょう","加班","noun",1],["休み","やすみ","休息/假","noun",1],["同僚","どうりょう","同事","noun",1],
+    ["上司","じょうし","上司","noun",1],["確認","かくにん","确认","noun",1],["連絡","れんらく","联系","noun",1],["締め切り","しめきり","截止","noun",1],
+    ["パソコン","パソコン","电脑","noun",1,["en","personal computer"]],["電話","でんわ","电话","noun",1],["資料","しりょう","资料","noun",1],
+    ["ミーティング","ミーティング","会议","noun",1,["en","meeting"]],["報告","ほうこく","报告","noun",1],["相談","そうだん","商量","noun",1],
+    ["ありがとうございます","ありがとうございます","谢谢(敬)","phrase",1],["よろしくお願いします","よろしくおねがいします","请多关照","phrase",1],
   ],
   acg: [
-    ["アニメ","anime","动画","noun",1,["en","animation"]],["まんが","manga","漫画","noun",1],["すき","suki","喜欢","adj",1],["キャラ","kyara","角色","noun",1,["en","character"]],
-    ["こえ","koe","声音","noun",1],["せいゆう","seiyuu","声优","noun",1],["かみ","kami","神/头发","noun",1],["かわいい","kawaii","可爱的","adj",1],
-    ["かっこいい","kakkoii","帅气的","adj",1],["げーむ","geemu","游戏","noun",1,["en","game"]],["はなし","hanashi","故事/话","noun",1],["みる","miru","看","verb",1],
-    ["すごい","sugoi","厉害/好棒","adj",1],["イベント","ibento","活动","noun",1,["en","event"]],["グッズ","guzzu","周边","noun",1,["en","goods"]],
-    ["おすすめ","osusume","推荐","noun",1],["はまる","hamaru","入坑/沉迷","verb",1],["なかま","nakama","伙伴","noun",1],["せかい","sekai","世界","noun",1],["がんばる","ganbaru","加油","verb",1],
+    ["アニメ","アニメ","动画","noun",1,["en","animation"]],["漫画","まんが","漫画","noun",1],["好き","すき","喜欢","adj",1],["キャラ","キャラ","角色","noun",1,["en","character"]],
+    ["声","こえ","声音","noun",1],["声優","せいゆう","声优","noun",1],["神","かみ","神/头发","noun",1],["かわいい","かわいい","可爱的","adj",1],
+    ["かっこいい","かっこいい","帅气的","adj",1],["ゲーム","ゲーム","游戏","noun",1,["en","game"]],["話","はなし","故事/话","noun",1],["見る","みる","看","verb",1],
+    ["すごい","すごい","厉害/好棒","adj",1],["イベント","イベント","活动","noun",1,["en","event"]],["グッズ","グッズ","周边","noun",1,["en","goods"]],
+    ["おすすめ","おすすめ","推荐","noun",1],["はまる","はまる","入坑/沉迷","verb",1],["仲間","なかま","伙伴","noun",1],["世界","せかい","世界","noun",1],["頑張る","がんばる","加油","verb",1],
   ],
+};
+// 振假名/迁移：判断是否含汉字（含汉字才需在上方标假名；纯假名词不标，免冗余）
+const hasKanji = (t) => /[一-鿿々]/.test(t || "");
+// 老词库迁移：旧种子是 [假名, 罗马音]，按 (旧term=假名)|中文 映射到新的 {正体, 平假名}，把存量种子词升级成汉字正体+假名读音
+const SEED_FIX = (() => {
+  const m = {};
+  Object.keys(SEED_BANK).forEach((k) => SEED_BANK[k].forEach((r) => { m[r[1] + "|" + r[2]] = { term: r[0], reading: r[1] }; }));
+  m["げーむ|游戏"] = { term: "ゲーム", reading: "ゲーム" }; // 旧种子写作平假名「げーむ」
+  return m;
+})();
+const fixSeedWord = (w) => { if (!w || !w.isSeed) return w; const f = SEED_FIX[(w.term || "") + "|" + (w.meaning || "")]; return f ? { ...w, term: f.term, reading: f.reading } : w; };
+// 振假名显示：正体(含外来词括号)为主，含汉字时把平假名读音以小字标在正上方；纯假名词不再标读音
+const JaTerm = ({ w, size = 18, align = "flex-start" }) => {
+  const furi = !!(w && w.reading && hasKanji(w.term) && w.reading !== w.term);
+  return (<span style={{ display: "inline-flex", flexDirection: "column", alignItems: align, verticalAlign: "middle", lineHeight: 1.05, marginRight: 6 }}>
+    {furi && <span style={{ fontSize: Math.max(9, Math.round(size * 0.5)), color: C.inkSoft, fontWeight: 700, letterSpacing: 0.5 }}>{w.reading}</span>}
+    <span style={{ fontSize: size, fontWeight: 800 }}>{termWithLoan(w)}</span>
+  </span>);
 };
 function buildSeedWords(interestIds) {
   const words = [];
@@ -159,7 +178,7 @@ const Store = (() => {
     },
   };
 })();
-async function loadState() { try { const v = await Store.get(SKEY); return v ? JSON.parse(v) : null; } catch (e) { console.error("[kotomo] loadState 失败", e); return null; } }
+async function loadState() { try { const v = await Store.get(SKEY); if (!v) return null; const s = JSON.parse(v); if (s && Array.isArray(s.words)) s.words = s.words.map(fixSeedWord); return s; } catch (e) { console.error("[kotomo] loadState 失败", e); return null; } }
 // 返回 true/false：失败不再静默吞，交给上层提示用户（避免数据无声丢失）
 async function saveState(s) { try { await Store.set(SKEY, JSON.stringify(s)); return true; } catch (e) { console.error("[kotomo] saveState 失败", e); return false; } }
 
@@ -783,8 +802,8 @@ function MatchRound({ items, all, play, onResult, onDone, onWrong, onHesitate })
       onContextMenu={(e) => { e.preventDefault(); markHes(w.id); }}
       onClick={() => { if (lpFired.current) { lpFired.current = false; return; } if (isM) return; play("tap"); if (side === "L") { setSelL(w.id); speakJa(w.term); } else setSelR(w.id); }}>
       {isM ? <div style={{ fontWeight: 800, fontSize: 20 }}>✓</div> : <>
+        <div style={{ fontSize: 10, color: C.inkSoft, height: 12, lineHeight: "12px", overflow: "hidden", whiteSpace: "nowrap", width: "100%" }}>{side === "L" && hasKanji(w.term) && w.reading && w.reading !== w.term ? w.reading : ""}</div>
         <div style={{ fontWeight: 800, fontSize: label.length > 6 ? 14 : label.length > 4 ? 16 : 18, lineHeight: 1.15, width: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{hes[w.id] ? "🤔 " : ""}{label}</div>
-        <div style={{ fontSize: 10.5, color: C.inkSoft, height: 13, lineHeight: "13px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", width: "100%" }}>{sub || ""}</div>
       </>}</button>);
   };
   return (<div className="fade-in">
@@ -819,8 +838,7 @@ function CardRound({ item, all, play, onResult, onNext, onWrong, onHesitate }) {
     <div style={S.roundTag}>🃏 {askForeign ? "这个日语词是什么意思？" : "用日语怎么说？"}{hesMarked ? " · 🤔已标犹豫" : ""}</div>
     <div key={shk} className={checked && picked && picked.id !== item.id ? "shake" : ""}>
       <div className="card pop-in" style={S.bigCard}>
-        <div style={S.cardWord} onClick={() => askForeign && speakJa(item.term)}>{prompt}{askForeign && <span style={{ fontSize: 20 }}> 🔊</span>}</div>
-        {sub && <div style={S.cardSub}>{sub}</div>}
+        <div style={S.cardWord} onClick={() => askForeign && speakJa(item.term)}>{askForeign ? <><JaTerm w={item} size={26} align="center" /><span style={{ fontSize: 20 }}> 🔊</span></> : item.meaning}</div>
       </div></div>
     <div style={S.optGrid}>{opts.map((o) => {
       const label = askForeign ? o.meaning : termWithLoan(o); const osub = askForeign ? "" : o.reading;
@@ -830,7 +848,7 @@ function CardRound({ item, all, play, onResult, onNext, onWrong, onHesitate }) {
         onTouchStart={lpStart} onTouchEnd={lpCancel} onTouchMove={lpCancel}
         onContextMenu={(e) => { e.preventDefault(); markHes(); }}
         onClick={() => { if (lpFired.current) { lpFired.current = false; return; } if (!checked) { setPicked(o); play("tap"); } }}>
-        <div style={{ fontWeight: 800, fontSize: osub ? 18 : 16 }}>{label}</div>{osub && <div style={{ fontSize: 12, color: C.inkSoft }}>{osub}</div>}</button>); })}</div>
+        {askForeign ? <div style={{ fontWeight: 800, fontSize: 16 }}>{o.meaning}</div> : <JaTerm w={o} size={18} />}</button>); })}</div>
     {checked && picked && picked.id !== item.id && <div className="slide-up" style={S.fb}>正确：{item.term}（{item.reading}）{item.loan ? "← " + item.loan.word + " " : ""}— {item.meaning}</div>}
     <button className="pressable" disabled={!picked} style={{ ...S.bigBtn, opacity: picked ? 1 : 0.45 }} onClick={checked ? proceed : check}>{checked ? "下一个 →" : "检查"}</button>
   </div>);
@@ -1225,7 +1243,7 @@ function Library({ ctx }) {
         return [(<div key={w.id} className="card" style={{ ...S.wordRow, ...(w.hl ? { background: w.hl } : {}) }}>
           <span style={{ ...S.dot, background: p.color + "33" }} onClick={() => speakJa(w.term)}>{p.emoji}</span>
           <div style={{ flex: 1 }} onClick={() => { play("tap"); setEditing(open ? null : w.id); }}>
-            <span style={S.wTerm}>{termWithLoan(w)}</span><span style={S.wReading}>{w.reading}</span>
+            <JaTerm w={w} size={18} />
             {w.freq && <Tag bg="#ffe6a8" fg="#a8761e">高频</Tag>}{done && <Tag bg="#eaf4e0" fg={C.matchaDk}>已掌握</Tag>}
             <div style={{ fontSize: 13, color: "#7a6244" }}>{w.meaning}{w.source ? " · 📍" + w.source : ""}</div>
           </div>
@@ -1253,7 +1271,7 @@ function TrashBin({ ctx }) {
     <button className="pressable" style={{ width: "100%", border: "none", background: "#f3e8d6", color: "#7a6244", borderRadius: 12, padding: "11px 13px", fontWeight: 800, fontSize: 13, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }} onClick={() => { setOpen((o) => !o); play("tap"); }}>🗑️ 最近删除（{trash.length}）· 保留 7 天可恢复 {open ? "▲" : "▼"}</button>
     {open && <div style={{ ...S.list, marginTop: 8 }}>{trash.map((t) => { const left = Math.max(0, Math.ceil(7 - (now() - t.deletedAt) / DAY)); return (
       <div key={t.word.id} className="card" style={S.wordRow}>
-        <div style={{ flex: 1 }}><span style={S.wTerm}>{termWithLoan(t.word)}</span><span style={S.wReading}>{t.word.reading}</span>
+        <div style={{ flex: 1 }}><JaTerm w={t.word} size={18} />
           <div style={{ fontSize: 12, color: C.inkSoft }}>{t.word.meaning} · 还剩 {left} 天</div></div>
         <button className="pressable" style={{ border: "none", background: C.matcha, color: "#fff", borderRadius: 10, padding: "7px 12px", fontWeight: 800, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }} onClick={() => { restoreWord(t.word.id); play("pop"); }}>↩︎ 恢复</button>
       </div>); })}</div>}
@@ -1292,7 +1310,7 @@ function ReviewCenter({ ctx }) {
     <div style={S.list}>{sorted.map((w) => { const p = posInfo(w.pos); const rate = w.seen ? Math.round((w.wrong || 0) / w.seen * 100) : 0;
       return (<div key={w.id} className="card" style={S.wordRow} onClick={() => { play("tap"); speakJa(w.term); }}>
         <span style={{ ...S.dot, background: p.color + "33" }}>{p.emoji}</span>
-        <div style={{ flex: 1 }}><span style={S.wTerm}>{termWithLoan(w)}</span><span style={S.wReading}>{w.reading}</span>{w.freq && <Tag bg="#ffe6a8" fg="#a8761e">高频</Tag>}<div style={{ fontSize: 12, color: C.inkSoft }}>{w.meaning}</div></div>
+        <div style={{ flex: 1 }}><JaTerm w={w} size={18} />{w.freq && <Tag bg="#ffe6a8" fg="#a8761e">高频</Tag>}<div style={{ fontSize: 12, color: C.inkSoft }}>{w.meaning}</div></div>
         <div style={S.wStat}><span style={S.statPill}>练{w.seen || 0}</span>{(w.wrong || 0) > 0 && <span style={{ ...S.statPill, background: "#fbeae2", color: "#c4684f" }}>错{w.wrong}·{rate}%</span>}</div></div>); })}</div>
   </div>);
 }
