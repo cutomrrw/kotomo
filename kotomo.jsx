@@ -675,12 +675,38 @@ function NaughtyModal({ text, emoji, onClose }) {
 const Bg = () => (<div style={S.bg}><div className="cloud c1">☁️</div><div className="cloud c2">☁️</div></div>);
 const Splash = () => (<div style={{ ...S.shell, display: "grid", placeItems: "center" }}><style>{CSS}</style><div className="breathe2"><Cat size={88} bob={false} /></div></div>);
 
+// ── 复习前：选今天练 单词 / 句子 / 全部 ─────────────────────
+function ReviewSession({ ctx }) {
+  const { st, play, reviewWrongOnly } = ctx;
+  const [mode, setMode] = useState(reviewWrongOnly ? "all" : null); // 错题强化直达全部；普通复习先选模式
+  const pool = useMemo(() => reviewPool(st.words, st.settings.energyMode, reviewWrongOnly), [st.words, st.settings.energyMode, reviewWrongOnly]);
+  if (mode) return <ReviewRun ctx={ctx} mode={mode} />;
+  if (pool.length === 0) return <EmptyReview ctx={ctx} />;
+  const nWord = pool.filter((w) => (w.type || "word") !== "sentence").length;
+  const nSent = pool.filter((w) => w.type === "sentence").length;
+  const Opt = ({ m, emoji, label, n, hint }) => (
+    <button className="pressable" disabled={n === 0} style={{ ...S.reviewPick, opacity: n === 0 ? 0.5 : 1 }} onClick={() => { if (n > 0) { play("tap"); setMode(m); } }}>
+      <span style={{ fontSize: 28 }}>{emoji}</span>
+      <div style={{ textAlign: "left", flex: 1 }}><div style={{ fontWeight: 800, fontSize: 16 }}>{label} <span style={{ color: C.honeyDk }}>· {n}</span></div><div style={{ fontSize: 12, color: C.inkSoft }}>{n === 0 ? "今天没有可练的" : hint}</div></div>
+      <span style={{ fontSize: 20, color: C.inkSoft }}>{n === 0 ? "" : "›"}</span>
+    </button>
+  );
+  return (<div className="fade-in"><BackRow ctx={ctx} title="📖 开始复习" />
+    <div style={{ textAlign: "center", margin: "4px 0 16px", color: "#7a6244", fontWeight: 800, fontSize: 15 }}>今天想练什么？🐱</div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <Opt m="all" emoji="🌈" label="全部" n={pool.length} hint="单词 + 句子，一起练" />
+      <Opt m="word" emoji="📖" label="复习单词" n={nWord} hint="连连看 / 卡片四选一" />
+      <Opt m="sentence" emoji="📝" label="复习句子" n={nSent} hint="AI 智能挖空 · 选词填空" />
+    </div>
+  </div>);
+}
+
 // ── 复习会话：按内容形态分场 ────────────────────────────
 // 把到期词分成 词/句子/语法 三组，词走连连看+卡片，句子走填空，语法走情境
-function ReviewSession({ ctx }) {
+function ReviewRun({ ctx, mode }) {
   const { st, play, finishReview, reviewWrongOnly } = ctx;
-  // 队列在进入会话时只构建一次：期间即使因缓存挖空题导致 st.words 变化，也不重排、不打断复习
-  const [queue] = useState(() => buildQueue(reviewPool(st.words, st.settings.energyMode, reviewWrongOnly)));
+  // 队列进入会话只建一次（缓存挖空题改 st.words 也不重排）；mode 决定只练 单词/句子/全部
+  const [queue] = useState(() => { const p = reviewPool(st.words, st.settings.energyMode, reviewWrongOnly); const f = mode === "word" ? p.filter((w) => (w.type || "word") !== "sentence") : mode === "sentence" ? p.filter((w) => w.type === "sentence") : p; return buildQueue(f); });
   const [qi, setQi] = useState(0);
   const [hearts, setHearts] = useState(5);
   const resultsRef = useRef({}); // id -> correct(bool)，一个词若任一次错则记错
@@ -1421,6 +1447,7 @@ const S = {
   optGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 },
   opt: { border: "2.5px solid #ecdfca", borderRadius: 16, padding: "16px 12px", cursor: "pointer", textAlign: "center", transition: "all .12s", boxShadow: "0 4px 0 #efe2cd", background: "#fff" },
   optWide: { border: "2.5px solid #ecdfca", borderRadius: 14, padding: "14px 16px", cursor: "pointer", textAlign: "left", transition: "all .12s", boxShadow: "0 4px 0 #efe2cd", background: "#fff" },
+  reviewPick: { display: "flex", alignItems: "center", gap: 14, width: "100%", boxSizing: "border-box", background: "#fffdf8", border: "2.5px solid #ecdfca", borderRadius: 16, padding: "16px 18px", cursor: "pointer", fontFamily: "inherit", color: C.ink, boxShadow: "0 4px 0 #efe2cd" },
   fb: { borderRadius: 14, padding: "12px 16px", fontWeight: 700, fontSize: 14, background: "#fbeae2" },
   matchCard: { borderRadius: 22, padding: 16 }, matchCols: { display: "flex", gap: 12 }, matchCol: { flex: 1, display: "flex", flexDirection: "column", gap: 8 },
   colHead: { textAlign: "center", fontWeight: 800, fontSize: 13, color: C.inkSoft, marginBottom: 2 },
