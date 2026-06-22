@@ -9,9 +9,9 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
 // ═══════════════════════════════════════════════════════════
 
 const C = {
-  cream: "#fdf6ec", paper: "#fffdf8", honey: "#e8a85c", honeyDk: "#c98a3e",
-  matcha: "#8fb878", matchaDk: "#6f9a59", wood: "#a9805a", ink: "#5a4634",
-  inkSoft: "#9b8674", blush: "#e89b86", sky: "#7bb4c4", grape: "#c79bd4",
+  cream: "var(--cream)", paper: "var(--surface)", honey: "var(--honey)", honeyDk: "var(--honey-dk)",
+  matcha: "var(--matcha)", matchaDk: "var(--matcha-dk)", wood: "var(--wood)", ink: "var(--ink)",
+  inkSoft: "var(--ink-soft)", blush: "var(--blush)", sky: "var(--sky)", grape: "var(--grape)", grapeDk: "var(--grape-dk)",
 };
 const POS = [
   { key: "noun", label: "名词", emoji: "🍙", color: "#e8a85c" },
@@ -499,7 +499,7 @@ function freshState() {
     trash: [],
     pet: { mood: 75, lastSeenAt: now() },
     streak: { totalDays: 0, monthDays: 0, lastStudyDay: null, calendar: {} },
-    settings: { sound: true, aiReal: false, energyMode: "normal" },
+    settings: { sound: true, aiReal: false, energyMode: "normal", theme: "light" },
   };
 }
 
@@ -531,6 +531,15 @@ export default function App() {
   useEffect(() => { if (loaded) saveState(st).then((ok) => setSaveErr(!ok)); }, [st, loaded]);
   // 计时器（刷新心情等）
   useEffect(() => { const t = setInterval(() => setTick((x) => x + 1), 30000); return () => clearInterval(t); }, []);
+  // 主题：把 settings.theme 应用到 <html data-theme>，"system"跟随手机白天/夜里
+  const theme = st.settings.theme || "light";
+  useEffect(() => {
+    const root = document.documentElement;
+    const mq = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+    const apply = () => root.setAttribute("data-theme", theme === "system" ? ((mq && mq.matches) ? "dark" : "light") : theme);
+    apply();
+    if (theme === "system" && mq) { try { mq.addEventListener("change", apply); } catch (e) { mq.addListener && mq.addListener(apply); } return () => { try { mq.removeEventListener("change", apply); } catch (e) { mq.removeListener && mq.removeListener(apply); } }; }
+  }, [theme]);
   // 进入即更新 lastSeenAt（轻量，标记"今天来过"，但延迟以便先算盲盒）
   useEffect(() => { if (loaded && st.onboarded) { const t = setTimeout(() => setSt((s) => ({ ...s, pet: { ...s.pet, lastSeenAt: now(), mood: Math.min(100, (s.pet.mood ?? 75)) } })), 1500); return () => clearTimeout(t); } }, [loaded, st.onboarded]);
 
@@ -601,7 +610,7 @@ export default function App() {
     <div style={S.shell}>
       <style>{CSS}</style>
       <Bg />
-      {saveErr && <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 50, background: "#c4684f", color: "#fff", textAlign: "center", padding: "6px 10px", fontSize: 12, fontWeight: 700 }}>⚠️ 本地保存异常，这台设备可能无法保留数据</div>}
+      {saveErr && <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 50, background: "var(--danger-fg)", color: "#fff", textAlign: "center", padding: "6px 10px", fontSize: 12, fontWeight: 700 }}>⚠️ 本地保存异常，这台设备可能无法保留数据</div>}
       {naughty && <NaughtyModal text={naughty} emoji={seg.emoji} onClose={() => { setNaughty(null); play("happy"); }} />}
       <TopBar st={st} seg={seg} mastered={mastered} onSettings={() => nav("settings")} play={play} setSetting={setSetting} />
       <main style={S.main}>
@@ -645,7 +654,8 @@ function TopBar({ st, seg, mastered, onSettings, play, setSetting }) {
     <div style={S.stats}>
       <Stat icon="🔥" val={st.streak.totalDays} label="累计天" tone={C.honeyDk} />
       <Stat icon="🌸" val={mastered} label="已掌握" tone={C.matchaDk} />
-      <button style={{ ...S.aiToggle, background: aiReal ? C.matcha : "#eadcc6", color: aiReal ? "#fff" : C.inkSoft }} onClick={() => { setSetting("aiReal", !aiReal); play("pop"); }} title="AI：真Claude/模拟">{aiReal ? "AI真" : "AI拟"}</button>
+      <button style={{ ...S.aiToggle, background: aiReal ? C.matcha : "var(--ai-off)", color: aiReal ? "#fff" : C.inkSoft }} onClick={() => { setSetting("aiReal", !aiReal); play("pop"); }} title="AI：真Claude/模拟">{aiReal ? "AI真" : "AI拟"}</button>
+      <button style={S.iconBtn} title="主题：浅色 / 深色 / 像素" onClick={() => { const order = ["light", "dark", "pixel"]; const cur = st.settings.theme || "light"; const nx = order[(order.indexOf(cur) + 1) % order.length]; setSetting("theme", nx); play("pop"); }}>{ { light: "☀️", dark: "🌙", pixel: "🕹️", system: "🌗" }[st.settings.theme || "light"] }</button>
       <button style={S.iconBtn} onClick={() => { setSetting("sound", !st.settings.sound); if (!st.settings.sound) Sfx.pop(); }}>{st.settings.sound ? "🔔" : "🔕"}</button>
       <button style={S.iconBtn} onClick={onSettings}>⚙️</button>
     </div>
@@ -666,14 +676,14 @@ function Home({ ctx }) {
   const catSize = catSizeOf(mastered);
 
   const nudge = (() => {
-    if (mood.awayDays >= 1.5) return { bg: "#fbeae2", text: "好久不见～它刚跟你汇报完它的'丰功伟绩'😼 来记几个词吧" };
-    if (due.length === 0) return { bg: "#eaf4e0", text: "今天没有到期要复习的词，遇到新词随手加进来就好 🌿" };
-    if (todayLevel) return { bg: "#eaf4e0", text: "今天已经来过啦，状态在线 ✨ 想再练一点也可以" };
-    return { bg: "#fff4e0", text: "今天有 " + due.length + " 个词到期，消掉它们，喂饱小猫 🍙" };
+    if (mood.awayDays >= 1.5) return { bg: "var(--danger-bg)", text: "好久不见～它刚跟你汇报完它的'丰功伟绩'😼 来记几个词吧" };
+    if (due.length === 0) return { bg: "var(--ok-bg)", text: "今天没有到期要复习的词，遇到新词随手加进来就好 🌿" };
+    if (todayLevel) return { bg: "var(--ok-bg)", text: "今天已经来过啦，状态在线 ✨ 想再练一点也可以" };
+    return { bg: "var(--warn-bg)", text: "今天有 " + due.length + " 个词到期，消掉它们，喂饱小猫 🍙" };
   })();
 
   return (<div className="fade-in">
-    <div style={{ ...S.nudge, background: nudge.bg }}><span style={{ fontSize: 22 }}>{seg.emoji}</span><div style={{ flex: 1, fontWeight: 700, fontSize: 13.5, color: "#6a5640" }}>{nudge.text}</div></div>
+    <div style={{ ...S.nudge, background: nudge.bg }}><span style={{ fontSize: 22 }}>{seg.emoji}</span><div style={{ flex: 1, fontWeight: 700, fontSize: 13.5, color: "var(--ink-mid)" }}>{nudge.text}</div></div>
 
     {/* 窝 + 猫 */}
     <div style={S.room}>
@@ -706,7 +716,7 @@ function Home({ ctx }) {
     <div style={S.reviewRow}>
       <button className="pressable" style={S.reviewBig} onClick={() => nav("center")}>
         <span style={{ fontSize: 20 }}>🌟</span><div style={{ textAlign: "left" }}><div style={{ fontWeight: 800 }}>复习中心</div><div style={S.reviewSub}>统计 · 排序 · 强化</div></div></button>
-      <button className="pressable" style={{ ...S.reviewBig, background: "#fbeae2", borderColor: C.blush, boxShadow: "0 5px 0 #e7c0b3" }} disabled={wrongs.length === 0} onClick={() => { ctx.setReviewWrongOnly(true); nav("review"); }}>
+      <button className="pressable" style={{ ...S.reviewBig, background: "var(--danger-bg)", borderColor: C.blush, boxShadow: "0 5px 0 var(--danger-bevel)" }} disabled={wrongs.length === 0} onClick={() => { ctx.setReviewWrongOnly(true); nav("review"); }}>
         <span style={{ fontSize: 20 }}>❗</span><div style={{ textAlign: "left" }}><div style={{ fontWeight: 800 }}>错题强化</div><div style={S.reviewSub}>{wrongs.length} 个易错/犹豫</div></div></button>
     </div>
 
@@ -724,7 +734,7 @@ const EnergyPicker = ({ mode, onPick }) => (
       <button key={m} style={{ ...S.energyBtn, ...(mode === m ? S.energyOn : {}) }} onClick={() => onPick(m)} title={m}>{e}</button>))}
   </div>);
 const Ring = ({ pct, label }) => { const r = 24, circ = 2 * Math.PI * r, off = circ - (pct / 100) * circ;
-  return (<svg width="58" height="58" style={{ flexShrink: 0 }}><circle cx="29" cy="29" r={r} fill="none" stroke="#eaddc6" strokeWidth="6" /><circle cx="29" cy="29" r={r} fill="none" stroke={C.matcha} strokeWidth="6" strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={off} transform="rotate(-90 29 29)" style={{ transition: "stroke-dashoffset .5s" }} /><text x="29" y="34" textAnchor="middle" fontSize="15" fontWeight="800" fill={C.matchaDk}>{label}</text></svg>); };
+  return (<svg width="58" height="58" style={{ flexShrink: 0 }}><circle cx="29" cy="29" r={r} fill="none" stroke="var(--track)" strokeWidth="6" /><circle cx="29" cy="29" r={r} fill="none" stroke={C.matcha} strokeWidth="6" strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={off} transform="rotate(-90 29 29)" style={{ transition: "stroke-dashoffset .5s" }} /><text x="29" y="34" textAnchor="middle" fontSize="15" fontWeight="800" fill={C.matchaDk}>{label}</text></svg>); };
 
 function NaughtyModal({ text, emoji, onClose }) {
   return (<div style={S.modalMask} onClick={onClose}><div className="pop-in" style={S.modalCard} onClick={(e) => e.stopPropagation()}>
@@ -758,7 +768,7 @@ function ReviewSession({ ctx }) {
     </button>
   );
   return (<div className="fade-in"><BackRow ctx={ctx} title="📖 开始复习" />
-    <div style={{ textAlign: "center", margin: "4px 0 16px", color: "#7a6244", fontWeight: 800, fontSize: 15 }}>今天想练什么？🐱</div>
+    <div style={{ textAlign: "center", margin: "4px 0 16px", color: "var(--ink-mid)", fontWeight: 800, fontSize: 15 }}>今天想练什么？🐱</div>
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <Opt m="all" emoji="🌈" label="全部" n={nAll} hint="单词 + 句子，一起练" />
       <Opt m="word" emoji="📖" label="复习单词" n={nWord} hint="连连看 / 卡片四选一" />
@@ -887,14 +897,14 @@ function CardRound({ item, all, play, onResult, onNext, onWrong, onHesitate }) {
     <div style={S.optGrid}>{opts.map((o) => {
       const label = askForeign ? o.meaning : termWithLoan(o); const osub = askForeign ? "" : o.reading;
       let stt = "idle"; if (checked) { if (o.id === item.id) stt = "right"; else if (picked && picked.id === o.id) stt = "wrong"; }
-      const mp = { idle: { borderColor: picked && picked.id === o.id ? C.honey : "#ecdfca", background: picked && picked.id === o.id ? "#fdf2e0" : "#fff" }, right: { borderColor: C.matchaDk, background: "#eaf4e0" }, wrong: { borderColor: C.blush, background: "#fbeae2" } };
+      const mp = { idle: { borderColor: picked && picked.id === o.id ? C.honey : "var(--line)", background: picked && picked.id === o.id ? "var(--surface-sel)" : "var(--surface)" }, right: { borderColor: C.matchaDk, background: "var(--ok-bg)" }, wrong: { borderColor: C.blush, background: "var(--danger-bg)" } };
       return (<button key={o.id} className="pressable" style={{ ...S.opt, ...mp[stt] }}
         onTouchStart={lpStart} onTouchEnd={lpCancel} onTouchMove={lpCancel}
         onContextMenu={(e) => { e.preventDefault(); markHes(); }}
         onClick={() => { if (lpFired.current) { lpFired.current = false; return; } if (!checked) { setPicked(o); play("tap"); } }}>
         {askForeign ? <div style={{ fontWeight: 800, fontSize: 16 }}>{o.meaning}</div> : <JaTerm w={o} size={18} />}</button>); })}</div>
     {checked && picked && picked.id !== item.id && <div className="slide-up" style={S.fb}>正确：{item.term}（{item.reading}）{item.loan ? "← " + item.loan.word + " " : ""}— {item.meaning}</div>}
-    {checked && item.kanjiTip && item.kanjiTip.kind === "trap" && <div className="slide-up" style={{ ...S.fb, background: "#fbeae2", color: "#c4684f" }}>⚠️ 汉字陷阱：{item.kanjiTip.note || "别按中文字面理解"}</div>}
+    {checked && item.kanjiTip && item.kanjiTip.kind === "trap" && <div className="slide-up" style={{ ...S.fb, background: "var(--danger-bg)", color: "var(--danger-fg)" }}>⚠️ 汉字陷阱：{item.kanjiTip.note || "别按中文字面理解"}</div>}
     <button className="pressable" disabled={!picked} style={{ ...S.bigBtn, opacity: picked ? 1 : 0.45 }} onClick={checked ? proceed : check}>{checked ? "下一个 →" : "检查"}</button>
   </div>);
 }
@@ -951,7 +961,7 @@ function FillRound({ item, all, play, onResult, onNext, onWrong, onHesitate, upd
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{clozeOpts.map((o, i) => {
         let stt = "idle"; if (checked) { if (o === cloze.answer) stt = "right"; else if (picked === o) stt = "wrong"; }
-        const mp = { idle: { borderColor: picked === o ? C.honey : "#ecdfca", background: picked === o ? "#fdf2e0" : "#fff" }, right: { borderColor: C.matchaDk, background: "#eaf4e0" }, wrong: { borderColor: C.blush, background: "#fbeae2" } };
+        const mp = { idle: { borderColor: picked === o ? C.honey : "var(--line)", background: picked === o ? "var(--surface-sel)" : "var(--surface)" }, right: { borderColor: C.matchaDk, background: "var(--ok-bg)" }, wrong: { borderColor: C.blush, background: "var(--danger-bg)" } };
         return (<button key={i} className="pressable" style={{ ...S.optWide, ...mp[stt] }} onClick={() => { if (!checked) { setPicked(o); play("tap"); } }}>
           <span style={{ fontWeight: 800, color: C.honeyDk, marginRight: 10 }}>{"ABCD"[i]}</span><span style={{ fontWeight: 800, fontSize: 17 }}>{o}</span></button>); })}</div>
       {checked && <div className="slide-up" style={S.fb}>正确：{cloze.answer}{cloze.point ? "　·　" + cloze.point : ""}<div style={{ fontSize: 13, marginTop: 4, color: C.inkSoft, cursor: "pointer" }} onClick={() => speakJa(item.term)}>🔊 {item.term}</div></div>}
@@ -966,7 +976,7 @@ function FillRound({ item, all, play, onResult, onNext, onWrong, onHesitate, upd
     <div className="card pop-in" style={S.bigCard}><div style={{ fontSize: 22, fontWeight: 800 }}>{item.meaning}</div></div>
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{fallbackOpts.map((o) => {
       let stt = "idle"; if (checked) { if (o.id === item.id) stt = "right"; else if (picked && picked.id === o.id) stt = "wrong"; }
-      const mp = { idle: { borderColor: picked && picked.id === o.id ? C.honey : "#ecdfca", background: picked && picked.id === o.id ? "#fdf2e0" : "#fff" }, right: { borderColor: C.matchaDk, background: "#eaf4e0" }, wrong: { borderColor: C.blush, background: "#fbeae2" } };
+      const mp = { idle: { borderColor: picked && picked.id === o.id ? C.honey : "var(--line)", background: picked && picked.id === o.id ? "var(--surface-sel)" : "var(--surface)" }, right: { borderColor: C.matchaDk, background: "var(--ok-bg)" }, wrong: { borderColor: C.blush, background: "var(--danger-bg)" } };
       return (<button key={o.id} className="pressable" style={{ ...S.optWide, ...mp[stt] }} onClick={() => { if (!checked) { setPicked(o); play("tap"); } }} onDoubleClick={() => speakJa(o.term)}>
         <span style={{ fontWeight: 800, fontSize: 17 }}>{o.term}</span>{o.reading && <span style={{ fontSize: 12, color: C.inkSoft, marginLeft: 8 }}>{o.reading}</span>}</button>); })}</div>
     {checked && picked && picked.id !== item.id && <div className="slide-up" style={S.fb}>正确：{item.term}</div>}
@@ -984,7 +994,7 @@ function GrammarRound({ item, all, play, onResult, onNext, onWrong, onHesitate }
     <div className="card pop-in" style={S.bigCard}><div style={{ fontSize: 18, fontWeight: 800 }}>{item.meaning}</div></div>
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{opts.map((o) => {
       let stt = "idle"; if (checked) { if (o.id === item.id) stt = "right"; else if (picked && picked.id === o.id) stt = "wrong"; }
-      const mp = { idle: { borderColor: picked && picked.id === o.id ? C.honey : "#ecdfca", background: picked && picked.id === o.id ? "#fdf2e0" : "#fff" }, right: { borderColor: C.matchaDk, background: "#eaf4e0" }, wrong: { borderColor: C.blush, background: "#fbeae2" } };
+      const mp = { idle: { borderColor: picked && picked.id === o.id ? C.honey : "var(--line)", background: picked && picked.id === o.id ? "var(--surface-sel)" : "var(--surface)" }, right: { borderColor: C.matchaDk, background: "var(--ok-bg)" }, wrong: { borderColor: C.blush, background: "var(--danger-bg)" } };
       return (<button key={o.id} className="pressable" style={{ ...S.optWide, ...mp[stt] }} onClick={() => { if (!checked) { setPicked(o); play("tap"); } }}>
         <span style={{ fontWeight: 800, fontSize: 16 }}>{o.term}</span></button>); })}</div>
     {checked && picked && picked.id !== item.id && <div className="slide-up" style={S.fb}>正确：{item.term}</div>}
@@ -1150,7 +1160,7 @@ function VoiceInput({ aiReal, dir, onRows, play }) {
     <div style={S.howto}>{dir === "zh" ? "说中文，转成对应的日语词条（中→日 需开 AI）。" : "看剧/逛街听到的日语词，直接说出来，自动转成词条。"}</div>
     {!supported && <div style={S.warnBox}>此浏览器不支持语音，请用 Chrome，或改"打字"。</div>}
     {isIOS && <div style={S.tip}>iPhone 网页版每次会问麦克风权限（苹果系统对网页的限制，非故障）。嫌烦可改用「打字」，AI/离线一样自动补全。</div>}
-    <button className={"pressable " + (listening ? "pulse-rec" : "")} style={{ ...S.micBtn, background: listening ? C.blush : C.honey, boxShadow: "0 6px 0 " + (listening ? "#c97a64" : C.honeyDk) }} onClick={toggle} disabled={!supported}>
+    <button className={"pressable " + (listening ? "pulse-rec" : "")} style={{ ...S.micBtn, background: listening ? C.blush : C.honey, boxShadow: "0 6px 0 " + (listening ? "var(--blush-dk)" : C.honeyDk) }} onClick={toggle} disabled={!supported}>
       <span style={{ fontSize: 30 }}>{listening ? "🔴" : "🎙️"}</span><span>{listening ? "聆听中…点击停止" : "点击说话"}</span></button>
     {err && <div style={S.warnBox}>{err}</div>}
     {heard && <div style={S.heardBox}>"{heard}"</div>}
@@ -1306,10 +1316,10 @@ function Library({ ctx }) {
     {aiReal && fixable.length > 0 && <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.honey, boxShadow: "0 5px 0 " + C.honeyDk, opacity: fixing ? 0.75 : 1 }} disabled={fixing} onClick={runFix}>{fixing ? (fixMsg || "AI 补全中…") : "🈶 用 AI 补全 " + fixable.length + " 个词的汉字/读音"}</button>}
     {!aiReal && fixable.length > 0 && <div style={{ ...S.setNote, marginBottom: 10 }}>有 {fixable.length} 个词只有假名/罗马音；去「设置」贴上 AI 密钥并开真AI，这里就能一键补成汉字+读音。</div>}
     {!fixing && fixMsg && <div style={{ ...S.setNote, marginBottom: 10, color: C.matchaDk, fontWeight: 800 }}>{fixMsg}</div>}
-    {aiReal && tippable.length > 0 && <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.grape, boxShadow: "0 5px 0 #a87bb8", opacity: tipping ? 0.75 : 1 }} disabled={tipping} onClick={runTips}>{tipping ? (tipMsg || "AI 标注中…") : "🈯 AI 标注汉字陷阱 · " + tippable.length + " 个待查"}</button>}
-    {!tipping && tipMsg && <div style={{ ...S.setNote, marginBottom: 10, color: C.grapeDk || "#8a5fa8", fontWeight: 800 }}>{tipMsg}</div>}
+    {aiReal && tippable.length > 0 && <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.grape, boxShadow: "0 5px 0 var(--grape-dk)", opacity: tipping ? 0.75 : 1 }} disabled={tipping} onClick={runTips}>{tipping ? (tipMsg || "AI 标注中…") : "🈯 AI 标注汉字陷阱 · " + tippable.length + " 个待查"}</button>}
+    {!tipping && tipMsg && <div style={{ ...S.setNote, marginBottom: 10, color: C.grapeDk || "var(--grape-dk)", fontWeight: 800 }}>{tipMsg}</div>}
     <div style={{ ...S.filterRow, marginBottom: 8 }}>
-      <span style={{ fontSize: 12.5, fontWeight: 800, color: "#7a6244", alignSelf: "center", marginRight: 2 }}>排序</span>
+      <span style={{ fontSize: 12.5, fontWeight: 800, color: "var(--ink-mid)", alignSelf: "center", marginRight: 2 }}>排序</span>
       <Chip on={order === "new"} onClick={() => { setOrder("new"); play("tap"); }}>🆕 从新到旧</Chip>
       <Chip on={order === "old"} onClick={() => { setOrder("old"); play("tap"); }}>📜 从旧到新</Chip>
     </div>
@@ -1326,13 +1336,13 @@ function Library({ ctx }) {
           <span style={{ ...S.dot, background: p.color + "33" }} onClick={() => speakJa(w.term)}>{p.emoji}</span>
           <div style={{ flex: 1 }} onClick={() => { play("tap"); setEditing(open ? null : w.id); }}>
             <JaTerm w={w} size={18} />
-            {w.freq && <Tag bg="#ffe6a8" fg="#a8761e">高频</Tag>}{done && <Tag bg="#eaf4e0" fg={C.matchaDk}>已掌握</Tag>}
-            {w.kanjiTip && w.kanjiTip.kind === "trap" && <Tag bg="#fbeae2" fg="#c4684f">⚠️汉字陷阱</Tag>}
-            {w.kanjiTip && w.kanjiTip.kind === "same" && <Tag bg="#eaf4e0" fg={C.matchaDk}>✅你已会</Tag>}
-            <div style={{ fontSize: 13, color: "#7a6244" }}>{w.meaning}{w.source ? " · 📍" + w.source : ""}</div>
-            {w.kanjiTip && w.kanjiTip.kind === "trap" && w.kanjiTip.note && <div style={{ fontSize: 12, color: "#c4684f", marginTop: 2 }}>⚠️ {w.kanjiTip.note}</div>}
+            {w.freq && <Tag bg="#ffe6a8" fg="#a8761e">高频</Tag>}{done && <Tag bg="var(--ok-bg)" fg={C.matchaDk}>已掌握</Tag>}
+            {w.kanjiTip && w.kanjiTip.kind === "trap" && <Tag bg="var(--danger-bg)" fg="var(--danger-fg)">⚠️汉字陷阱</Tag>}
+            {w.kanjiTip && w.kanjiTip.kind === "same" && <Tag bg="var(--ok-bg)" fg={C.matchaDk}>✅你已会</Tag>}
+            <div style={{ fontSize: 13, color: "var(--ink-mid)" }}>{w.meaning}{w.source ? " · 📍" + w.source : ""}</div>
+            {w.kanjiTip && w.kanjiTip.kind === "trap" && w.kanjiTip.note && <div style={{ fontSize: 12, color: "var(--danger-fg)", marginTop: 2 }}>⚠️ {w.kanjiTip.note}</div>}
           </div>
-          <div style={S.wStat}><span style={S.statPill}>练{w.seen || 0}</span>{(w.wrong || 0) > 0 && <span style={{ ...S.statPill, background: "#fbeae2", color: "#c4684f" }}>错{w.wrong}</span>}</div>
+          <div style={S.wStat}><span style={S.statPill}>练{w.seen || 0}</span>{(w.wrong || 0) > 0 && <span style={{ ...S.statPill, background: "var(--danger-bg)", color: "var(--danger-fg)" }}>错{w.wrong}</span>}</div>
         </div>)].concat(open ? [<div key={w.id + "edit"} className="card slide-up" style={S.editPanel}>
           <div style={S.editRow}><span style={S.editLabel}>单词</span>
             <input style={S.editInput} defaultValue={w.term} placeholder="日语正体（汉字）" onBlur={(e) => updateWord(w.id, (x) => ({ ...x, term: s2j(stripRomajiParen(e.target.value.trim())) }))} /></div>
@@ -1343,7 +1353,7 @@ function Library({ ctx }) {
           <div style={S.editRow}><span style={S.editLabel}>掌握</span>
             <button className="pressable" style={{ ...S.toggle, ...(done ? S.toggleOn : {}) }} onClick={() => { updateWord(w.id, (x) => ({ ...x, mastered: !done })); play("tap"); }}>{done ? "已掌握 ✓（跳过复习）" : "标为已掌握"}</button></div>
           <div style={S.editRow}><span style={S.editLabel}>高亮</span><div style={{ display: "flex", gap: 6 }}>
-            {HL_COLORS.map((c, i) => (<button key={i} className="pressable" style={{ ...S.hlDot, background: c || "#fff", border: (w.hl || "") === c ? "2px solid " + C.ink : "2px solid #ddd" }} onClick={() => { updateWord(w.id, (x) => ({ ...x, hl: c })); play("tap"); }}>{c ? "" : "∅"}</button>))}</div></div>
+            {HL_COLORS.map((c, i) => (<button key={i} className="pressable" style={{ ...S.hlDot, background: c || "var(--surface)", border: (w.hl || "") === c ? "2px solid " + C.ink : "2px solid var(--line)" }} onClick={() => { updateWord(w.id, (x) => ({ ...x, hl: c })); play("tap"); }}>{c ? "" : "∅"}</button>))}</div></div>
           <div style={S.editRow}><span style={S.editLabel}>来源</span>
             <input style={S.editInput} defaultValue={w.source} placeholder="哪部剧/哪家店/哪次办事…" onBlur={(e) => updateWord(w.id, (x) => ({ ...x, source: e.target.value }))} /></div>
           {w.expanded && (w.expanded.examples || []).length > 0 && <div style={{ marginTop: 6 }}><div style={S.editLabel}>例句</div>{w.expanded.examples.map((e, i) => <div key={i} style={S.exLine} onClick={() => speakJa(e.jp)}>· {e.jp} 🔊 <span style={{ color: C.inkSoft }}>{e.zh}</span></div>)}</div>}
@@ -1359,7 +1369,7 @@ function TrashBin({ ctx }) {
   const [open, setOpen] = useState(false);
   if (trash.length === 0) return null;
   return (<div style={{ marginTop: 18 }}>
-    <button className="pressable" style={{ width: "100%", border: "none", background: "#f3e8d6", color: "#7a6244", borderRadius: 12, padding: "11px 13px", fontWeight: 800, fontSize: 13, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }} onClick={() => { setOpen((o) => !o); play("tap"); }}>🗑️ 最近删除（{trash.length}）· 保留 7 天可恢复 {open ? "▲" : "▼"}</button>
+    <button className="pressable" style={{ width: "100%", border: "none", background: "var(--surface2)", color: "var(--ink-mid)", borderRadius: 12, padding: "11px 13px", fontWeight: 800, fontSize: 13, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }} onClick={() => { setOpen((o) => !o); play("tap"); }}>🗑️ 最近删除（{trash.length}）· 保留 7 天可恢复 {open ? "▲" : "▼"}</button>
     {open && <div style={{ ...S.list, marginTop: 8 }}>{trash.map((t) => { const left = Math.max(0, Math.ceil(7 - (now() - t.deletedAt) / DAY)); return (
       <div key={t.word.id} className="card" style={S.wordRow}>
         <div style={{ flex: 1 }}><JaTerm w={t.word} size={18} />
@@ -1389,7 +1399,7 @@ function ReviewCenter({ ctx }) {
       <div className="card" style={S.statCard}><div style={{ ...S.statBig, color: C.blush }}>{totalWrong}</div><div style={S.statSmall}>总错误次数</div></div>
     </div>
     <MiniCalendar calendar={st.streak.calendar} />
-    {wrongs.length > 0 && <button className="pressable" style={{ ...S.bigBtn, background: C.blush, boxShadow: "0 6px 0 #c97a64", marginTop: 14 }} onClick={() => { ctx.setReviewWrongOnly(true); play("tap"); ctx.setView("review"); }}>❗ 强化错题（{wrongs.length} 词）</button>}
+    {wrongs.length > 0 && <button className="pressable" style={{ ...S.bigBtn, background: C.blush, boxShadow: "0 6px 0 var(--blush-dk)", marginTop: 14 }} onClick={() => { ctx.setReviewWrongOnly(true); play("tap"); ctx.setView("review"); }}>❗ 强化错题（{wrongs.length} 词）</button>}
     <div style={{ ...S.sectTitle, marginTop: 16 }}>📊 单词统计</div>
     <div style={S.filterRow}>
       <Chip on={tab === "all"} onClick={() => { setTab("all"); play("tap"); }}>学过 {studied.length}</Chip>
@@ -1402,7 +1412,7 @@ function ReviewCenter({ ctx }) {
       return (<div key={w.id} className="card" style={S.wordRow} onClick={() => { play("tap"); speakJa(w.term); }}>
         <span style={{ ...S.dot, background: p.color + "33" }}>{p.emoji}</span>
         <div style={{ flex: 1 }}><JaTerm w={w} size={18} />{w.freq && <Tag bg="#ffe6a8" fg="#a8761e">高频</Tag>}<div style={{ fontSize: 12, color: C.inkSoft }}>{w.meaning}</div></div>
-        <div style={S.wStat}><span style={S.statPill}>练{w.seen || 0}</span>{(w.wrong || 0) > 0 && <span style={{ ...S.statPill, background: "#fbeae2", color: "#c4684f" }}>错{w.wrong}·{rate}%</span>}</div></div>); })}</div>
+        <div style={S.wStat}><span style={S.statPill}>练{w.seen || 0}</span>{(w.wrong || 0) > 0 && <span style={{ ...S.statPill, background: "var(--danger-bg)", color: "var(--danger-fg)" }}>错{w.wrong}·{rate}%</span>}</div></div>); })}</div>
   </div>);
 }
 function MiniCalendar({ calendar }) {
@@ -1410,7 +1420,7 @@ function MiniCalendar({ calendar }) {
   const first = new Date(y, m, 1).getDay(); const total = new Date(y, m + 1, 0).getDate();
   for (let i = 0; i < first; i++) days.push(null);
   for (let dd = 1; dd <= total; dd++) days.push(dd);
-  const colorOf = (dd) => { if (!dd) return "transparent"; const key = new Date(y, m, dd).toDateString(); const lv = calendar[key]; return lv === "super" ? C.grape : lv === "full" ? C.matcha : lv === "light" ? "#cdeccd" : "#f0e6d4"; };
+  const colorOf = (dd) => { if (!dd) return "transparent"; const key = new Date(y, m, dd).toDateString(); const lv = calendar[key]; return lv === "super" ? C.grape : lv === "full" ? C.matcha : lv === "light" ? "#cdeccd" : "var(--track)"; };
   return (<div className="card" style={S.calCard}>
     <div style={S.calTitle}>📅 {y}年{m + 1}月 · 努力浓淡图</div>
     <div style={S.calGrid}>{["日","一","二","三","四","五","六"].map((w) => <div key={w} style={S.calW}>{w}</div>)}
@@ -1422,7 +1432,7 @@ function MiniCalendar({ calendar }) {
 // ── 设置 ───────────────────────────────────────────────
 // 开发者日志查看器：列出本机记录的报错/事件，可复制发给开发者、可清空
 const fmtLogTime = (t) => { const d = new Date(t); const p = (n) => String(n).padStart(2, "0"); return p(d.getMonth() + 1) + "-" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds()); };
-const _logColor = (lv) => lv === "error" ? "#c4684f" : lv === "warn" ? C.honeyDk : C.matchaDk;
+const _logColor = (lv) => lv === "error" ? "var(--danger-fg)" : lv === "warn" ? C.honeyDk : C.matchaDk;
 function fallbackCopy(text) { try { const ta = document.createElement("textarea"); ta.value = text; ta.style.position = "fixed"; ta.style.top = "0"; ta.style.opacity = "0"; document.body.appendChild(ta); ta.focus(); ta.select(); document.execCommand("copy"); document.body.removeChild(ta); return true; } catch (e) { return false; } }
 function LogViewer({ play }) {
   const [open, setOpen] = useState(false), [tick, setTick] = useState(0), [msg, setMsg] = useState("");
@@ -1435,17 +1445,17 @@ function LogViewer({ play }) {
   };
   const clear = async () => { await clearLogs(); setMsg("已清空"); setTick((x) => x + 1); play && play("tap"); setTimeout(() => setMsg(""), 1500); };
   return (<div style={{ marginTop: 14 }}>
-    <button className="pressable" style={{ width: "100%", border: "none", background: "#f3e8d6", color: "#7a6244", borderRadius: 12, padding: "11px 13px", fontWeight: 800, fontSize: 13, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }} onClick={() => { setOpen((o) => !o); setTick((x) => x + 1); play && play("tap"); }}>🛠 开发者日志（{getLogs().length}）· 出错时这里记原因 {open ? "▲" : "▼"}</button>
+    <button className="pressable" style={{ width: "100%", border: "none", background: "var(--surface2)", color: "var(--ink-mid)", borderRadius: 12, padding: "11px 13px", fontWeight: 800, fontSize: 13, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }} onClick={() => { setOpen((o) => !o); setTick((x) => x + 1); play && play("tap"); }}>🛠 开发者日志（{getLogs().length}）· 出错时这里记原因 {open ? "▲" : "▼"}</button>
     {open && <div style={{ marginTop: 8 }}>
       <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
         <button className="pressable" style={{ background: C.honey, color: "#fff", border: "none", borderRadius: 12, padding: "8px 14px", fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 4px 0 " + C.honeyDk }} onClick={copyAll}>📋 复制全部</button>
-        <button className="pressable" style={{ border: "2px solid #ecdfca", background: "#fff", color: C.inkSoft, borderRadius: 12, padding: "8px 14px", fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }} onClick={() => { setTick((x) => x + 1); play && play("tap"); }}>↻ 刷新</button>
-        <button className="pressable" style={{ border: "2px solid #f0ddd5", background: "#fff", color: C.blush, borderRadius: 12, padding: "8px 14px", fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }} onClick={clear}>🗑️ 清空</button>
+        <button className="pressable" style={{ border: "2px solid var(--line)", background: "var(--surface)", color: C.inkSoft, borderRadius: 12, padding: "8px 14px", fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }} onClick={() => { setTick((x) => x + 1); play && play("tap"); }}>↻ 刷新</button>
+        <button className="pressable" style={{ border: "2px solid var(--danger-line)", background: "var(--surface)", color: C.blush, borderRadius: 12, padding: "8px 14px", fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }} onClick={clear}>🗑️ 清空</button>
       </div>
       {msg && <div style={{ ...S.setNote, color: C.matchaDk, fontWeight: 800 }}>{msg}</div>}
       {logs.length === 0 ? <div style={S.empty}>暂无日志 — 出问题时这里会自动记录 🌱</div> :
         <div style={{ maxHeight: 320, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6 }}>{logs.map((l, i) => (
-          <div key={i} style={{ background: "#fff", border: "1px solid #eee2cf", borderRadius: 10, padding: "8px 10px", fontSize: 12 }}>
+          <div key={i} style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 10, padding: "8px 10px", fontSize: 12 }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
               <span style={{ fontWeight: 800, color: _logColor(l.level) }}>{l.level === "error" ? "● 错误" : l.level === "warn" ? "● 注意" : "● 信息"}</span>
               <span style={{ color: C.inkSoft }}>{fmtLogTime(l.t)}</span></div>
@@ -1469,6 +1479,10 @@ function Settings({ ctx }) {
   };
   return (<div className="fade-in"><BackRow ctx={ctx} title="⚙️ 设置" />
     <div className="card" style={S.setCard}>
+      <Row label="外观主题" hint="浅色 / 深色 / 像素，或跟随手机白天夜里自动切">
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", justifyContent: "flex-end" }}>{[["light", "☀️浅"], ["dark", "🌙深"], ["pixel", "🕹️像素"], ["system", "🌗跟随"]].map(([m, l]) => (
+          <button key={m} className="pressable" style={{ ...S.energyBtn, width: "auto", padding: "6px 9px", fontSize: 12, fontWeight: 800, ...((st.settings.theme || "light") === m ? S.energyOn : {}) }} onClick={() => { setSetting("theme", m); play("tap"); }}>{l}</button>))}</div>
+      </Row>
       <Row label="音效" hint="清脆解压的按键音"><Switch on={st.settings.sound} onClick={() => { setSetting("sound", !st.settings.sound); if (!st.settings.sound) Sfx.pop(); }} /></Row>
       <Row label="AI 模式" hint="真AI(需密钥+联网，补意思/关联词/展开) / 离线(kuromoji 只补读音和词性)"><Switch on={st.settings.aiReal} label={st.settings.aiReal ? "真" : "拟"} onClick={() => { setSetting("aiReal", !st.settings.aiReal); play("pop"); }} /></Row>
       <Row label="AI 密钥" hint="OpenAI(sk-…) 或 Claude(sk-ant-…)，贴哪家就用哪家，只存本机不上传">
@@ -1487,12 +1501,12 @@ function Settings({ ctx }) {
   </div>);
 }
 const Row = ({ label, hint, children }) => (<div style={S.setRow}><div><div style={{ fontWeight: 800 }}>{label}</div><div style={{ fontSize: 12, color: C.inkSoft }}>{hint}</div></div>{children}</div>);
-const Switch = ({ on, label, onClick }) => (<button className="pressable" style={{ ...S.switch, background: on ? C.matcha : "#d8cdbb" }} onClick={onClick}><span style={{ ...S.switchKnob, transform: on ? "translateX(20px)" : "translateX(0)" }} />{label && <span style={S.switchLabel}>{label}</span>}</button>);
+const Switch = ({ on, label, onClick }) => (<button className="pressable" style={{ ...S.switch, background: on ? C.matcha : "var(--switch-off)" }} onClick={onClick}><span style={{ ...S.switchKnob, transform: on ? "translateX(20px)" : "translateX(0)" }} />{label && <span style={S.switchLabel}>{label}</span>}</button>);
 
 const BackRow = ({ ctx, title, onBack }) => (<div style={S.backRow}><button className="pressable" style={S.backBtn} onClick={() => { ctx.play("tap"); onBack ? onBack() : ctx.setView("home"); }}>← 返回</button><h2 style={S.pageTitle}>{title}</h2></div>);
 
 const S = {
-  shell: { minHeight: "100vh", background: "linear-gradient(180deg,#fdf3e3 0%," + C.cream + " 45%)", color: C.ink, fontFamily: "'Zen Maru Gothic','PingFang SC','Microsoft YaHei',sans-serif", position: "relative", overflow: "hidden" },
+  shell: { minHeight: "100vh", background: "linear-gradient(180deg,var(--shell-top) 0%," + C.cream + " 45%)", color: C.ink, fontFamily: "'Zen Maru Gothic','PingFang SC','Microsoft YaHei',sans-serif", position: "relative", overflow: "hidden" },
   bg: { position: "fixed", inset: 0, zIndex: 0, overflow: "hidden", pointerEvents: "none" },
   main: { position: "relative", zIndex: 1, maxWidth: 600, margin: "0 auto", padding: "8px calc(16px + env(safe-area-inset-right)) calc(60px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left))" },
   top: { position: "relative", zIndex: 2, maxWidth: 600, margin: "0 auto", padding: "calc(14px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) 6px calc(16px + env(safe-area-inset-left))", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 },
@@ -1502,7 +1516,7 @@ const S = {
   stats: { display: "flex", gap: 8, alignItems: "center" }, stat: { display: "flex", gap: 4, alignItems: "center" },
   statVal: { fontWeight: 800, fontSize: 15, lineHeight: 1 }, statLabel: { fontSize: 10, color: C.inkSoft },
   aiToggle: { border: "none", borderRadius: 10, padding: "6px 8px", fontWeight: 800, fontSize: 11, cursor: "pointer", fontFamily: "inherit" },
-  iconBtn: { border: "none", background: "#fff", borderRadius: 10, width: 32, height: 32, fontSize: 15, cursor: "pointer", boxShadow: "0 3px 0 #ecdcc4" },
+  iconBtn: { border: "none", background: "var(--surface)", borderRadius: 10, width: 32, height: 32, fontSize: 15, cursor: "pointer", boxShadow: "0 3px 0 var(--bevel)" },
 
   onbWrap: { position: "relative", zIndex: 1, maxWidth: 480, margin: "0 auto", padding: "44px 22px", textAlign: "center" },
   onbLogo: { fontSize: 46, fontWeight: 800, color: C.honeyDk, letterSpacing: 2 },
@@ -1510,34 +1524,34 @@ const S = {
   onbCard: { borderRadius: 24, padding: 22, textAlign: "left" },
   onbTitle: { fontSize: 20, fontWeight: 800, marginBottom: 6 }, onbHint: { fontSize: 13, color: C.inkSoft, marginBottom: 16, lineHeight: 1.6 },
   intGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 },
-  intBtn: { position: "relative", display: "flex", flexDirection: "column", alignItems: "center", gap: 5, border: "2.5px solid #ecdfca", background: "#fff", borderRadius: 16, padding: "16px 8px", cursor: "pointer", fontFamily: "inherit", boxShadow: "0 4px 0 #efe2cd" },
-  intOn: { borderColor: C.honey, background: "#fdf2e0", boxShadow: "0 4px 0 " + C.honeyDk },
+  intBtn: { position: "relative", display: "flex", flexDirection: "column", alignItems: "center", gap: 5, border: "2.5px solid var(--line)", background: "var(--surface)", borderRadius: 16, padding: "16px 8px", cursor: "pointer", fontFamily: "inherit", boxShadow: "0 4px 0 var(--bevel)" },
+  intOn: { borderColor: C.honey, background: "var(--surface-sel)", boxShadow: "0 4px 0 " + C.honeyDk },
   intLabel: { fontWeight: 800, fontSize: 14 }, intCheck: { position: "absolute", top: 6, right: 8, color: C.honeyDk, fontWeight: 800 },
 
   bigBtn: { width: "100%", background: C.matcha, color: "#fff", border: "none", borderRadius: 16, padding: "15px", fontWeight: 800, fontSize: 16, cursor: "pointer", boxShadow: "0 6px 0 " + C.matchaDk, fontFamily: "inherit" },
-  ghostBtn: { background: "#fff", color: C.inkSoft, border: "2.5px solid #ecdfca", borderRadius: 14, padding: "12px 16px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" },
+  ghostBtn: { background: "var(--surface)", color: C.inkSoft, border: "2.5px solid var(--line)", borderRadius: 14, padding: "12px 16px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" },
 
   nudge: { display: "flex", alignItems: "center", gap: 10, borderRadius: 16, padding: "11px 14px", marginBottom: 12, border: "2px solid rgba(0,0,0,.04)" },
 
-  room: { position: "relative", background: "linear-gradient(180deg,#fbe9cf 0%,#f6dcb6 60%,#e9c79a 100%)", borderRadius: 28, padding: "18px 16px 20px", border: "4px solid #fff", boxShadow: "0 10px 0 #e3cba2, 0 14px 28px rgba(150,110,60,.16)", overflow: "hidden", minHeight: 250, marginBottom: 14 },
-  window: { position: "absolute", top: 14, right: 16, width: 54, height: 54, background: "#bfe3f0", borderRadius: 14, border: "5px solid #fff" }, sun: { position: "absolute", top: 4, left: 6, fontSize: 18 },
+  room: { position: "relative", background: "linear-gradient(180deg,var(--room1) 0%,var(--room2) 60%,var(--room3) 100%)", borderRadius: 28, padding: "18px 16px 20px", border: "4px solid var(--card-edge)", boxShadow: "0 10px 0 var(--room-bevel), 0 14px 28px rgba(150,110,60,.16)", overflow: "hidden", minHeight: 250, marginBottom: 14 },
+  window: { position: "absolute", top: 14, right: 16, width: 54, height: 54, background: "var(--window)", borderRadius: 14, border: "5px solid var(--card-edge)" }, sun: { position: "absolute", top: 4, left: 6, fontSize: 18 },
   dPlant: { position: "absolute", bottom: 12, left: 14, fontSize: 28 }, dLamp: { position: "absolute", top: 12, left: 18, fontSize: 22 },
-  bubble: { margin: "0 auto 6px", maxWidth: 260, background: "#fff", borderRadius: 16, padding: "9px 14px", fontSize: 13, fontWeight: 700, textAlign: "center", color: "#6a5640", boxShadow: "0 4px 0 #ecdcc4", position: "relative", zIndex: 2 },
+  bubble: { margin: "0 auto 6px", maxWidth: 260, background: "var(--surface)", borderRadius: 16, padding: "9px 14px", fontSize: 13, fontWeight: 700, textAlign: "center", color: "var(--ink-mid)", boxShadow: "0 4px 0 var(--bevel)", position: "relative", zIndex: 2 },
   catWrap: { textAlign: "center", position: "relative", zIndex: 2, cursor: "pointer", marginTop: 4, minHeight: 110 },
   dCushion: { position: "absolute", bottom: 4, left: "50%", transform: "translateX(-50%)", fontSize: 38, opacity: .9 },
-  matCushion: { width: 116, height: 22, background: "#d99a7c", borderRadius: "50%", margin: "0 auto", position: "absolute", left: "50%", transform: "translateX(-50%)", bottom: 12, opacity: .45, filter: "blur(1px)" },
-  cat: { position: "relative", transition: "transform .5s", transformOrigin: "bottom center" }, catEmoji: { fontSize: 72, lineHeight: 1, display: "inline-block", animation: "bob 3.5s ease-in-out infinite" }, catFace: { fontSize: 13, fontWeight: 800, color: "#6a5640", marginTop: -6 },
-  moodChip: { textAlign: "center", marginTop: 8, fontWeight: 800, fontSize: 13.5, color: "#7a6244", position: "relative", zIndex: 2 },
-  segHint: { textAlign: "center", marginTop: 4, fontSize: 12, color: "#8a7254", position: "relative", zIndex: 2 },
+  matCushion: { width: 116, height: 22, background: "var(--cushion)", borderRadius: "50%", margin: "0 auto", position: "absolute", left: "50%", transform: "translateX(-50%)", bottom: 12, opacity: .45, filter: "blur(1px)" },
+  cat: { position: "relative", transition: "transform .5s", transformOrigin: "bottom center" }, catEmoji: { fontSize: 72, lineHeight: 1, display: "inline-block", animation: "bob 3.5s ease-in-out infinite" }, catFace: { fontSize: 13, fontWeight: 800, color: "var(--ink-mid)", marginTop: -6 },
+  moodChip: { textAlign: "center", marginTop: 8, fontWeight: 800, fontSize: 13.5, color: "var(--ink-mid)", position: "relative", zIndex: 2 },
+  segHint: { textAlign: "center", marginTop: 4, fontSize: 12, color: "var(--ink-mid)", position: "relative", zIndex: 2 },
 
-  goalRow: { display: "flex", alignItems: "center", gap: 12, marginBottom: 12, background: "#fff", border: "3px solid #f3e7d3", borderRadius: 18, padding: "12px 14px", boxShadow: "0 5px 0 #efe2cd" },
+  goalRow: { display: "flex", alignItems: "center", gap: 12, marginBottom: 12, background: "var(--surface)", border: "3px solid var(--line-soft)", borderRadius: 18, padding: "12px 14px", boxShadow: "0 5px 0 var(--bevel)" },
   goalTitle: { fontWeight: 800, fontSize: 14.5 }, goalSub: { fontSize: 11.5, color: C.inkSoft, marginTop: 3 },
   energyWrap: { display: "flex", gap: 4, flexShrink: 0 },
-  energyBtn: { border: "2px solid #ecdfca", background: "#fff", borderRadius: 10, width: 34, height: 34, fontSize: 16, cursor: "pointer", fontFamily: "inherit" },
-  energyOn: { background: "#fdf2e0", borderColor: C.honey },
+  energyBtn: { border: "2px solid var(--line)", background: "var(--surface)", borderRadius: 10, width: 34, height: 34, fontSize: 16, cursor: "pointer", fontFamily: "inherit" },
+  energyOn: { background: "var(--surface-sel)", borderColor: C.honey },
 
   reviewRow: { display: "flex", gap: 9, marginBottom: 11 },
-  reviewBig: { flex: 1, display: "flex", alignItems: "center", gap: 9, background: "#fff", border: "3px solid #f3e7d3", borderRadius: 16, padding: "12px 13px", cursor: "pointer", fontFamily: "inherit", boxShadow: "0 5px 0 #efe2cd", color: C.ink },
+  reviewBig: { flex: 1, display: "flex", alignItems: "center", gap: 9, background: "var(--surface)", border: "3px solid var(--line-soft)", borderRadius: 16, padding: "12px 13px", cursor: "pointer", fontFamily: "inherit", boxShadow: "0 5px 0 var(--bevel)", color: C.ink },
   reviewSub: { fontSize: 11, color: C.inkSoft, marginTop: 2, fontWeight: 600 },
   toolRow: { display: "flex", gap: 9, marginBottom: 12 },
   toolBtn: { flex: 1, border: "none", borderRadius: 16, padding: "13px 4px", fontWeight: 800, fontSize: 13, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 5, color: C.ink },
@@ -1545,27 +1559,27 @@ const S = {
   statLine: { textAlign: "center", fontSize: 12.5, color: C.inkSoft, fontWeight: 600 },
 
   modalMask: { position: "fixed", inset: 0, background: "rgba(60,40,20,.45)", zIndex: 50, display: "grid", placeItems: "center", padding: 24 },
-  modalCard: { background: C.paper, borderRadius: 24, padding: "26px 22px", textAlign: "center", maxWidth: 360, width: "100%", border: "4px solid #fff", boxShadow: "0 12px 40px rgba(0,0,0,.2)" },
-  modalTitle: { fontWeight: 800, fontSize: 17, marginTop: 8 }, modalText: { fontSize: 15, color: "#6a5640", margin: "10px 0 18px", lineHeight: 1.6, fontStyle: "italic" },
+  modalCard: { background: C.paper, borderRadius: 24, padding: "26px 22px", textAlign: "center", maxWidth: 360, width: "100%", border: "4px solid var(--card-edge)", boxShadow: "0 12px 40px rgba(0,0,0,.2)" },
+  modalTitle: { fontWeight: 800, fontSize: 17, marginTop: 8 }, modalText: { fontSize: 15, color: "var(--ink-mid)", margin: "10px 0 18px", lineHeight: 1.6, fontStyle: "italic" },
 
   quizWrap: { display: "flex", flexDirection: "column", gap: 14, minHeight: "70vh" },
   quizHead: { display: "flex", alignItems: "center", gap: 10 }, quitX: { background: "none", border: "none", fontSize: 22, cursor: "pointer", color: C.inkSoft, fontWeight: 700 },
-  progOuter: { flex: 1, height: 13, background: "#eaddc6", borderRadius: 99, overflow: "hidden" }, progInner: { height: "100%", background: "linear-gradient(90deg," + C.matcha + "," + C.matchaDk + ")", borderRadius: 99, transition: "width .4s" },
+  progOuter: { flex: 1, height: 13, background: "var(--track)", borderRadius: 99, overflow: "hidden" }, progInner: { height: "100%", background: "linear-gradient(90deg," + C.matcha + "," + C.matchaDk + ")", borderRadius: 99, transition: "width .4s" },
   hearts: { fontSize: 13, letterSpacing: -1, whiteSpace: "nowrap" },
-  wrongBanner: { background: "#fbeae2", color: "#c4684f", borderRadius: 12, padding: "8px 14px", fontWeight: 800, fontSize: 13, textAlign: "center" },
-  roundTag: { textAlign: "center", fontWeight: 800, fontSize: 14, color: "#b78a4e" },
+  wrongBanner: { background: "var(--danger-bg)", color: "var(--danger-fg)", borderRadius: 12, padding: "8px 14px", fontWeight: 800, fontSize: 13, textAlign: "center" },
+  roundTag: { textAlign: "center", fontWeight: 800, fontSize: 14, color: "var(--ink-mid)" },
   bigCard: { borderRadius: 24, padding: "28px 22px", textAlign: "center" },
   cardWord: { fontSize: 40, fontWeight: 800, cursor: "pointer", userSelect: "none", lineHeight: 1.25 }, cardSub: { fontSize: 16, color: C.inkSoft, marginTop: 6 },
   optGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 },
-  opt: { border: "2.5px solid #ecdfca", borderRadius: 16, padding: "16px 12px", cursor: "pointer", textAlign: "center", transition: "all .12s", boxShadow: "0 4px 0 #efe2cd", background: "#fff" },
-  optWide: { border: "2.5px solid #ecdfca", borderRadius: 14, padding: "14px 16px", cursor: "pointer", textAlign: "left", transition: "all .12s", boxShadow: "0 4px 0 #efe2cd", background: "#fff" },
-  reviewPick: { display: "flex", alignItems: "center", gap: 14, width: "100%", boxSizing: "border-box", background: "#fffdf8", border: "2.5px solid #ecdfca", borderRadius: 16, padding: "16px 18px", cursor: "pointer", fontFamily: "inherit", color: C.ink, boxShadow: "0 4px 0 #efe2cd" },
-  fb: { borderRadius: 14, padding: "12px 16px", fontWeight: 700, fontSize: 14, background: "#fbeae2" },
+  opt: { border: "2.5px solid var(--line)", borderRadius: 16, padding: "16px 12px", cursor: "pointer", textAlign: "center", transition: "all .12s", boxShadow: "0 4px 0 var(--bevel)", background: "var(--surface)" },
+  optWide: { border: "2.5px solid var(--line)", borderRadius: 14, padding: "14px 16px", cursor: "pointer", textAlign: "left", transition: "all .12s", boxShadow: "0 4px 0 var(--bevel)", background: "var(--surface)" },
+  reviewPick: { display: "flex", alignItems: "center", gap: 14, width: "100%", boxSizing: "border-box", background: "var(--surface)", border: "2.5px solid var(--line)", borderRadius: 16, padding: "16px 18px", cursor: "pointer", fontFamily: "inherit", color: C.ink, boxShadow: "0 4px 0 var(--bevel)" },
+  fb: { borderRadius: 14, padding: "12px 16px", fontWeight: 700, fontSize: 14, background: "var(--danger-bg)" },
   matchCard: { borderRadius: 22, padding: 16 }, matchCols: { display: "flex", gap: 12 }, matchCol: { flex: 1, display: "flex", flexDirection: "column", gap: 8 },
   colHead: { textAlign: "center", fontWeight: 800, fontSize: 13, color: C.inkSoft, marginBottom: 2 },
-  tile: { border: "2.5px solid #ecdfca", borderRadius: 14, padding: "6px 8px", cursor: "pointer", textAlign: "center", background: "#fff", boxShadow: "0 3px 0 #efe2cd", fontFamily: "inherit", transition: "all .12s", height: 62, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", overflow: "hidden" },
-  tileSel: { borderColor: C.honey, background: "#fdf2e0", transform: "scale(1.03)" },
-  tileDone: { borderColor: C.matcha, background: "#eaf4e0", color: C.matchaDk, cursor: "default", boxShadow: "none" },
+  tile: { border: "2.5px solid var(--line)", borderRadius: 14, padding: "6px 8px", cursor: "pointer", textAlign: "center", background: "var(--surface)", boxShadow: "0 3px 0 var(--bevel)", fontFamily: "inherit", transition: "all .12s", height: 62, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  tileSel: { borderColor: C.honey, background: "var(--surface-sel)", transform: "scale(1.03)" },
+  tileDone: { borderColor: C.matcha, background: "var(--ok-bg)", color: C.matchaDk, cursor: "default", boxShadow: "none" },
   matchHint: { textAlign: "center", fontSize: 12, color: C.inkSoft, marginTop: 12 },
 
   results: { textAlign: "center", display: "flex", flexDirection: "column", gap: 14, alignItems: "center", paddingTop: 24 }, resTitle: { fontSize: 22, margin: 0, fontWeight: 800 },
@@ -1573,15 +1587,15 @@ const S = {
   streakLine: { fontSize: 13, color: C.inkSoft, fontWeight: 700 },
 
   segRow: { display: "flex", gap: 6, marginBottom: 14 },
-  seg: { flex: 1, border: "2.5px solid #ecdfca", background: "#fff", borderRadius: 12, padding: "10px 4px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", color: C.inkSoft, fontSize: 13 },
+  seg: { flex: 1, border: "2.5px solid var(--line)", background: "var(--surface)", borderRadius: 12, padding: "10px 4px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", color: C.inkSoft, fontSize: 13 },
   segOn: { background: C.honey, color: "#fff", borderColor: C.honey, boxShadow: "0 4px 0 " + C.honeyDk },
   padCard: { borderRadius: 18, padding: 15, display: "flex", flexDirection: "column", gap: 11 },
-  howto: { fontSize: 13, color: "#7a6244", lineHeight: 1.6 }, tip: { fontSize: 12, color: C.inkSoft },
-  warnBox: { background: "#fbeae2", color: "#b06a52", borderRadius: 12, padding: "10px 12px", fontSize: 13, fontWeight: 700 },
-  field: { flex: 1, minWidth: 80, border: "2.5px solid #ecdfca", borderRadius: 13, padding: "12px 13px", fontSize: 15, outline: "none", fontFamily: "inherit", background: "#fff", boxSizing: "border-box" },
+  howto: { fontSize: 13, color: "var(--ink-mid)", lineHeight: 1.6 }, tip: { fontSize: 12, color: C.inkSoft },
+  warnBox: { background: "var(--danger-bg)", color: "var(--danger-fg)", borderRadius: 12, padding: "10px 12px", fontSize: 13, fontWeight: 700 },
+  field: { flex: 1, minWidth: 80, border: "2.5px solid var(--line)", borderRadius: 13, padding: "12px 13px", fontSize: 15, outline: "none", fontFamily: "inherit", background: "var(--surface)", boxSizing: "border-box" },
   addBtn: { background: C.honey, color: "#fff", border: "none", borderRadius: 13, width: 50, fontSize: 22, fontWeight: 800, cursor: "pointer", boxShadow: "0 4px 0 " + C.honeyDk, fontFamily: "inherit", flexShrink: 0 },
   micBtn: { color: "#fff", border: "none", borderRadius: 18, padding: "20px", fontWeight: 800, fontSize: 15, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 7, fontFamily: "inherit" },
-  heardBox: { background: "#fdf2e0", borderRadius: 13, padding: "11px 15px", fontSize: 15, fontWeight: 700, color: C.ink },
+  heardBox: { background: "var(--surface-sel)", borderRadius: 13, padding: "11px 15px", fontSize: 15, fontWeight: 700, color: C.ink },
 
   list: { display: "flex", flexDirection: "column", gap: 10 },
   draftRow: { display: "flex", flexDirection: "column", gap: 9, borderRadius: 14, padding: 13 },
@@ -1589,72 +1603,103 @@ const S = {
   draftExpand: { background: "#f4fbee", border: "2px solid #cdeccd", borderRadius: 10, padding: "7px 11px", fontSize: 12.5, fontWeight: 800, color: C.matchaDk, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 },
   draftBadge: { background: "#eaf2fb", border: "2px solid #cfe4f0", color: "#4d77a8", borderRadius: 10, padding: "6px 9px", fontSize: 12, fontWeight: 800, flexShrink: 0 },
   draftNote: { fontSize: 11.5, color: C.matchaDk, lineHeight: 1.5, marginTop: 1 },
-  draftPos: { border: "2px solid #ecdfca", borderRadius: 10, padding: "8px 10px", fontFamily: "inherit", fontWeight: 700, fontSize: 13, background: "#fff", color: C.ink, flexShrink: 0 },
-  draftStar: { background: "#fff", border: "2px solid #ecdfca", borderRadius: 10, padding: "7px 11px", fontSize: 12.5, fontWeight: 800, color: C.inkSoft, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 },
+  draftPos: { border: "2px solid var(--line)", borderRadius: 10, padding: "8px 10px", fontFamily: "inherit", fontWeight: 700, fontSize: 13, background: "var(--surface)", color: C.ink, flexShrink: 0 },
+  draftStar: { background: "var(--surface)", border: "2px solid var(--line)", borderRadius: 10, padding: "7px 11px", fontSize: 12.5, fontWeight: 800, color: C.inkSoft, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 },
   draftStarOn: { background: "#fff5e6", borderColor: C.honey, color: C.honeyDk },
-  draftDel: { background: "#fff", border: "2px solid #f0ddd5", borderRadius: 10, padding: "7px 11px", fontSize: 12.5, fontWeight: 800, color: C.blush, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 },
+  draftDel: { background: "var(--surface)", border: "2px solid var(--danger-line)", borderRadius: 10, padding: "7px 11px", fontSize: 12.5, fontWeight: 800, color: C.blush, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 },
   draftField: { display: "flex", alignItems: "center", gap: 9 },
-  draftLabel: { width: 32, flexShrink: 0, fontSize: 12.5, fontWeight: 800, color: "#7a6244" },
-  draftIn: { flex: 1, minWidth: 0, border: "2px solid #ecdfca", borderRadius: 10, padding: "10px 12px", fontSize: 15, outline: "none", fontFamily: "inherit", background: "#fff", boxSizing: "border-box" },
+  draftLabel: { width: 32, flexShrink: 0, fontSize: 12.5, fontWeight: 800, color: "var(--ink-mid)" },
+  draftIn: { flex: 1, minWidth: 0, border: "2px solid var(--line)", borderRadius: 10, padding: "10px 12px", fontSize: 15, outline: "none", fontFamily: "inherit", background: "var(--surface)", boxSizing: "border-box" },
 
   chipWrap: { display: "flex", flexWrap: "wrap", gap: 8 },
-  wordChip: { border: "2px solid #ecdfca", background: "#fff", borderRadius: 12, padding: "9px 13px", fontWeight: 800, fontSize: 15, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 3px 0 #efe2cd" },
+  wordChip: { border: "2px solid var(--line)", background: "var(--surface)", borderRadius: 12, padding: "9px 13px", fontWeight: 800, fontSize: 15, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 3px 0 var(--bevel)" },
   expandHead: { fontWeight: 800, fontSize: 19, margin: "4px 0 8px" },
   relGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 },
-  relChip: { display: "flex", alignItems: "center", gap: 6, border: "2px solid #ecdfca", background: "#fff", borderRadius: 12, padding: "9px 10px", cursor: "pointer", fontFamily: "inherit", boxShadow: "0 3px 0 #efe2cd" },
-  relChipOn: { borderColor: C.matcha, background: "#eaf4e0" },
-  selAllBtn: { border: "2px solid #ecdfca", background: "#fff", borderRadius: 9, padding: "4px 12px", fontWeight: 800, fontSize: 12, cursor: "pointer", fontFamily: "inherit", color: C.matchaDk },
-  harvestRow: { display: "flex", gap: 10, alignItems: "flex-start", border: "2px solid #ecdfca", borderRadius: 12, padding: "10px 12px", cursor: "pointer", marginBottom: 8, background: "#fff" },
-  harvestOn: { borderColor: C.matcha, background: "#eaf4e0" }, checkbox: { fontSize: 17, flexShrink: 0 },
+  relChip: { display: "flex", alignItems: "center", gap: 6, border: "2px solid var(--line)", background: "var(--surface)", borderRadius: 12, padding: "9px 10px", cursor: "pointer", fontFamily: "inherit", boxShadow: "0 3px 0 var(--bevel)" },
+  relChipOn: { borderColor: C.matcha, background: "var(--ok-bg)" },
+  selAllBtn: { border: "2px solid var(--line)", background: "var(--surface)", borderRadius: 9, padding: "4px 12px", fontWeight: 800, fontSize: 12, cursor: "pointer", fontFamily: "inherit", color: C.matchaDk },
+  harvestRow: { display: "flex", gap: 10, alignItems: "flex-start", border: "2px solid var(--line)", borderRadius: 12, padding: "10px 12px", cursor: "pointer", marginBottom: 8, background: "var(--surface)" },
+  harvestOn: { borderColor: C.matcha, background: "var(--ok-bg)" }, checkbox: { fontSize: 17, flexShrink: 0 },
 
   wordRow: { display: "flex", alignItems: "center", gap: 11, borderRadius: 15, padding: "11px 13px" },
   dot: { width: 36, height: 36, borderRadius: 11, display: "grid", placeItems: "center", fontSize: 17, flexShrink: 0, cursor: "pointer" },
   wTerm: { fontSize: 18, fontWeight: 800, marginRight: 7 }, wReading: { fontSize: 12.5, color: C.inkSoft },
   wStat: { display: "flex", flexDirection: "column", gap: 3, alignItems: "flex-end", flexShrink: 0 },
-  statPill: { fontSize: 10, fontWeight: 800, padding: "2px 7px", borderRadius: 7, background: "#eef2e6", color: C.matchaDk, whiteSpace: "nowrap" },
+  statPill: { fontSize: 10, fontWeight: 800, padding: "2px 7px", borderRadius: 7, background: "var(--pill-bg)", color: C.matchaDk, whiteSpace: "nowrap" },
   editPanel: { borderRadius: 14, padding: 14, display: "flex", flexDirection: "column", gap: 10, marginTop: -4 },
-  editRow: { display: "flex", alignItems: "center", gap: 10 }, editLabel: { fontSize: 12.5, fontWeight: 800, color: "#7a6244", width: 38, flexShrink: 0 },
-  toggle: { border: "2px solid #ecdfca", background: "#fff", borderRadius: 10, padding: "8px 12px", fontWeight: 800, fontSize: 13, cursor: "pointer", fontFamily: "inherit", color: C.inkSoft, flex: 1, textAlign: "left" },
-  toggleOn: { background: "#eaf4e0", borderColor: C.matcha, color: C.matchaDk },
+  editRow: { display: "flex", alignItems: "center", gap: 10 }, editLabel: { fontSize: 12.5, fontWeight: 800, color: "var(--ink-mid)", width: 38, flexShrink: 0 },
+  toggle: { border: "2px solid var(--line)", background: "var(--surface)", borderRadius: 10, padding: "8px 12px", fontWeight: 800, fontSize: 13, cursor: "pointer", fontFamily: "inherit", color: C.inkSoft, flex: 1, textAlign: "left" },
+  toggleOn: { background: "var(--ok-bg)", borderColor: C.matcha, color: C.matchaDk },
   hlDot: { width: 30, height: 30, borderRadius: 8, cursor: "pointer", fontSize: 11, color: C.inkSoft },
-  editInput: { flex: 1, border: "2px solid #ecdfca", borderRadius: 10, padding: "8px 10px", fontSize: 13, outline: "none", fontFamily: "inherit", boxSizing: "border-box" },
+  editInput: { flex: 1, border: "2px solid var(--line)", borderRadius: 10, padding: "8px 10px", fontSize: 13, outline: "none", fontFamily: "inherit", boxSizing: "border-box" },
   exLine: { fontSize: 13, color: C.ink, padding: "3px 0", cursor: "pointer" },
-  delBtn: { background: "#fbeae2", color: "#c4684f", border: "none", borderRadius: 10, padding: "10px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", marginTop: 4 },
+  delBtn: { background: "var(--danger-bg)", color: "var(--danger-fg)", border: "none", borderRadius: 10, padding: "10px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", marginTop: 4 },
 
   statCards: { display: "flex", gap: 10, marginBottom: 14 }, statCard: { flex: 1, borderRadius: 16, padding: "13px 8px", textAlign: "center" },
   statBig: { fontSize: 23, fontWeight: 800 }, statSmall: { fontSize: 11, color: C.inkSoft, fontWeight: 700, marginTop: 2 },
   sortRow: { display: "flex", gap: 6, alignItems: "center", fontSize: 12, color: C.inkSoft, fontWeight: 700, marginBottom: 12 },
-  sortChip: { border: "2px solid #ecdfca", background: "#fff", borderRadius: 99, padding: "5px 11px", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit", color: "#7a6244" },
+  sortChip: { border: "2px solid var(--line)", background: "var(--surface)", borderRadius: 99, padding: "5px 11px", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit", color: "var(--ink-mid)" },
   sortOn: { background: C.matchaDk, color: "#fff", borderColor: C.matchaDk },
   filterRow: { display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 },
-  chip: { border: "2px solid #ecdfca", background: "#fff", borderRadius: 99, padding: "6px 11px", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit", color: "#7a6244" },
+  chip: { border: "2px solid var(--line)", background: "var(--surface)", borderRadius: 99, padding: "6px 11px", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit", color: "var(--ink-mid)" },
   chipOn: { background: C.wood, color: "#fff", borderColor: C.wood },
 
-  calCard: { borderRadius: 18, padding: 14, marginBottom: 4 }, calTitle: { fontWeight: 800, fontSize: 13.5, color: "#7a6244", marginBottom: 10, textAlign: "center" },
+  calCard: { borderRadius: 18, padding: 14, marginBottom: 4 }, calTitle: { fontWeight: 800, fontSize: 13.5, color: "var(--ink-mid)", marginBottom: 10, textAlign: "center" },
   calGrid: { display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4 },
   calW: { textAlign: "center", fontSize: 11, color: C.inkSoft, fontWeight: 700, padding: "2px 0" },
   calCell: { aspectRatio: "1", borderRadius: 7, display: "grid", placeItems: "center", fontSize: 11, fontWeight: 700 },
   calLegend: { display: "flex", gap: 14, justifyContent: "center", marginTop: 10, fontSize: 11, color: C.inkSoft, fontWeight: 700 },
 
   setCard: { borderRadius: 18, padding: 6, marginBottom: 14 },
-  setRow: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "13px 12px", borderBottom: "1px solid #f3e7d3" },
+  setRow: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "13px 12px", borderBottom: "1px solid var(--line-soft)" },
   switch: { position: "relative", width: 46, height: 26, borderRadius: 99, border: "none", cursor: "pointer", display: "flex", alignItems: "center", padding: 3 },
-  switchKnob: { width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "transform .2s", boxShadow: "0 1px 3px rgba(0,0,0,.2)" },
+  switchKnob: { width: 20, height: 20, borderRadius: "50%", background: "var(--knob)", transition: "transform .2s", boxShadow: "0 1px 3px rgba(0,0,0,.2)" },
   switchLabel: { position: "absolute", left: 8, color: "#fff", fontSize: 11, fontWeight: 800 },
   setNote: { fontSize: 12, color: C.inkSoft, textAlign: "center", lineHeight: 1.7, marginTop: 10 },
 
   backRow: { display: "flex", alignItems: "center", gap: 12, marginBottom: 16 },
-  backBtn: { border: "2.5px solid #ecdfca", background: "#fff", borderRadius: 13, padding: "8px 13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 3px 0 #efe2cd" },
+  backBtn: { border: "2.5px solid var(--line)", background: "var(--surface)", borderRadius: 13, padding: "8px 13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 3px 0 var(--bevel)" },
   pageTitle: { fontSize: 17, margin: 0, fontWeight: 800 },
-  sectTitle: { fontWeight: 800, fontSize: 13.5, color: "#7a6244", margin: "8px 0 8px" },
+  sectTitle: { fontWeight: 800, fontSize: 13.5, color: "var(--ink-mid)", margin: "8px 0 8px" },
   empty: { textAlign: "center", color: C.inkSoft, padding: 22, fontWeight: 700 },
 };
 
 const CSS = "\
 @import url('https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&display=swap');\
+@import url('https://fonts.googleapis.com/css2?family=DotGothic16&display=swap');\
+:root,[data-theme=light]{\
+--cream:#faf6ee;--shell-top:#fdf8ee;--surface:#ffffff;--surface-sel:#fdf2e0;--surface2:#f4ecdc;--card-edge:#ffffff;--knob:#ffffff;\
+--honey:#e8a85c;--honey-dk:#c98a3e;--matcha:#8fb878;--matcha-dk:#6f9a59;--wood:#a9805a;\
+--blush:#e89b86;--blush-dk:#c97a64;--sky:#7bb4c4;--grape:#c79bd4;--grape-dk:#a87bb8;\
+--ink:#5a4634;--ink-soft:#9b8674;--ink-mid:#7a6244;\
+--line:#ecdfca;--line-soft:#f3e7d3;--bevel:#efe2cd;--track:#eaddc6;--pill-bg:#eef2e6;\
+--danger-bg:#fbeae2;--danger-fg:#c4684f;--danger-line:#f0ddd5;--danger-bevel:#e7c0b3;--ok-bg:#eaf4e0;--warn-bg:#fff4e0;\
+--room1:#fbe9cf;--room2:#f6dcb6;--room3:#e9c79a;--room-bevel:#e3cba2;--window:#bfe3f0;--cushion:#d99a7c;--ai-off:#eadcc6;--switch-off:#d8cdbb;\
+}\
+[data-theme=dark]{\
+--cream:#0c1733;--shell-top:#16224d;--surface:#1b2a55;--surface-sel:#26397a;--surface2:#21306a;--card-edge:rgba(255,255,255,.06);--knob:#eef1ff;\
+--honey:#f0b760;--honey-dk:#b9863a;--matcha:#8ea0ff;--matcha-dk:#6b7fe0;--wood:#9fb0d9;\
+--blush:#f0a0b8;--blush-dk:#c76d86;--sky:#7fc8df;--grape:#c2a0e8;--grape-dk:#9a7bc8;\
+--ink:#eef1ff;--ink-soft:#9fb0d9;--ink-mid:#bcc8ea;\
+--line:rgba(255,255,255,.10);--line-soft:rgba(255,255,255,.07);--bevel:rgba(0,0,0,.30);--track:#2a3a6a;--pill-bg:#26397a;\
+--danger-bg:#4a2532;--danger-fg:#ffabbf;--danger-line:#5e2c3c;--danger-bevel:rgba(0,0,0,.3);--ok-bg:#1e3a32;--warn-bg:#3d3320;\
+--room1:#1c2a56;--room2:#16224a;--room3:#101b3d;--room-bevel:rgba(0,0,0,.4);--window:#2b4488;--cushion:#2a3a6a;--ai-off:#2a3a6a;--switch-off:#3a4a7a;\
+}\
+[data-theme=pixel]{\
+--cream:#f3e7d6;--shell-top:#f3e7d6;--surface:#fffdf5;--surface-sel:#fff3c4;--surface2:#e9dcc4;--card-edge:#2b2b2b;--knob:#fffdf5;\
+--honey:#f5a623;--honey-dk:#b87410;--matcha:#4caf50;--matcha-dk:#2f8a34;--wood:#8a5a3a;\
+--blush:#e23b3b;--blush-dk:#a02020;--sky:#3a7bd5;--grape:#9b59b6;--grape-dk:#6a3d8a;\
+--ink:#2b2b2b;--ink-soft:#6a6a6a;--ink-mid:#4a4a4a;\
+--line:#2b2b2b;--line-soft:#2b2b2b;--bevel:#2b2b2b;--track:#cdbfa6;--pill-bg:#d7f0d0;\
+--danger-bg:#ffd9d9;--danger-fg:#c0392b;--danger-line:#2b2b2b;--danger-bevel:#2b2b2b;--ok-bg:#d7f0d0;--warn-bg:#fff3c4;\
+--room1:#cfe0f5;--room2:#bcd4ef;--room3:#a8c8ea;--room-bevel:#2b2b2b;--window:#3a7bd5;--cushion:#8a5a3a;--ai-off:#cdbfa6;--switch-off:#9a9a9a;\
+}\
 * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }\
-body { margin: 0; }\
-.card { background:#fff; border:3px solid #f3e7d3; box-shadow:0 6px 0 #efe2cd; }\
+body { margin: 0; background: var(--cream); }\
+.card { background:var(--surface); border:3px solid var(--line-soft); box-shadow:0 6px 0 var(--bevel); }\
+[data-theme=pixel] *{ border-radius:0 !important; font-family:'DotGothic16','PingFang SC',monospace !important; }\
+[data-theme=pixel] .card,[data-theme=pixel] button{ border:3px solid #2b2b2b !important; box-shadow:4px 4px 0 #2b2b2b !important; }\
+[data-theme=pixel] .pressable:active{ transform:translate(2px,2px) !important; box-shadow:1px 1px 0 #2b2b2b !important; }\
 .cloud { position:absolute; font-size:36px; opacity:.4; animation:floatX 30s linear infinite; }\
 .c1 { top:5%; left:-12%; } .c2 { top:15%; left:-32%; animation-delay:-15s; font-size:26px; }\
 .pressable { transition:transform .07s; } .pressable:active { transform:translateY(2px) scale(.98); } .pressable:disabled { cursor:not-allowed; opacity:.55; }\
