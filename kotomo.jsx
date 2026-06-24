@@ -386,6 +386,56 @@ async function localAutoFill(term) {
   } catch (e) { console.warn("[kotomo] kuromoji 离线注音不可用", e); }
   return { term: t, reading: "", meaning: "", pos: "other", freq: false, basicForm: "", verified: "unverified", verifySrc: {} };
 }
+
+// ── 离线词典 JMdict（常用 2.2万词；写法/读音权威源；自托管 gzip 0.69MB，浏览器解压后建内存索引）──
+// 数据：scriptin/jmdict-simplified 的 jmdict-eng-common，EDRDG License (CC BY-SA 4.0)。
+let _jmdict = null, _jmReady = null;
+function loadJmdict() {
+  if (_jmReady) return _jmReady;
+  _jmReady = (async () => {
+    if (typeof DecompressionStream === "undefined") throw new Error("浏览器太旧、不支持解压(DecompressionStream)");
+    const res = await fetch("dict/jmdict-common.json.gz", { cache: "force-cache" });
+    if (!res.ok) throw new Error("词典下载失败 " + res.status);
+    const text = await new Response(res.body.pipeThrough(new DecompressionStream("gzip"))).text();
+    const data = JSON.parse(text);
+    const idx = new Map();
+    const put = (k, rec) => { const a = idx.get(k); if (a) a.push(rec); else idx.set(k, [rec]); };
+    for (const e of data.entries) { const rec = { id: e[0], kanji: e[1], kana: e[2], pos: e[3], gloss: e[4] }; for (const kk of rec.kanji) put(kk[0], rec); for (const rr of rec.kana) put(rr[0], rec); }
+    _jmdict = { idx, tag: data.tag, n: data.n };
+    logEvent("info", "JMdict 词典就绪", "条目 " + data.n + " / " + (data.tag || ""));
+    return _jmdict;
+  })().catch((e) => { _jmReady = null; logEvent("warn", "JMdict 加载失败", (e && e.message) || e); throw e; });
+  return _jmReady;
+}
+const JM_POS = (arr) => { arr = arr || []; if (arr.some((p) => p === "n" || p.indexOf("n-") === 0 || p === "pn")) return "noun"; if (arr.some((p) => p[0] === "v")) return "verb"; if (arr.some((p) => p.indexOf("adj") === 0)) return "adj"; if (arr.some((p) => p === "exp" || p === "int")) return "phrase"; return "other"; };
+function jmLookup(term) {
+  if (!_jmdict || !term) return null;
+  const recs = _jmdict.idx.get(term);
+  if (!recs || !recs.length) return null;
+  let best = recs[0];
+  for (const r of recs) { const k = r.kanji.find((x) => x[0] === term); const a = r.kana.find((x) => x[0] === term); if ((k && k[1]) || (a && a[1])) { best = r; break; } }
+  const ck = best.kana.find((x) => x[1]) || best.kana[0];   // 默认读音 = 常用假名（否则第一个）
+  return { id: best.id, reading: ck ? ck[0] : "", kanji: best.kanji, kana: best.kana, pos: best.pos, gloss: best.gloss };
+}
+// 词典核实单个词的读音/写法：JMdict 优先（权威）→ kuromoji 去活用后再查一次 JMdict → kuromoji 高质量猜测
+async function dictVerify(term) {
+  const t = (term || "").trim();
+  if (!t) return { verified: "unverified", reading: "", verifySrc: {}, basicForm: "" };
+  try { await loadJmdict(); const hit = jmLookup(t); if (hit && hit.reading) return { verified: "verified", reading: hit.reading, verifySrc: { reading: "jmdict", term: "jmdict" }, basicForm: "", jmId: hit.id, glossEn: hit.gloss || [] }; } catch (e) {}
+  const k = await localAutoFill(t);
+  if (k.basicForm && k.basicForm !== t) { try { const h2 = jmLookup(k.basicForm); if (h2 && h2.reading) return { verified: "verified", reading: h2.reading, verifySrc: { reading: "jmdict" }, basicForm: k.basicForm, jmId: h2.id, glossEn: h2.gloss || [] }; } catch (e) {} }
+  return { verified: k.verified, reading: k.reading, verifySrc: k.verifySrc, basicForm: k.basicForm };
+}
+// 给"待确认"行批量用词典核实：日语词命中 JMdict → 升 ✅ 并以词典读音为准（写法/读音权威）；句子/未命中保持原样
+async function enrichRowsWithDict(rows) {
+  try { await loadJmdict(); } catch (e) { return rows; }
+  return rows.map((r) => {
+    if (!r || !r.term || r.type === "sentence") return r;
+    let hit = jmLookup(r.term); if (!hit && r.reading) hit = jmLookup(r.reading);
+    if (hit && hit.reading) return { ...r, reading: hit.reading, verified: "verified", verifySrc: { ...(r.verifySrc || {}), reading: "jmdict", term: "jmdict" }, jmId: hit.id, glossEn: hit.gloss || [], pos: (r.pos && r.pos !== "other") ? r.pos : JM_POS(hit.pos) };
+    return r;
+  });
+}
 const MOCK_DICT = {
   "猫":["ねこ","neko","noun"],"狗":["いぬ","inu","noun"],"水":["みず","mizu","noun"],"吃":["たべる","taberu","verb"],
   "喝":["のむ","nomu","verb"],"可爱":["かわいい","kawaii","adj"],"谢谢":["ありがとう","arigatou","phrase"],"你好":["こんにちは","konnichiwa","phrase"],
@@ -1105,7 +1155,7 @@ function TypeInput({ aiReal, dir, onRows, play }) {
     const offline = () => dir === "zh" ? { term: "", reading: "", meaning: t, pos: "other", freq: false } : localAutoFill(t);
     if (aiReal) { try { row = JSON.parse(stripFence(await callAI(sys, t))); row.verified = "unverified"; row.verifySrc = { reading: "ai", term: "ai", meaning: "ai" }; } catch { row = await offline(); } }
     else row = await offline();
-    onRows([row]); setTerm(""); setBusy(false); play("coin");
+    onRows(await enrichRowsWithDict([row])); setTerm(""); setBusy(false); play("coin");
   };
   return (<div className="card" style={S.padCard}>
     <div style={S.howto}>{dir === "zh" ? (aiReal ? "打一个中文词，AI 给出对应日语 + 读音(假名)" : "中→日 需要开 AI（离线只支持日→中，会把中文记到意思栏）") : (aiReal ? "打一个日语词，AI 补读音(假名)/意思/词性" : "打一个日语词，离线补读音(假名)和词性，意思自己填")}。</div>
@@ -1160,7 +1210,7 @@ function VoiceInput({ aiReal, dir, onRows, play }) {
       const sentCount = rows.filter((r) => r.type === "sentence").length;
       logEvent("info", "语音转成词条", "听到「" + heard + "」→ " + rows.length + " 条" + (sentCount ? "（含整句）" : ""));
       if (rows.length === 0) setErr("没能转出词条（" + (dir === "zh" ? "中→日需开真AI" : "换种说法或改打字试试") + "）。");
-      else { onRows(rows); setHeard(""); heardRef.current = ""; }
+      else { onRows(await enrichRowsWithDict(rows)); setHeard(""); heardRef.current = ""; }
     } catch (e) { logEvent("error", "语音转换失败", (e && e.message) || e); setErr("转换出错：" + ((e && e.message) || e)); }
     finally { setBusy(false); play("coin"); }
   };
@@ -1286,7 +1336,7 @@ function Library({ ctx }) {
   const words = st.words;
   const fixable = words.filter(needsKanjiFix); // 只有假名/罗马音、缺汉字正体的词
   const tippable = words.filter(needsKanjiTip); // 含汉字、还没做过"汉字对照"判定的词
-  const verifiable = words.filter((w) => w.verified !== "verified" && (w.term || "").trim() && /[ぁ-んァ-ヶ一-鿿々ー]/.test(w.term)); // 待核实、且 term 是日语的词（离线 kuromoji 能核读音）
+  const verifiable = words.filter((w) => w.verified !== "verified" && (w.term || "").trim() && /[ぁ-んァ-ヶ一-鿿々ーｦ-ﾟ]/.test(w.term)); // 待核实、且 term 是日语的词（离线 kuromoji 能核读音）
   // AI 一键补全：逐个让 AI 把"假名/罗马音"补成 汉字正体 + 平假名读音（带进度）
   const runFix = async () => {
     if (fixing) return; const list = words.filter(needsKanjiFix); if (!list.length) return;
@@ -1314,16 +1364,16 @@ function Library({ ctx }) {
     }
     setTipping(false); setTipMsg("标注完成 · 发现 " + trap + " 个汉字陷阱 ⚠️"); play("win"); setTimeout(() => setTipMsg(""), 5000);
   };
-  // 离线核实读音：用已内置的 kuromoji 词典逐个核对待核实词的读音，登录词(KNOWN)→升为 ✅已核实并以词典读音为准（无需 AI、无需联网）
+  // 词典核实读音/写法：JMdict 常用词词典 + kuromoji 逐个核对待核实词，命中→升 ✅已核实并以词典读音为准（无需 AI；JMdict 首次用会下载 0.69MB、之后本地）
   const runVerify = async () => {
-    if (verifying) return; const list = words.filter((w) => w.verified !== "verified" && (w.term || "").trim() && /[ぁ-んァ-ヶ一-鿿々ー]/.test(w.term)); if (!list.length) return;
+    if (verifying) return; const list = words.filter((w) => w.verified !== "verified" && (w.term || "").trim() && /[ぁ-んァ-ヶ一-鿿々ーｦ-ﾟ]/.test(w.term)); if (!list.length) return;
     setVerifying(true); let done = 0, ok = 0;
     for (const w of list) {
-      setVerifyMsg("离线核实中… " + done + "/" + list.length);
+      setVerifyMsg("词典核实中… " + done + "/" + list.length);
       try {
-        const r = await localAutoFill(w.term);
-        if (r && r.verified === "verified" && r.reading) { updateWord(w.id, (x) => ({ ...x, reading: r.reading, basicForm: r.basicForm || x.basicForm || "", verified: "verified", verifySrc: { ...(x.verifySrc || {}), reading: "kuromoji" } })); ok++; }
-      } catch (e) { logEvent("warn", "离线核实失败", w.term + " / " + ((e && e.message) || e)); }
+        const r = await dictVerify(w.term);
+        if (r && r.verified === "verified" && r.reading) { updateWord(w.id, (x) => ({ ...x, reading: r.reading, basicForm: r.basicForm || x.basicForm || "", verified: "verified", verifySrc: { ...(x.verifySrc || {}), ...(r.verifySrc || {}) }, jmId: r.jmId || x.jmId || null, glossEn: r.glossEn || x.glossEn || null })); ok++; }
+      } catch (e) { logEvent("warn", "词典核实失败", w.term + " / " + ((e && e.message) || e)); }
       done++;
     }
     setVerifying(false); setVerifyMsg("已核实 " + ok + " 个词的读音 ✓" + (ok < list.length ? "（其余生僻/专有名词需 AI 或词典进一步核）" : "")); play("win"); setTimeout(() => setVerifyMsg(""), 5000);
@@ -1337,7 +1387,7 @@ function Library({ ctx }) {
   const ordered = order === "new" ? [...shown].reverse() : shown;
   return (<div className="fade-in"><BackRow ctx={ctx} title="📚 我的词库" />
     <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.matcha, boxShadow: "0 5px 0 " + C.matchaDk }} onClick={() => { play("tap"); ctx.setView("add"); }}>🎙️ 去加词（打字/语音/展开）</button>
-    {verifiable.length > 0 && <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.sky, boxShadow: "0 5px 0 var(--bevel)", opacity: verifying ? 0.75 : 1 }} disabled={verifying} onClick={runVerify}>{verifying ? (verifyMsg || "离线核实中…") : "🔍 离线核实读音 · " + verifiable.length + " 个待核实"}</button>}
+    {verifiable.length > 0 && <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.sky, boxShadow: "0 5px 0 var(--bevel)", opacity: verifying ? 0.75 : 1 }} disabled={verifying} onClick={runVerify}>{verifying ? (verifyMsg || "词典核实中…") : "🔍 用词典核实读音·写法 · " + verifiable.length + " 个待核实"}</button>}
     {!verifying && verifyMsg && <div style={{ ...S.setNote, marginBottom: 10, color: C.sky, fontWeight: 800 }}>{verifyMsg}</div>}
     {aiReal && fixable.length > 0 && <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.honey, boxShadow: "0 5px 0 " + C.honeyDk, opacity: fixing ? 0.75 : 1 }} disabled={fixing} onClick={runFix}>{fixing ? (fixMsg || "AI 补全中…") : "🈶 用 AI 补全 " + fixable.length + " 个词的汉字/读音"}</button>}
     {!aiReal && fixable.length > 0 && <div style={{ ...S.setNote, marginBottom: 10 }}>有 {fixable.length} 个词只有假名/罗马音；去「设置」贴上 AI 密钥并开真AI，这里就能一键补成汉字+读音。</div>}
@@ -1524,6 +1574,7 @@ function Settings({ ctx }) {
     <div style={S.setNote}>开「真AI」需要密钥：OpenAI（platform.openai.com 生成，<b>sk-</b> 开头）或 Anthropic Claude（console.anthropic.com 生成，<b>sk-ant-</b> 开头）都行，贴哪家就自动用哪家，按用量付费、很便宜（查一个词不到一分钱）。没密钥或没网时自动降级离线 kuromoji（只补读音和词性，意思自己填）。</div>
     <LogViewer play={play} />
     <div style={S.setNote}>当前版本：第 0 步验证版 · 数据存在本机 · 语言：日语<br/>云同步、拍照为后续版本。</div>
+    <div style={S.setNote}>读音/写法核实使用 <b>JMdict</b> 词典数据（© <a href="https://www.edrdg.org/" target="_blank" rel="noopener" style={{ color: C.sky }}>EDRDG</a>，<a href="https://www.edrdg.org/edrdg/licence.html" target="_blank" rel="noopener" style={{ color: C.sky }}>CC BY-SA 4.0</a>）；离线注音使用 kuromoji + IPADIC。</div>
     <div style={S.setNote}>ことも（词崽）· 你遇到的词，才是你该学的词。</div>
   </div>);
 }
