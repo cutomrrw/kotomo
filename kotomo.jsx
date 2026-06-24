@@ -193,6 +193,7 @@ function buildSeedWords(interestIds) {
       words.push({ id: uid(), type: "word", term: r[0], reading: r[1], meaning: r[2], pos: r[3],
         freq: !!r[4], loan: r[5] ? { from: r[5][0], word: r[5][1] } : null,
         mastered: false, source: "", expanded: null, isSeed: true,
+        verified: "verified", verifySrc: { reading: "seed", term: "seed", meaning: "seed" }, basicForm: "", contextSentence: "",
         seen: 0, wrong: 0, srs: { level: 0, dueAt: now(), lastReviewedAt: 0 } });
     });
   });
@@ -222,7 +223,8 @@ const Store = (() => {
     },
   };
 })();
-async function loadState() { try { const v = await Store.get(SKEY); if (!v) return null; const s = JSON.parse(v); if (s && Array.isArray(s.words)) s.words = s.words.map((w) => { const x = fixSeedWord(w); const t = s2j(stripRomajiParen(x.term)); return t !== x.term ? { ...x, term: t } : x; }); return s; } catch (e) { console.error("[kotomo] loadState 失败", e); return null; } }
+async function loadState() { try { const v = await Store.get(SKEY); if (!v) return null; const s = JSON.parse(v); if (s && Array.isArray(s.words)) s.words = s.words.map((w) => { const x = fixSeedWord(w); const t = s2j(stripRomajiParen(x.term)); const y = t !== x.term ? { ...x, term: t } : x; // 准确性迁移：旧词补 verified（种子词=已核实✅；其余=待核实⚠️，等离线核实/JMdict 升级）
+  return y.verified ? y : { ...y, verified: y.isSeed ? "verified" : "unverified", verifySrc: y.verifySrc || (y.isSeed ? { reading: "seed", term: "seed", meaning: "seed" } : {}), basicForm: y.basicForm || "", contextSentence: y.contextSentence || "" }; }); return s; } catch (e) { console.error("[kotomo] loadState 失败", e); return null; } }
 // 返回 true/false：失败不再静默吞，交给上层提示用户（避免数据无声丢失）
 async function saveState(s) { try { await Store.set(SKEY, JSON.stringify(s)); return true; } catch (e) { console.error("[kotomo] saveState 失败", e); return false; } }
 
@@ -335,7 +337,7 @@ const KURO_WORKER_SRC = [
   '   tk=t;self.postMessage({type:"ready",ok:true});});',
   ' }else if(d.type==="tok"){',
   '  if(!tk){self.postMessage({type:"res",id:d.id,tokens:null});return;}',
-  '  var toks=tk.tokenize(d.text).map(function(x){return {reading:x.reading,surface_form:x.surface_form,pos:x.pos};});',
+  '  var toks=tk.tokenize(d.text).map(function(x){return {reading:x.reading,surface_form:x.surface_form,pos:x.pos,basic_form:x.basic_form,word_type:x.word_type};});',
   '  self.postMessage({type:"res",id:d.id,tokens:toks});}',
   '};'
 ].join("\n");
@@ -375,10 +377,14 @@ async function localAutoFill(term) {
     if (toks && toks.length) {
       const reading = kataToHira(toks.map((x) => (x.reading && x.reading !== "*") ? x.reading : x.surface_form).join(""));
       const pos = toks.length === 1 ? (KURO_POS[toks[0].pos] || "other") : "phrase";
-      return { term: t, reading, meaning: "", pos, freq: false };
+      // 读音可信判据：单 token + 登录词(KNOWN) + 有真读音 → kuromoji 核实(✅)；未登录/多 token/无读音 → 待核实(⚠️)
+      const one = toks.length === 1 ? toks[0] : null;
+      const known = !!(one && one.word_type === "KNOWN" && one.reading && one.reading !== "*");
+      const basicForm = (one && one.basic_form && one.basic_form !== "*") ? one.basic_form : "";
+      return { term: t, reading, meaning: "", pos, freq: false, basicForm, verified: known ? "verified" : "unverified", verifySrc: { reading: known ? "kuromoji" : "" } };
     }
   } catch (e) { console.warn("[kotomo] kuromoji 离线注音不可用", e); }
-  return { term: t, reading: "", meaning: "", pos: "other", freq: false };
+  return { term: t, reading: "", meaning: "", pos: "other", freq: false, basicForm: "", verified: "unverified", verifySrc: {} };
 }
 const MOCK_DICT = {
   "猫":["ねこ","neko","noun"],"狗":["いぬ","inu","noun"],"水":["みず","mizu","noun"],"吃":["たべる","taberu","verb"],
@@ -558,6 +564,8 @@ export default function App() {
       id: r.id || uid(), type: r.type || "word", term: s2j(stripRomajiParen(r.term.trim())), reading: (r.reading || "").trim(), meaning: (r.meaning || "").trim(),
       pos: r.pos || "other", freq: !!r.freq, loan: r.loan || null, mastered: false, source: (r.source || "").trim(),
       expanded: r.expanded || null, cloze: r.cloze || null, kanjiTip: r.kanjiTip || null, isSeed: false, seen: 0, wrong: 0, srs: { level: 0, dueAt: now(), lastReviewedAt: 0 },
+      // 准确性核实（第1步：kuromoji 核实=verified✅，AI 现编/离线无读音=unverified⚠️）
+      verified: r.verified || "unverified", verifySrc: r.verifySrc || {}, basicForm: r.basicForm || "", contextSentence: r.contextSentence || "",
     }))] }));
   }, []);
   const updateWord = useCallback((id, fn) => patch((s) => ({ ...s, words: s.words.map((w) => w.id === id ? fn(w) : w) })), []);
@@ -1095,7 +1103,7 @@ function TypeInput({ aiReal, dir, onRows, play }) {
       ? "用户给一个中文词，给出日语母语者实际使用的最常用说法。要求：term 用规范的日语写法（该用汉字就用日语规范汉字，不要照搬中文字形，例如『古董』日语写『骨董品』；外来词用片假名）；reading 是准确的平假名读音，逐字核对促音っ/长音/浊音半浊音（不要罗马音）。输出 JSON：{term,reading,meaning:用户给的中文,pos:noun|verb|adj|phrase|other,freq:是否高频(bool),loan:若是片假名外来词则{from:语言码,word:原词}否则null}。只输出 JSON。"
       : "用户给一个日语词。要求：term 用日语规范写法（日语汉字，不要用中文简体字，如「预」应写「預」）；reading 是准确的平假名读音，逐字核对促音っ/长音/浊音半浊音（不要罗马音）；meaning 用地道中文。输出 JSON：{term,reading,meaning,pos:noun|verb|adj|phrase|other,freq:是否高频(bool),loan:仅当确实是片假名外来词才填{from:语言码,word:原词}、否则null}。只输出 JSON。";
     const offline = () => dir === "zh" ? { term: "", reading: "", meaning: t, pos: "other", freq: false } : localAutoFill(t);
-    if (aiReal) { try { row = JSON.parse(stripFence(await callAI(sys, t))); } catch { row = await offline(); } }
+    if (aiReal) { try { row = JSON.parse(stripFence(await callAI(sys, t))); row.verified = "unverified"; row.verifySrc = { reading: "ai", term: "ai", meaning: "ai" }; } catch { row = await offline(); } }
     else row = await offline();
     onRows([row]); setTerm(""); setBusy(false); play("coin");
   };
@@ -1142,8 +1150,8 @@ function VoiceInput({ aiReal, dir, onRows, play }) {
           const d = JSON.parse(stripFence(await callAI(sys, heard)));
           if (Array.isArray(d)) rows = d.slice(); // 兼容：模型直接给了词数组（旧格式）
           else {
-            if (d && d.sentence && d.sentence.term) rows.push({ type: "sentence", term: d.sentence.term, reading: d.sentence.reading || "", meaning: d.sentence.meaning || "", pos: "phrase", freq: false, note: d.sentence.note || "" });
-            if (d && Array.isArray(d.words)) rows = rows.concat(d.words);
+            if (d && d.sentence && d.sentence.term) rows.push({ type: "sentence", term: d.sentence.term, reading: d.sentence.reading || "", meaning: d.sentence.meaning || "", pos: "phrase", freq: false, note: d.sentence.note || "", verified: "unverified", verifySrc: { reading: "ai", term: "ai", meaning: "ai" } });
+            if (d && Array.isArray(d.words)) rows = rows.concat(d.words.map((w) => ({ ...w, verified: "unverified", verifySrc: { reading: "ai", term: "ai", meaning: "ai" } })));
           }
         } catch (e) { logEvent("warn", "语音转换 AI 失败，回退离线", (e && e.message) || e); rows = await Promise.all(heard.split(/[\s、。,，]+/).filter(Boolean).map(offline)); }
       } else rows = await Promise.all(heard.split(/[\s、。,，]+/).filter(Boolean).map(offline));
@@ -1273,10 +1281,12 @@ function Library({ ctx }) {
   const [editing, setEditing] = useState(null);
   const [fixing, setFixing] = useState(false), [fixMsg, setFixMsg] = useState("");
   const [tipping, setTipping] = useState(false), [tipMsg, setTipMsg] = useState("");
+  const [verifying, setVerifying] = useState(false), [verifyMsg, setVerifyMsg] = useState("");
   const aiReal = st.settings.aiReal;
   const words = st.words;
   const fixable = words.filter(needsKanjiFix); // 只有假名/罗马音、缺汉字正体的词
   const tippable = words.filter(needsKanjiTip); // 含汉字、还没做过"汉字对照"判定的词
+  const verifiable = words.filter((w) => w.verified !== "verified" && (w.term || "").trim() && /[ぁ-んァ-ヶ一-鿿々ー]/.test(w.term)); // 待核实、且 term 是日语的词（离线 kuromoji 能核读音）
   // AI 一键补全：逐个让 AI 把"假名/罗马音"补成 汉字正体 + 平假名读音（带进度）
   const runFix = async () => {
     if (fixing) return; const list = words.filter(needsKanjiFix); if (!list.length) return;
@@ -1304,6 +1314,20 @@ function Library({ ctx }) {
     }
     setTipping(false); setTipMsg("标注完成 · 发现 " + trap + " 个汉字陷阱 ⚠️"); play("win"); setTimeout(() => setTipMsg(""), 5000);
   };
+  // 离线核实读音：用已内置的 kuromoji 词典逐个核对待核实词的读音，登录词(KNOWN)→升为 ✅已核实并以词典读音为准（无需 AI、无需联网）
+  const runVerify = async () => {
+    if (verifying) return; const list = words.filter((w) => w.verified !== "verified" && (w.term || "").trim() && /[ぁ-んァ-ヶ一-鿿々ー]/.test(w.term)); if (!list.length) return;
+    setVerifying(true); let done = 0, ok = 0;
+    for (const w of list) {
+      setVerifyMsg("离线核实中… " + done + "/" + list.length);
+      try {
+        const r = await localAutoFill(w.term);
+        if (r && r.verified === "verified" && r.reading) { updateWord(w.id, (x) => ({ ...x, reading: r.reading, basicForm: r.basicForm || x.basicForm || "", verified: "verified", verifySrc: { ...(x.verifySrc || {}), reading: "kuromoji" } })); ok++; }
+      } catch (e) { logEvent("warn", "离线核实失败", w.term + " / " + ((e && e.message) || e)); }
+      done++;
+    }
+    setVerifying(false); setVerifyMsg("已核实 " + ok + " 个词的读音 ✓" + (ok < list.length ? "（其余生僻/专有名词需 AI 或词典进一步核）" : "")); play("win"); setTimeout(() => setVerifyMsg(""), 5000);
+  };
   const shown = filter === "all" ? words
     : filter === "freq" ? words.filter((w) => w.freq)
     : filter === "loan" ? words.filter((w) => w.loan)
@@ -1313,6 +1337,8 @@ function Library({ ctx }) {
   const ordered = order === "new" ? [...shown].reverse() : shown;
   return (<div className="fade-in"><BackRow ctx={ctx} title="📚 我的词库" />
     <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.matcha, boxShadow: "0 5px 0 " + C.matchaDk }} onClick={() => { play("tap"); ctx.setView("add"); }}>🎙️ 去加词（打字/语音/展开）</button>
+    {verifiable.length > 0 && <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.sky, boxShadow: "0 5px 0 var(--bevel)", opacity: verifying ? 0.75 : 1 }} disabled={verifying} onClick={runVerify}>{verifying ? (verifyMsg || "离线核实中…") : "🔍 离线核实读音 · " + verifiable.length + " 个待核实"}</button>}
+    {!verifying && verifyMsg && <div style={{ ...S.setNote, marginBottom: 10, color: C.sky, fontWeight: 800 }}>{verifyMsg}</div>}
     {aiReal && fixable.length > 0 && <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.honey, boxShadow: "0 5px 0 " + C.honeyDk, opacity: fixing ? 0.75 : 1 }} disabled={fixing} onClick={runFix}>{fixing ? (fixMsg || "AI 补全中…") : "🈶 用 AI 补全 " + fixable.length + " 个词的汉字/读音"}</button>}
     {!aiReal && fixable.length > 0 && <div style={{ ...S.setNote, marginBottom: 10 }}>有 {fixable.length} 个词只有假名/罗马音；去「设置」贴上 AI 密钥并开真AI，这里就能一键补成汉字+读音。</div>}
     {!fixing && fixMsg && <div style={{ ...S.setNote, marginBottom: 10, color: C.matchaDk, fontWeight: 800 }}>{fixMsg}</div>}
@@ -1336,6 +1362,7 @@ function Library({ ctx }) {
           <span style={{ ...S.dot, background: p.color + "33" }} onClick={() => speakJa(w.term)}>{p.emoji}</span>
           <div style={{ flex: 1 }} onClick={() => { play("tap"); setEditing(open ? null : w.id); }}>
             <JaTerm w={w} size={18} />
+            {w.verified === "verified" ? <Tag bg="var(--ok-bg)" fg={C.matchaDk}>✅已核</Tag> : <Tag bg="var(--warn-bg)" fg="var(--ink-mid)">⚠️待核</Tag>}
             {w.freq && <Tag bg="#ffe6a8" fg="#a8761e">高频</Tag>}{done && <Tag bg="var(--ok-bg)" fg={C.matchaDk}>已掌握</Tag>}
             {w.kanjiTip && w.kanjiTip.kind === "trap" && <Tag bg="var(--danger-bg)" fg="var(--danger-fg)">⚠️汉字陷阱</Tag>}
             {w.kanjiTip && w.kanjiTip.kind === "same" && <Tag bg="var(--ok-bg)" fg={C.matchaDk}>✅你已会</Tag>}
