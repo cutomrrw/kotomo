@@ -192,6 +192,14 @@ async function genKanjiTip(w) {
   const kind = (d && ["trap", "same", "other"].indexOf(d.kind) >= 0) ? d.kind : "other";
   return { kind, note: (d && d.note) ? String(d.note).trim() : "" };
 }
+// 词源/语源：以日语为桥融会贯通。严防编造——不确定就 unknown;多说法都给且各标可信度(确定/有力/俗説·一说)
+const needsOrigin = (w) => (w.type || "word") === "word" && !!(w.term || "").trim() && !w.origin;
+async function genOrigin(w) {
+  const sys = "你在帮中文母语者学日语，讲解这个词的【词源/由来】，目的是以日语为桥、融会贯通、真正理解这门语言。严格要求：① 基于真实的词源研究，【绝不编造】；若你对该词来源没有把握，conf 设 \"unknown\"、note 留空，宁可不给也不要杜撰一个好听的故事。② 若有多种说法，都列出并各自标注可信度：【确定】【有力】【俗説/一说】。③ kind 取其一：典故|汉字构成|和制漢語|当て字|音变|拟声|借源|其他。④ note 用简洁中文，尽量点出与中文/汉字的关联(学习桥梁)。示例：馬鹿→{kind:\"当て字\",conf:\"有力\",note:\"【有力】源自梵语 moha(愚痴)的当て字；【俗説】一说出自『指鹿为马』的典故\"}。输出 JSON：{kind, conf:\"确定\"|\"有力\"|\"俗説\"|\"unknown\", note}。只输出 JSON。";
+  const d = JSON.parse(stripFence(await callAI(sys, "日语词：" + w.term + (w.reading ? "（" + w.reading + "）" : "") + "　中文意思：" + (w.meaning || ""))));
+  const conf = (d && ["确定", "有力", "俗説", "unknown"].indexOf(d.conf) >= 0) ? d.conf : "unknown";
+  return { kind: (d && d.kind) ? String(d.kind).trim() : "", conf, note: (conf === "unknown") ? "" : ((d && d.note) ? String(d.note).trim() : "") };
+}
 function buildSeedWords(interestIds) {
   const words = [];
   interestIds.forEach((id) => {
@@ -644,7 +652,7 @@ export default function App() {
       expanded: r.expanded || null, cloze: r.cloze || null, kanjiTip: r.kanjiTip || null, isSeed: false, seen: 0, wrong: 0, srs: { level: 0, dueAt: now(), lastReviewedAt: 0 },
       // 准确性核实（kuromoji/JMdict 核实=verified✅，AI 现编/低置信=unverified⚠️）
       verified: r.verified || "unverified", verifySrc: r.verifySrc || {}, basicForm: r.basicForm || "", contextSentence: r.contextSentence || "",
-      jmId: r.jmId || null, glossEn: r.glossEn || null, candidates: r.candidates || null,
+      jmId: r.jmId || null, glossEn: r.glossEn || null, candidates: r.candidates || null, origin: r.origin || null,
     }, true))] }));
   }, []);
   const updateWord = useCallback((id, fn) => patch((s) => ({ ...s, words: s.words.map((w) => w.id === id ? fn(w) : w) })), []);
@@ -1387,10 +1395,12 @@ function Library({ ctx }) {
   const [fixing, setFixing] = useState(false), [fixMsg, setFixMsg] = useState("");
   const [tipping, setTipping] = useState(false), [tipMsg, setTipMsg] = useState("");
   const [verifying, setVerifying] = useState(false), [verifyMsg, setVerifyMsg] = useState("");
+  const [origining, setOrigining] = useState(false), [originMsg, setOriginMsg] = useState("");
   const aiReal = st.settings.aiReal;
   const words = st.words;
   const fixable = words.filter(needsKanjiFix); // 只有假名/罗马音、缺汉字正体的词
   const tippable = words.filter(needsKanjiTip); // 含汉字、还没做过"汉字对照"判定的词
+  const originable = words.filter(needsOrigin); // 还没标过词源的词
   const verifiable = words.filter((w) => w.verified !== "verified" && (w.term || "").trim() && /[ぁ-んァ-ヶ一-鿿々ーｦ-ﾟ]/.test(w.term)); // 待核实、且 term 是日语的词（离线 kuromoji 能核读音）
   // AI 一键补全：逐个让 AI 把"假名/罗马音"补成 汉字正体 + 平假名读音（带进度）
   const runFix = async () => {
@@ -1418,6 +1428,18 @@ function Library({ ctx }) {
       done++; setTipMsg("AI 标注中… " + done + "/" + list.length);
     }
     setTipping(false); setTipMsg("标注完成 · 发现 " + trap + " 个汉字陷阱 ⚠️"); play("win"); setTimeout(() => setTipMsg(""), 5000);
+  };
+  // AI 标注词源/语源：逐个生成(严防编造，不确定就 unknown)，缓存到 word.origin
+  const runOrigins = async () => {
+    if (origining) return; const list = words.filter(needsOrigin); if (!list.length) return;
+    setOrigining(true); let done = 0, got = 0;
+    for (const w of list) {
+      setOriginMsg("AI 标注词源中… " + done + "/" + list.length);
+      try { const og = await genOrigin(w); updateWord(w.id, (x) => ({ ...x, origin: og })); if (og.note) got++; }
+      catch (e) { logEvent("warn", "词源标注失败", w.term + " / " + ((e && e.message) || e)); }
+      done++; setOriginMsg("AI 标注词源中… " + done + "/" + list.length);
+    }
+    setOrigining(false); setOriginMsg("词源标注完成 · " + got + " 个有词源 📜"); play("win"); setTimeout(() => setOriginMsg(""), 5000);
   };
   // 词典核实读音/写法：JMdict 常用词词典 + kuromoji 逐个核对待核实词，命中→升 ✅已核实并以词典读音为准（无需 AI；JMdict 首次用会下载 0.69MB、之后本地）
   const runVerify = async () => {
@@ -1449,6 +1471,8 @@ function Library({ ctx }) {
     {!fixing && fixMsg && <div style={{ ...S.setNote, marginBottom: 10, color: C.matchaDk, fontWeight: 800 }}>{fixMsg}</div>}
     {aiReal && tippable.length > 0 && <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.grape, boxShadow: "0 5px 0 var(--grape-dk)", opacity: tipping ? 0.75 : 1 }} disabled={tipping} onClick={runTips}>{tipping ? (tipMsg || "AI 标注中…") : "🈯 AI 标注汉字陷阱 · " + tippable.length + " 个待查"}</button>}
     {!tipping && tipMsg && <div style={{ ...S.setNote, marginBottom: 10, color: C.grapeDk || "var(--grape-dk)", fontWeight: 800 }}>{tipMsg}</div>}
+    {aiReal && originable.length > 0 && <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.wood, boxShadow: "0 5px 0 var(--bevel)", opacity: origining ? 0.75 : 1 }} disabled={origining} onClick={runOrigins}>{origining ? (originMsg || "AI 标注词源中…") : "📜 AI 标注词源·语源 · " + originable.length + " 个待标"}</button>}
+    {!origining && originMsg && <div style={{ ...S.setNote, marginBottom: 10, color: C.wood, fontWeight: 800 }}>{originMsg}</div>}
     <div style={{ ...S.filterRow, marginBottom: 8 }}>
       <span style={{ fontSize: 12.5, fontWeight: 800, color: "var(--ink-mid)", alignSelf: "center", marginRight: 2 }}>排序</span>
       <Chip on={order === "new"} onClick={() => { setOrder("new"); play("tap"); }}>🆕 从新到旧</Chip>
@@ -1473,6 +1497,7 @@ function Library({ ctx }) {
             {w.kanjiTip && w.kanjiTip.kind === "same" && <Tag bg="var(--ok-bg)" fg={C.matchaDk}>✅你已会</Tag>}
             <div style={{ fontSize: 13, color: "var(--ink-mid)" }}>{w.meaning}{w.source ? " · 📍" + w.source : ""}</div>
             {w.kanjiTip && w.kanjiTip.kind === "trap" && w.kanjiTip.note && <div style={{ fontSize: 12, color: "var(--danger-fg)", marginTop: 2 }}>⚠️ {w.kanjiTip.note}</div>}
+            {w.origin && w.origin.note && <div style={{ fontSize: 12, color: C.wood, marginTop: 2, lineHeight: 1.5 }}>📜 词源{w.origin.kind ? "·" + w.origin.kind : ""}：{w.origin.note}</div>}
           </div>
           <div style={S.wStat}><span style={S.statPill}>练{w.seen || 0}</span>{(w.wrong || 0) > 0 && <span style={{ ...S.statPill, background: "var(--danger-bg)", color: "var(--danger-fg)" }}>错{w.wrong}</span>}</div>
         </div>)].concat(open ? [<div key={w.id + "edit"} className="card slide-up" style={S.editPanel}>
