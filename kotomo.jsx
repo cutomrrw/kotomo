@@ -436,6 +436,28 @@ async function enrichRowsWithDict(rows) {
     return r;
   });
 }
+// 中→日"自动选对词"：AI 给 best + 候选 → 逐个过 JMdict（命中=权威读音/写法）→ 选词典命中的常用默认 →
+// 置信：词典里只有一个清晰命中=✅；有多个命中(歧义)或查无=⚠️ 并存候选供"一秒改"。守"一步到位"(默认已选好)+"不冒充事实"。
+async function buildZhJaRow(d, zh) {
+  try { await loadJmdict(); } catch (e) {}
+  const best = d ? (d.best || (d.term ? d : null)) : null;   // 兼容：模型偶尔直接给 {term,...} 而非 {best,alts}
+  const raw = [best, ...((d && Array.isArray(d.alts)) ? d.alts : [])].filter((c) => c && c.term);
+  if (!raw.length) return { term: "", reading: "", meaning: zh, pos: "other", freq: false, verified: "unverified", verifySrc: {} };
+  const glossFallback = (d && d.gloss_en) ? [].concat(d.gloss_en).filter(Boolean).map(String) : [];
+  const ann = raw.map((c) => { const term = s2j(stripRomajiParen(String(c.term).trim())); const hit = jmLookup(term); return { term, reading: (hit && hit.reading) ? hit.reading : String(c.reading || "").trim(), meaning: String(c.meaning || zh || "").trim(), note: String(c.note || "").trim(), inDict: !!hit, jmId: hit ? hit.id : null, glossEn: hit ? hit.gloss : glossFallback }; });
+  let di = ann.findIndex((c) => c.inDict); if (di < 0) di = 0;
+  const def = ann[di];
+  const dictCount = ann.filter((c) => c.inDict).length;
+  const confident = def.inDict && dictCount <= 1;
+  const bestObj = best || {};
+  return {
+    term: def.term, reading: def.reading, meaning: def.meaning, pos: bestObj.pos || "other", freq: !!bestObj.freq, loan: (bestObj.loan && bestObj.loan.word) ? bestObj.loan : null,
+    verified: confident ? "verified" : "unverified",
+    verifySrc: def.inDict ? { reading: "jmdict", term: "jmdict", meaning: "ai" } : { reading: "ai", term: "ai", meaning: "ai" },
+    jmId: def.jmId, glossEn: def.glossEn,
+    candidates: ann.length > 1 ? ann : null,
+  };
+}
 const MOCK_DICT = {
   "猫":["ねこ","neko","noun"],"狗":["いぬ","inu","noun"],"水":["みず","mizu","noun"],"吃":["たべる","taberu","verb"],
   "喝":["のむ","nomu","verb"],"可爱":["かわいい","kawaii","adj"],"谢谢":["ありがとう","arigatou","phrase"],"你好":["こんにちは","konnichiwa","phrase"],
@@ -614,8 +636,9 @@ export default function App() {
       id: r.id || uid(), type: r.type || "word", term: s2j(stripRomajiParen(r.term.trim())), reading: (r.reading || "").trim(), meaning: (r.meaning || "").trim(),
       pos: r.pos || "other", freq: !!r.freq, loan: r.loan || null, mastered: false, source: (r.source || "").trim(),
       expanded: r.expanded || null, cloze: r.cloze || null, kanjiTip: r.kanjiTip || null, isSeed: false, seen: 0, wrong: 0, srs: { level: 0, dueAt: now(), lastReviewedAt: 0 },
-      // 准确性核实（第1步：kuromoji 核实=verified✅，AI 现编/离线无读音=unverified⚠️）
+      // 准确性核实（kuromoji/JMdict 核实=verified✅，AI 现编/低置信=unverified⚠️）
       verified: r.verified || "unverified", verifySrc: r.verifySrc || {}, basicForm: r.basicForm || "", contextSentence: r.contextSentence || "",
+      jmId: r.jmId || null, glossEn: r.glossEn || null, candidates: r.candidates || null,
     }))] }));
   }, []);
   const updateWord = useCallback((id, fn) => patch((s) => ({ ...s, words: s.words.map((w) => w.id === id ? fn(w) : w) })), []);
@@ -1112,6 +1135,8 @@ function AddWords({ ctx }) {
   const addDraft = (rows) => setDraft((d) => [...rows, ...d]);
   const editD = (i, k, v) => setDraft((d) => d.map((r, idx) => idx === i ? { ...r, [k]: v } : r));
   const delD = (i) => setDraft((d) => d.filter((_, idx) => idx !== i));
+  // 中→日歧义词"一秒改"：在候选里点一个 → 切换该条的写法/读音/意思，并据是否词典命中重算 ✅/⚠️（用户主动选=确认）
+  const pickCand = (i, j) => setDraft((d) => d.map((r, idx) => { if (idx !== i || !r.candidates || !r.candidates[j]) return r; const c = r.candidates[j]; return { ...r, term: c.term, reading: c.reading, meaning: c.meaning || r.meaning, jmId: c.jmId, glossEn: c.glossEn, verified: c.inDict ? "verified" : "unverified", verifySrc: c.inDict ? { reading: "jmdict", term: "jmdict", meaning: "ai" } : { reading: "ai", term: "ai", meaning: "ai" } }; }));
   // ✨展开：先把当前这批待确认词存进库（被点的那条带固定 id，其余正常入库），再进入"展开学习"对它深挖/推荐关联词，避免丢草稿
   const expandDraft = (i) => { const r = draft[i]; if (!r || !r.term || !r.term.trim()) return; const id = uid(); addWords([{ ...r, id }]); setDraft((d) => d.filter((_, idx) => idx !== i)); setExpandWord({ ...r, id }); setTab("expand"); play("tap"); }; // 只把被点的这条入库，其余待确认保留
   const commit = () => { addWords(draft); setDraft([]); play("win"); ctx.setView("library"); };
@@ -1129,6 +1154,9 @@ function AddWords({ ctx }) {
         <div key={i} className="card" style={S.draftRow}>
           <div style={S.draftHead}>
             {r.type === "sentence" && <span style={S.draftBadge}>📝 整句</span>}
+            {r.verified === "verified"
+              ? <span style={{ ...S.draftBadge, background: "var(--ok-bg)", border: "2px solid var(--ok-bg)", color: C.matchaDk }}>✅已核</span>
+              : <span style={{ ...S.draftBadge, background: "var(--warn-bg)", border: "2px solid var(--warn-bg)", color: "var(--ink-mid)" }}>⚠️待核</span>}
             <select value={r.pos} onChange={(e) => editD(i, "pos", e.target.value)} style={S.draftPos}>{POS.map((p) => <option key={p.key} value={p.key}>{p.emoji}{p.label}</option>)}</select>
             {r.type !== "sentence" && <button style={S.draftExpand} onClick={() => expandDraft(i)}>✨ 展开</button>}
             <button style={{ ...S.draftStar, ...(r.freq ? S.draftStarOn : {}) }} onClick={() => editD(i, "freq", !r.freq)}>⭐ 高频</button>
@@ -1137,6 +1165,14 @@ function AddWords({ ctx }) {
           <label style={S.draftField}><span style={S.draftLabel}>{r.type === "sentence" ? "句子" : "单词"}</span><input style={S.draftIn} value={r.term} placeholder={r.type === "sentence" ? "日语整句" : "日语"} onChange={(e) => editD(i, "term", e.target.value)} /></label>
           <label style={S.draftField}><span style={S.draftLabel}>读音</span><input style={S.draftIn} value={r.reading} placeholder="假名" onChange={(e) => editD(i, "reading", e.target.value)} /></label>
           <label style={S.draftField}><span style={S.draftLabel}>意思</span><input style={S.draftIn} value={r.meaning} placeholder="中文" onChange={(e) => editD(i, "meaning", e.target.value)} /></label>
+          {r.candidates && r.candidates.length > 1 && (<div>
+            <div style={{ fontSize: 11.5, color: "var(--ink-mid)", fontWeight: 700, marginBottom: 5 }}>🤔 AI 不太确定选哪个（默认已选最常用）· 点一下换：</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>{r.candidates.map((c, j) => { const on = c.term === r.term; return (
+              <button key={j} className="pressable" title={c.note || ""} onClick={() => { pickCand(i, j); play("tap"); }} style={{ border: on ? "2px solid " + C.matcha : "2px solid var(--line)", background: on ? "var(--ok-bg)" : "var(--surface)", borderRadius: 11, padding: "7px 10px", cursor: "pointer", fontFamily: "inherit", textAlign: "left", maxWidth: "100%" }}>
+                <div style={{ fontWeight: 800, fontSize: 14, color: on ? C.matchaDk : "var(--ink)" }}>{c.term}{c.reading ? " ・" + c.reading : ""}{c.inDict ? " ✅" : ""}</div>
+                {c.note && <div style={{ fontSize: 10.5, fontWeight: 600, color: "var(--ink-soft)", marginTop: 1 }}>{c.note}</div>}
+              </button>); })}</div>
+          </div>)}
           {r.note && <div style={S.draftNote}>✏️ 纠错：{r.note}</div>}
         </div>))}</div>
       <button className="pressable" style={{ ...S.bigBtn, marginTop: 12 }} onClick={commit}>✅ 全部加入（{draft.filter((r) => (r.term || "").trim()).length} 条）</button>
@@ -1145,24 +1181,37 @@ function AddWords({ ctx }) {
 }
 
 function TypeInput({ aiReal, dir, onRows, play }) {
-  const [term, setTerm] = useState(""), [busy, setBusy] = useState(false);
+  const [term, setTerm] = useState(""), [busy, setBusy] = useState(false), [ctxSent, setCtxSent] = useState("");
   const add = async () => {
     const t = term.trim(); if (!t) return; setBusy(true); play("tap");
-    let row;
-    const sys = dir === "zh"
-      ? "用户给一个中文词，给出日语母语者实际使用的最常用说法。要求：term 用规范的日语写法（该用汉字就用日语规范汉字，不要照搬中文字形，例如『古董』日语写『骨董品』；外来词用片假名）；reading 是准确的平假名读音，逐字核对促音っ/长音/浊音半浊音（不要罗马音）。输出 JSON：{term,reading,meaning:用户给的中文,pos:noun|verb|adj|phrase|other,freq:是否高频(bool),loan:若是片假名外来词则{from:语言码,word:原词}否则null}。只输出 JSON。"
-      : "用户给一个日语词。要求：term 用日语规范写法（日语汉字，不要用中文简体字，如「预」应写「預」）；reading 是准确的平假名读音，逐字核对促音っ/长音/浊音半浊音（不要罗马音）；meaning 用地道中文。输出 JSON：{term,reading,meaning,pos:noun|verb|adj|phrase|other,freq:是否高频(bool),loan:仅当确实是片假名外来词才填{from:语言码,word:原词}、否则null}。只输出 JSON。";
-    const offline = () => dir === "zh" ? { term: "", reading: "", meaning: t, pos: "other", freq: false } : localAutoFill(t);
-    if (aiReal) { try { row = JSON.parse(stripFence(await callAI(sys, t))); row.verified = "unverified"; row.verifySrc = { reading: "ai", term: "ai", meaning: "ai" }; } catch { row = await offline(); } }
-    else row = await offline();
-    onRows(await enrichRowsWithDict([row])); setTerm(""); setBusy(false); play("coin");
+    try {
+      if (dir === "zh") {
+        // 中→日：AI 译成日语+候选 → buildZhJaRow 过 JMdict 取权威读音/写法、选常用默认、算置信、存候选
+        let rows;
+        if (aiReal) {
+          const sysZh = "用户给一个中文词(可能附上下文句帮助消歧)。给出日语母语者最常用的对应说法，并仅当真有歧义/近义时附最多2个其他候选。要求：写法用规范日语(该用汉字就用日语规范汉字、不照搬中文字形，如『古董』→『骨董品』；外来词片假名)；读音用平假名(不要罗马音)。输出 JSON：{best:{term,reading,meaning:用户给的中文,pos:noun|verb|adj|phrase|other,freq:bool,loan:{from:语言码,word}|null},alts:[{term,reading,meaning:中文,note:一句中文说明它跟best的区别/适用场景}],gloss_en:对应英文义}。best 放最常用的；只输出 JSON。";
+          const userMsg = ctxSent.trim() ? (t + "\n上下文句:「" + ctxSent.trim() + "」") : t;
+          try { const d = JSON.parse(stripFence(await callAI(sysZh, userMsg))); const row = await buildZhJaRow(d, t); if (ctxSent.trim()) row.contextSentence = ctxSent.trim(); rows = [row]; }
+          catch (e) { logEvent("warn", "中→日 AI 失败", (e && e.message) || e); rows = [{ term: "", reading: "", meaning: t, pos: "other", freq: false, verified: "unverified", verifySrc: {} }]; }
+        } else { rows = [{ term: "", reading: "", meaning: t, pos: "other", freq: false, verified: "unverified", verifySrc: {} }]; }
+        onRows(rows);
+      } else {
+        // 日→中：AI 补意思，再用 enrichRowsWithDict 过 JMdict 核读音/写法
+        const sysJa = "用户给一个日语词。要求：term 用日语规范写法（日语汉字，不要用中文简体字，如「预」应写「預」）；reading 是准确的平假名读音，逐字核对促音っ/长音/浊音半浊音（不要罗马音）；meaning 用地道中文。输出 JSON：{term,reading,meaning,pos:noun|verb|adj|phrase|other,freq:是否高频(bool),loan:仅当确实是片假名外来词才填{from:语言码,word:原词}、否则null}。只输出 JSON。";
+        let row;
+        if (aiReal) { try { row = JSON.parse(stripFence(await callAI(sysJa, t))); row.verified = "unverified"; row.verifySrc = { reading: "ai", term: "ai", meaning: "ai" }; } catch { row = await localAutoFill(t); } }
+        else row = await localAutoFill(t);
+        onRows(await enrichRowsWithDict([row]));
+      }
+    } finally { setTerm(""); setBusy(false); play("coin"); }
   };
   return (<div className="card" style={S.padCard}>
-    <div style={S.howto}>{dir === "zh" ? (aiReal ? "打一个中文词，AI 给出对应日语 + 读音(假名)" : "中→日 需要开 AI（离线只支持日→中，会把中文记到意思栏）") : (aiReal ? "打一个日语词，AI 补读音(假名)/意思/词性" : "打一个日语词，离线补读音(假名)和词性，意思自己填")}。</div>
+    <div style={S.howto}>{dir === "zh" ? (aiReal ? "打一个中文词，AI 译成日语、词典核实读音/写法（有歧义会给候选，你一秒选）" : "中→日 需要开 AI（离线只支持日→中，会把中文记到意思栏）") : (aiReal ? "打一个日语词，AI 补意思、词典核实读音/写法" : "打一个日语词，离线补读音(假名)和词性，意思自己填")}。</div>
     <div style={{ display: "flex", gap: 8 }}>
       <input style={S.field} value={term} placeholder={dir === "zh" ? "例如 厕所、好吃" : "例如 トイレ、美味しい"} onChange={(e) => setTerm(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} />
       <button className="pressable" style={S.addBtn} onClick={add} disabled={busy}>{busy ? "…" : "＋"}</button>
     </div>
+    {dir === "zh" && aiReal && <input style={{ ...S.field, marginTop: 8, fontSize: 13 }} value={ctxSent} placeholder="(可选) 这词出现在哪句话/什么场景 → 帮 AI 选对词" onChange={(e) => setCtxSent(e.target.value)} />}
     <div style={S.tip}>加进"待确认"后可以编辑，确认无误再入库。</div>
   </div>);
 }
@@ -1422,11 +1471,17 @@ function Library({ ctx }) {
           <div style={S.wStat}><span style={S.statPill}>练{w.seen || 0}</span>{(w.wrong || 0) > 0 && <span style={{ ...S.statPill, background: "var(--danger-bg)", color: "var(--danger-fg)" }}>错{w.wrong}</span>}</div>
         </div>)].concat(open ? [<div key={w.id + "edit"} className="card slide-up" style={S.editPanel}>
           <div style={S.editRow}><span style={S.editLabel}>单词</span>
-            <input style={S.editInput} defaultValue={w.term} placeholder="日语正体（汉字）" onBlur={(e) => updateWord(w.id, (x) => ({ ...x, term: s2j(stripRomajiParen(e.target.value.trim())) }))} /></div>
+            <input key={"t" + w.term} style={S.editInput} defaultValue={w.term} placeholder="日语正体（汉字）" onBlur={(e) => updateWord(w.id, (x) => ({ ...x, term: s2j(stripRomajiParen(e.target.value.trim())) }))} /></div>
           <div style={S.editRow}><span style={S.editLabel}>读音</span>
-            <input style={S.editInput} defaultValue={w.reading} placeholder="平假名读音" onBlur={(e) => updateWord(w.id, (x) => ({ ...x, reading: e.target.value.trim() }))} /></div>
+            <input key={"r" + w.reading} style={S.editInput} defaultValue={w.reading} placeholder="平假名读音" onBlur={(e) => updateWord(w.id, (x) => ({ ...x, reading: e.target.value.trim() }))} /></div>
           <div style={S.editRow}><span style={S.editLabel}>意思</span>
-            <input style={S.editInput} defaultValue={w.meaning} placeholder="中文意思" onBlur={(e) => updateWord(w.id, (x) => ({ ...x, meaning: e.target.value.trim() }))} /></div>
+            <input key={"m" + w.meaning} style={S.editInput} defaultValue={w.meaning} placeholder="中文意思" onBlur={(e) => updateWord(w.id, (x) => ({ ...x, meaning: e.target.value.trim() }))} /></div>
+          {w.candidates && w.candidates.length > 1 && (<div style={S.editRow}><span style={S.editLabel}>选词</span>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, flex: 1 }}>{w.candidates.map((c, j) => { const on = c.term === w.term; return (
+              <button key={j} className="pressable" title={c.note || ""} onClick={() => { updateWord(w.id, (x) => ({ ...x, term: c.term, reading: c.reading, meaning: c.meaning || x.meaning, jmId: c.jmId, glossEn: c.glossEn, verified: c.inDict ? "verified" : "unverified", verifySrc: c.inDict ? { reading: "jmdict", term: "jmdict", meaning: "ai" } : { reading: "ai", term: "ai", meaning: "ai" } })); play("tap"); }} style={{ border: on ? "2px solid " + C.matcha : "2px solid var(--line)", background: on ? "var(--ok-bg)" : "var(--surface)", borderRadius: 10, padding: "6px 9px", cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+                <div style={{ fontWeight: 800, fontSize: 13, color: on ? C.matchaDk : "var(--ink)" }}>{c.term}{c.inDict ? " ✅" : ""}</div>
+                {c.note && <div style={{ fontSize: 10, color: "var(--ink-soft)" }}>{c.note}</div>}
+              </button>); })}</div></div>)}
           <div style={S.editRow}><span style={S.editLabel}>掌握</span>
             <button className="pressable" style={{ ...S.toggle, ...(done ? S.toggleOn : {}) }} onClick={() => { updateWord(w.id, (x) => ({ ...x, mastered: !done })); play("tap"); }}>{done ? "已掌握 ✓（跳过复习）" : "标为已掌握"}</button></div>
           <div style={S.editRow}><span style={S.editLabel}>高亮</span><div style={{ display: "flex", gap: 6 }}>
