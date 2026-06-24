@@ -1390,6 +1390,7 @@ const HL_COLORS = ["", "#ffe6a8", "#cdeccd", "#cfe4f0", "#f0d2e4"]; // 高亮笔
 function Library({ ctx }) {
   const { st, play, updateWord, delWord } = ctx;
   const [filter, setFilter] = useState("all");
+  const [search, setSearch] = useState("");
   const [order, setOrder] = useState("new"); // new=从新到旧（默认，先看最近加的）, old=从旧到新
   const [editing, setEditing] = useState(null);
   const [fixing, setFixing] = useState(false), [fixMsg, setFixMsg] = useState("");
@@ -1460,8 +1461,11 @@ function Library({ ctx }) {
     : filter === "loan" ? words.filter((w) => w.loan)
     : filter === "mastered" ? words.filter((w) => w.mastered || (w.srs && w.srs.level >= MASTER_LEVEL))
     : words.filter((w) => (w.pos || "other") === filter);
+  // 检索：搜日语(写法/读音)或中文(意思)，含外来词原词
+  const q = search.trim().toLowerCase();
+  const searched = q ? shown.filter((w) => ((w.term || "") + " " + (w.reading || "") + " " + (w.meaning || "") + " " + ((w.loan && w.loan.word) || "")).toLowerCase().includes(q)) : shown;
   // 词库按加入先后排（words 数组本身是从旧到新追加的）：从新到旧=倒序，从旧到新=原序
-  const ordered = order === "new" ? [...shown].reverse() : shown;
+  const ordered = order === "new" ? [...searched].reverse() : searched;
   return (<div className="fade-in"><BackRow ctx={ctx} title="📚 我的词库" />
     <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.matcha, boxShadow: "0 5px 0 " + C.matchaDk }} onClick={() => { play("tap"); ctx.setView("add"); }}>🎙️ 去加词（打字/语音/展开）</button>
     {verifiable.length > 0 && <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.sky, boxShadow: "0 5px 0 var(--bevel)", opacity: verifying ? 0.75 : 1 }} disabled={verifying} onClick={runVerify}>{verifying ? (verifyMsg || "词典核实中…") : "🔍 用词典核实读音·写法 · " + verifiable.length + " 个待核实"}</button>}
@@ -1473,6 +1477,10 @@ function Library({ ctx }) {
     {!tipping && tipMsg && <div style={{ ...S.setNote, marginBottom: 10, color: C.grapeDk || "var(--grape-dk)", fontWeight: 800 }}>{tipMsg}</div>}
     {aiReal && originable.length > 0 && <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.wood, boxShadow: "0 5px 0 var(--bevel)", opacity: origining ? 0.75 : 1 }} disabled={origining} onClick={runOrigins}>{origining ? (originMsg || "AI 标注词源中…") : "📜 AI 标注词源·语源 · " + originable.length + " 个待标"}</button>}
     {!origining && originMsg && <div style={{ ...S.setNote, marginBottom: 10, color: C.wood, fontWeight: 800 }}>{originMsg}</div>}
+    <div style={{ position: "relative", marginBottom: 10 }}>
+      <input style={{ ...S.field, paddingRight: 34 }} value={search} placeholder="🔍 搜日语 / 中文 / 读音…" onChange={(e) => setSearch(e.target.value)} />
+      {search && <button className="pressable" onClick={() => { setSearch(""); play("tap"); }} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", border: "none", background: "transparent", fontSize: 17, cursor: "pointer", color: "var(--ink-soft)", fontFamily: "inherit" }}>✕</button>}
+    </div>
     <div style={{ ...S.filterRow, marginBottom: 8 }}>
       <span style={{ fontSize: 12.5, fontWeight: 800, color: "var(--ink-mid)", alignSelf: "center", marginRight: 2 }}>排序</span>
       <Chip on={order === "new"} onClick={() => { setOrder("new"); play("tap"); }}>🆕 从新到旧</Chip>
@@ -1485,7 +1493,7 @@ function Library({ ctx }) {
       <Chip on={filter === "mastered"} onClick={() => { setFilter("mastered"); play("tap"); }}>🌸已掌握 {countMastered(words)}</Chip>
       {POS.map((p) => { const n = words.filter((w) => (w.pos || "other") === p.key).length; if (!n) return null; return <Chip key={p.key} on={filter === p.key} onClick={() => { setFilter(p.key); play("tap"); }}>{p.emoji}{p.label} {n}</Chip>; })}
     </div>
-    <div style={S.list}>{ordered.length === 0 && <div style={S.empty}>这里还没有词 🌱</div>}
+    <div style={S.list}>{ordered.length === 0 && <div style={S.empty}>{q ? "没找到「" + search.trim() + "」相关的词" : "这里还没有词 🌱"}</div>}
       {ordered.map((w) => { const p = posInfo(w.pos); const done = w.mastered || (w.srs && w.srs.level >= MASTER_LEVEL); const open = editing === w.id;
         return [(<div key={w.id} className="card" style={{ ...S.wordRow, ...(w.hl ? { background: w.hl } : {}) }}>
           <span style={{ ...S.dot, background: p.color + "33" }} onClick={() => speakJa(w.term)}>{p.emoji}</span>
