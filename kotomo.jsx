@@ -622,6 +622,8 @@ export default function App() {
   // 删除 = 移入"最近删除"回收站（保留 7 天可恢复），不直接丢弃（PRD：防误删心血）
   const delWord = useCallback((id) => patch((s) => { const w = s.words.find((x) => x.id === id); return { ...s, words: s.words.filter((x) => x.id !== id), trash: w ? [{ word: w, deletedAt: now() }, ...(s.trash || [])].slice(0, 100) : (s.trash || []) }; }), []);
   const restoreWord = useCallback((id) => patch((s) => { const e = (s.trash || []).find((t) => t.word.id === id); return e ? { ...s, words: [...s.words, e.word], trash: (s.trash || []).filter((t) => t.word.id !== id) } : s; }), []);
+  // 补充初始词库：把所选门类的种子词/句【追加】进现有库（不清空、不替换），调用方已去重
+  const appendWords = useCallback((rows, ids) => patch((s) => ({ ...s, words: [...s.words, ...rows], interests: Array.from(new Set([...(s.interests || []), ...(ids || [])])) })), []);
   // 点猫"心情+1"：必须走 patch 才能持久化+重渲染（曾经就地 mutation 导致不生效）
   const petLove = useCallback(() => patch((s) => ({ ...s, pet: { ...s.pet, mood: Math.min(100, (s.pet.mood ?? 75) + 1) } })), []);
 
@@ -662,7 +664,7 @@ export default function App() {
   if (!st.onboarded) return <Onboarding onDone={(interests) => { play("happy"); patch((s) => ({ ...s, onboarded: true, interests, words: buildSeedWords(interests) })); }} play={play} />;
 
   const nav = (v) => { play("tap"); setView(v); };
-  const ctx = { st, play, mastered, seg, decor, mood, nav, addWords, updateWord, delWord, restoreWord, petLove, setSetting, finishReview, ownWordCount, reviewWrongOnly, setReviewWrongOnly, setView };
+  const ctx = { st, play, mastered, seg, decor, mood, nav, addWords, updateWord, delWord, restoreWord, appendWords, petLove, setSetting, finishReview, ownWordCount, reviewWrongOnly, setReviewWrongOnly, setView };
 
   return (
     <div style={S.shell}>
@@ -1611,6 +1613,17 @@ function Settings({ ctx }) {
     setKeyMsg(r.msg + (r.ok === true ? "，已开启真 AI ✨" : ""));
     setTimeout(() => setKeyMsg(""), 5000);
   };
+  // 安全版"补充初始词库"：只追加所选门类的种子词/句，不清空、不替换，已有 term 自动跳过
+  const [picks, setPicks] = useState([]); const [seedMsg, setSeedMsg] = useState("");
+  const addSeeds = () => {
+    if (!picks.length) return;
+    const have = new Set(st.words.map((w) => w.term));
+    const seeds = buildSeedWords(picks).filter((w) => !have.has(w.term));
+    const wc = seeds.filter((x) => x.type === "word").length, sc = seeds.length - wc;
+    if (seeds.length) ctx.appendWords(seeds, picks);
+    setSeedMsg(seeds.length ? ("已补充 " + wc + " 词 + " + sc + " 句 ✓（你已有的词没动）") : "这些门类的词你已经都有了～");
+    setPicks([]); play("win"); setTimeout(() => setSeedMsg(""), 6000);
+  };
   return (<div className="fade-in"><BackRow ctx={ctx} title="⚙️ 设置" />
     <div className="card" style={S.setCard}>
       <Row label="外观主题" hint="浅色 / 深色 / 像素，或跟随手机白天夜里自动切">
@@ -1626,6 +1639,15 @@ function Settings({ ctx }) {
         </div>
       </Row>
       <Row label="低能量模式" hint="状态不好时主动开，温柔不评判"><div style={S.energyWrap}>{[["low", "🌙 低能"], ["normal", "☀️ 正常"], ["super", "🔥 超人"]].map(([m, l]) => (<button key={m} style={{ ...S.energyBtn, padding: "6px 10px", fontSize: 12, ...(st.settings.energyMode === m ? S.energyOn : {}) }} onClick={() => { setSetting("energyMode", m); play("tap"); }}>{l}</button>))}</div></Row>
+    </div>
+    <div className="card" style={{ ...S.setCard, padding: 14, marginTop: 14 }}>
+      <div style={{ fontWeight: 800, marginBottom: 4 }}>➕ 补充初始词库</div>
+      <div style={{ fontSize: 12, color: C.inkSoft, marginBottom: 10, lineHeight: 1.6 }}>勾门类，把它的开局词（每类 30 词 + 10 句）<b>追加</b>进现有词库——<b>不清空、不替换</b>，你已有的词自动跳过。想要新加的「五十音图 / 房屋建设」也在这里拿。</div>
+      <div style={S.intGrid}>{INTERESTS.map((it) => { const on = picks.includes(it.id); return (
+        <button key={it.id} className="pressable" style={{ ...S.intBtn, padding: "10px 6px", ...(on ? S.intOn : {}) }} onClick={() => { setPicks((p) => p.includes(it.id) ? p.filter((x) => x !== it.id) : [...p, it.id]); play("tap"); }}>
+          <span style={{ fontSize: 22 }}>{it.emoji}</span><span style={{ ...S.intLabel, fontSize: 12.5 }}>{it.label}</span>{on && <span style={S.intCheck}>✓</span>}</button>); })}</div>
+      <button className="pressable" disabled={!picks.length} style={{ ...S.bigBtn, marginTop: 12, opacity: picks.length ? 1 : 0.5 }} onClick={addSeeds}>➕ 添加选中（{picks.length} 类，不清空现有）</button>
+      {seedMsg && <div style={{ ...S.setNote, color: C.matchaDk, fontWeight: 800, marginTop: 8 }}>{seedMsg}</div>}
     </div>
     {keyMsg && <div style={{ ...S.setNote, color: keyMsg.indexOf("✗") === 0 ? C.blush : C.matchaDk, fontWeight: 800 }}>{keyMsg}</div>}
     <div style={S.setNote}>开「真AI」需要密钥：OpenAI（platform.openai.com 生成，<b>sk-</b> 开头）或 Anthropic Claude（console.anthropic.com 生成，<b>sk-ant-</b> 开头）都行，贴哪家就自动用哪家，按用量付费、很便宜（查一个词不到一分钱）。没密钥或没网时自动降级离线 kuromoji（只补读音和词性，意思自己填）。</div>
