@@ -563,6 +563,7 @@ export default function App() {
   const [st, setSt] = useState(freshState());
   const [view, setView] = useState("home");
   const [reviewWrongOnly, setReviewWrongOnly] = useState(false);
+  const [expandTarget, setExpandTarget] = useState(null); // 从词库点"展开学习"传给加词页的目标词
   const [tick, setTick] = useState(0);
   const [naughty, setNaughty] = useState(null); // 回归盲盒消息
   const [saveErr, setSaveErr] = useState(false); // 本地保存失败提示
@@ -664,7 +665,7 @@ export default function App() {
   if (!st.onboarded) return <Onboarding onDone={(interests) => { play("happy"); patch((s) => ({ ...s, onboarded: true, interests, words: buildSeedWords(interests) })); }} play={play} />;
 
   const nav = (v) => { play("tap"); setView(v); };
-  const ctx = { st, play, mastered, seg, decor, mood, nav, addWords, updateWord, delWord, restoreWord, appendWords, petLove, setSetting, finishReview, ownWordCount, reviewWrongOnly, setReviewWrongOnly, setView };
+  const ctx = { st, play, mastered, seg, decor, mood, nav, addWords, updateWord, delWord, restoreWord, appendWords, petLove, setSetting, finishReview, ownWordCount, reviewWrongOnly, setReviewWrongOnly, setView, expandTarget, setExpandTarget };
 
   return (
     <div style={S.shell}>
@@ -1118,6 +1119,8 @@ function AddWords({ ctx }) {
   const [draft, setDraft] = useState([]);
   const [expandWord, setExpandWord] = useState(null); // 某条"待确认"点✨展开时的目标词
   const expandBackRef = useRef(null); // 展开学习的"返回"逐级处理：结果→该词菜单→(手动模式)选词器→交还父级退出
+  // 从词库点"✨展开学习"进来：直接打开展开页、锁定该词
+  useEffect(() => { if (ctx.expandTarget) { setExpandWord(ctx.expandTarget); setTab("expand"); ctx.setExpandTarget(null); } }, [ctx.expandTarget]);
   const addDraft = (rows) => setDraft((d) => [...rows, ...d]);
   const editD = (i, k, v) => setDraft((d) => d.map((r, idx) => idx === i ? { ...r, [k]: v } : r));
   const delD = (i) => setDraft((d) => d.filter((_, idx) => idx !== i));
@@ -1500,6 +1503,7 @@ function Library({ ctx }) {
           <div style={S.editRow}><span style={S.editLabel}>来源</span>
             <input style={S.editInput} defaultValue={w.source} placeholder="哪部剧/哪家店/哪次办事…" onBlur={(e) => updateWord(w.id, (x) => ({ ...x, source: e.target.value }))} /></div>
           {w.expanded && (w.expanded.examples || []).length > 0 && <div style={{ marginTop: 6 }}><div style={S.editLabel}>例句</div>{w.expanded.examples.map((e, i) => <div key={i} style={S.exLine} onClick={() => speakJa(e.jp)}>· {e.jp} 🔊 <span style={{ color: C.inkSoft }}>{e.zh}</span></div>)}</div>}
+          {(w.type || "word") === "word" && <button className="pressable" style={{ ...S.bigBtn, background: C.grape, boxShadow: "0 5px 0 var(--grape-dk)", marginTop: 2 }} onClick={() => { ctx.setExpandTarget(w); ctx.setView("add"); play("tap"); }}>✨ 展开学习（例句 / 近义 / 关联词）</button>}
           <button className="pressable" style={S.delBtn} onClick={() => { if (confirm("确定删除「" + w.term + "」？")) { delWord(w.id); play("tap"); } }}>🗑️ 删除这个词</button>
         </div>] : []); })}</div>
     <TrashBin ctx={ctx} />
