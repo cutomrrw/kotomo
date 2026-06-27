@@ -679,6 +679,7 @@ export default function App() {
         {view === "add" && <AddWords ctx={ctx} />}
         {view === "library" && <Library ctx={ctx} />}
         {view === "center" && <ReviewCenter ctx={ctx} />}
+        {view === "kana" && <KanaChart ctx={ctx} />}
         {view === "settings" && <Settings ctx={ctx} />}
       </main>
     </div>
@@ -783,6 +784,7 @@ function Home({ ctx }) {
     <div style={S.toolRow}>
       <button className="pressable card" style={S.toolBtn} onClick={() => nav("add")}><span style={S.toolIcon}>🎙️</span><span>加词</span></button>
       <button className="pressable card" style={S.toolBtn} onClick={() => nav("library")}><span style={S.toolIcon}>📚</span><span>我的词库</span></button>
+      <button className="pressable card" style={S.toolBtn} onClick={() => nav("kana")}><span style={S.toolIcon}>🔤</span><span>五十音图</span></button>
     </div>
     <div style={S.statLine}>词库共 <b style={{ color: C.honeyDk }}>{st.words.length}</b> 词 · 你自己加了 <b style={{ color: C.matchaDk }}>{ctx.ownWordCount}</b> 个</div>
   </div>);
@@ -1599,6 +1601,88 @@ function LogViewer({ play }) {
             {l.detail && <div style={{ color: C.inkSoft, marginTop: 2, wordBreak: "break-all" }}>{l.detail}</div>}
           </div>))}</div>}
     </div>}
+  </div>);
+}
+
+// ── 五十音图：假名表（点击发音）+ 认读练习 ──────────────
+const KANA_GRID = [
+  [["あ", "ア", "a"], ["い", "イ", "i"], ["う", "ウ", "u"], ["え", "エ", "e"], ["お", "オ", "o"]],
+  [["か", "カ", "ka"], ["き", "キ", "ki"], ["く", "ク", "ku"], ["け", "ケ", "ke"], ["こ", "コ", "ko"]],
+  [["さ", "サ", "sa"], ["し", "シ", "shi"], ["す", "ス", "su"], ["せ", "セ", "se"], ["そ", "ソ", "so"]],
+  [["た", "タ", "ta"], ["ち", "チ", "chi"], ["つ", "ツ", "tsu"], ["て", "テ", "te"], ["と", "ト", "to"]],
+  [["な", "ナ", "na"], ["に", "ニ", "ni"], ["ぬ", "ヌ", "nu"], ["ね", "ネ", "ne"], ["の", "ノ", "no"]],
+  [["は", "ハ", "ha"], ["ひ", "ヒ", "hi"], ["ふ", "フ", "fu"], ["へ", "ヘ", "he"], ["ほ", "ホ", "ho"]],
+  [["ま", "マ", "ma"], ["み", "ミ", "mi"], ["む", "ム", "mu"], ["め", "メ", "me"], ["も", "モ", "mo"]],
+  [["や", "ヤ", "ya"], null, ["ゆ", "ユ", "yu"], null, ["よ", "ヨ", "yo"]],
+  [["ら", "ラ", "ra"], ["り", "リ", "ri"], ["る", "ル", "ru"], ["れ", "レ", "re"], ["ろ", "ロ", "ro"]],
+  [["わ", "ワ", "wa"], null, null, null, ["を", "ヲ", "wo"]],
+  [["ん", "ン", "n"], null, null, null, null],
+];
+const KANA_DAKUTEN = [
+  [["が", "ガ", "ga"], ["ぎ", "ギ", "gi"], ["ぐ", "グ", "gu"], ["げ", "ゲ", "ge"], ["ご", "ゴ", "go"]],
+  [["ざ", "ザ", "za"], ["じ", "ジ", "ji"], ["ず", "ズ", "zu"], ["ぜ", "ゼ", "ze"], ["ぞ", "ゾ", "zo"]],
+  [["だ", "ダ", "da"], ["ぢ", "ヂ", "ji"], ["づ", "ヅ", "zu"], ["で", "デ", "de"], ["ど", "ド", "do"]],
+  [["ば", "バ", "ba"], ["び", "ビ", "bi"], ["ぶ", "ブ", "bu"], ["べ", "ベ", "be"], ["ぼ", "ボ", "bo"]],
+  [["ぱ", "パ", "pa"], ["ぴ", "ピ", "pi"], ["ぷ", "プ", "pu"], ["ぺ", "ペ", "pe"], ["ぽ", "ポ", "po"]],
+];
+const KANA_ALL = [].concat.apply([], KANA_GRID.concat(KANA_DAKUTEN)).filter(Boolean);
+const kanaQ = (idx) => {
+  const ans = KANA_ALL[Math.floor(Math.random() * KANA_ALL.length)];
+  const opts = [ans[2]];
+  while (opts.length < 4) { const r = KANA_ALL[Math.floor(Math.random() * KANA_ALL.length)][2]; if (opts.indexOf(r) < 0) opts.push(r); }
+  return { ans, options: opts.sort(() => Math.random() - 0.5) };
+};
+const kanaCell = { background: "var(--surface)", border: "2px solid var(--line)", borderRadius: 10, padding: "7px 2px", cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 1, minWidth: 0, color: "var(--ink)" };
+function KanaTable({ idx, onTap }) {
+  const rowsOf = (grid) => grid.map((row, i) => (<div key={i} style={{ display: "flex", gap: 5, marginBottom: 5 }}>{row.map((c, j) => c
+    ? <button key={j} className="pressable" style={{ ...kanaCell, flex: 1 }} onClick={() => onTap(c)}><span style={{ fontSize: 23, fontWeight: 800 }}>{c[idx]}</span><span style={{ fontSize: 10.5, color: "var(--ink-soft)" }}>{c[2]}</span></button>
+    : <div key={j} style={{ flex: 1 }} />)}</div>));
+  return (<div className="fade-in">
+    {rowsOf(KANA_GRID)}
+    <div style={{ ...S.sectTitle, marginTop: 12 }}>浊音 · 半浊音</div>
+    {rowsOf(KANA_DAKUTEN)}
+    <div style={{ ...S.setNote, marginTop: 8 }}>点任意假名听发音 🔊</div>
+  </div>);
+}
+function KanaDrill({ idx, play }) {
+  const [q, setQ] = useState(() => kanaQ(idx));
+  const [picked, setPicked] = useState(null);
+  const [score, setScore] = useState(0), [total, setTotal] = useState(0), [streak, setStreak] = useState(0);
+  useEffect(() => { setQ(kanaQ(idx)); setPicked(null); }, [idx]);
+  const pick = (opt) => {
+    if (picked) return; setPicked(opt); setTotal((t) => t + 1);
+    const ok = opt === q.ans[2];
+    if (ok) { play("coin"); setScore((s) => s + 1); setStreak((s) => s + 1); } else { play("pop"); setStreak(0); }
+    setTimeout(() => { setPicked(null); setQ(kanaQ(idx)); }, ok ? 650 : 1300);
+  };
+  return (<div className="fade-in">
+    <div style={{ textAlign: "center", marginBottom: 12, fontSize: 13, color: "var(--ink-mid)", fontWeight: 800 }}>得分 {score}/{total} · 连对 {streak} 🔥</div>
+    <div className="card pop-in" key={q.ans[idx] + total} style={{ ...S.bigCard, padding: "34px 20px" }}>
+      <div style={{ fontSize: 68, fontWeight: 800, lineHeight: 1 }}>{q.ans[idx]}</div>
+      <div style={{ fontSize: 13, color: "var(--ink-soft)", marginTop: 8 }}>这个假名读什么？</div>
+    </div>
+    <div style={{ ...S.optGrid, marginTop: 14 }}>{q.options.map((opt, i) => {
+      let s2 = { ...S.opt };
+      if (picked) { if (opt === q.ans[2]) s2 = { ...s2, borderColor: C.matchaDk, background: "var(--ok-bg)" }; else if (opt === picked) s2 = { ...s2, borderColor: C.blush, background: "var(--danger-bg)" }; }
+      return <button key={i} className="pressable" style={s2} onClick={() => pick(opt)}><span style={{ fontSize: 22, fontWeight: 800 }}>{opt}</span></button>;
+    })}</div>
+  </div>);
+}
+function KanaChart({ ctx }) {
+  const { play } = ctx;
+  const [kind, setKind] = useState("hira");
+  const [mode, setMode] = useState("chart");
+  const idx = kind === "hira" ? 0 : 1;
+  return (<div className="fade-in"><BackRow ctx={ctx} title="🔤 五十音图" />
+    <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+      <button className="pressable" style={{ ...S.seg, ...(kind === "hira" ? S.segOn : {}) }} onClick={() => { setKind("hira"); play("tap"); }}>平假名 あ</button>
+      <button className="pressable" style={{ ...S.seg, ...(kind === "kata" ? S.segOn : {}) }} onClick={() => { setKind("kata"); play("tap"); }}>片假名 ア</button>
+    </div>
+    <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+      <button className="pressable" style={{ ...S.seg, ...(mode === "chart" ? S.segOn : {}) }} onClick={() => { setMode("chart"); play("tap"); }}>📋 假名表</button>
+      <button className="pressable" style={{ ...S.seg, ...(mode === "drill" ? S.segOn : {}) }} onClick={() => { setMode("drill"); play("tap"); }}>🎯 认读练习</button>
+    </div>
+    {mode === "chart" ? <KanaTable idx={idx} onTap={(c) => { speakJa(c[idx]); play("tap"); }} /> : <KanaDrill idx={idx} play={play} />}
   </div>);
 }
 
