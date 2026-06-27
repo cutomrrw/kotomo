@@ -781,10 +781,15 @@ function Home({ ctx }) {
         <span style={{ fontSize: 20 }}>❗</span><div style={{ textAlign: "left" }}><div style={{ fontWeight: 800 }}>错题强化</div><div style={S.reviewSub}>{wrongs.length} 个易错/犹豫</div></div></button>
     </div>
 
+    <button className="pressable card" style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", padding: "13px 15px", marginBottom: 12, cursor: "pointer", fontFamily: "inherit" }} onClick={() => nav("kana")}>
+      <span style={{ fontSize: 24, width: 44, height: 44, borderRadius: 12, background: "var(--window)", display: "grid", placeItems: "center", flexShrink: 0 }}>🔤</span>
+      <div style={{ flex: 1, textAlign: "left" }}><div style={{ fontWeight: 800, fontSize: 16, color: C.ink }}>五十音图</div><div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 2 }}>假名表 · 认读练习 — 零基础先练这个</div></div>
+      <span style={{ fontSize: 20, color: "var(--ink-soft)" }}>›</span>
+    </button>
+
     <div style={S.toolRow}>
       <button className="pressable card" style={S.toolBtn} onClick={() => nav("add")}><span style={S.toolIcon}>🎙️</span><span>加词</span></button>
       <button className="pressable card" style={S.toolBtn} onClick={() => nav("library")}><span style={S.toolIcon}>📚</span><span>我的词库</span></button>
-      <button className="pressable card" style={S.toolBtn} onClick={() => nav("kana")}><span style={S.toolIcon}>🔤</span><span>五十音图</span></button>
     </div>
     <div style={S.statLine}>词库共 <b style={{ color: C.honeyDk }}>{st.words.length}</b> 词 · 你自己加了 <b style={{ color: C.matchaDk }}>{ctx.ownWordCount}</b> 个</div>
   </div>);
