@@ -1029,9 +1029,9 @@ function FillRound({ item, all, play, onResult, onNext, onWrong, onHesitate, upd
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{clozeOpts.map((o, i) => {
         let stt = "idle"; if (checked) { if (o === cloze.answer) stt = "right"; else if (picked === o) stt = "wrong"; }
-        const mp = { idle: { borderColor: picked === o ? C.honey : "var(--line)", background: picked === o ? "var(--surface-sel)" : "var(--surface)" }, right: { borderColor: C.matchaDk, background: "var(--ok-bg)" }, wrong: { borderColor: C.blush, background: "var(--danger-bg)" } };
-        return (<button key={i} className="pressable" style={{ ...S.optWide, ...mp[stt] }} onClick={() => { if (!checked) { setPicked(o); play("tap"); } }}>
-          <span style={{ fontWeight: 800, color: C.honeyDk, marginRight: 10 }}>{"ABCD"[i]}</span><span style={{ fontWeight: 800, fontSize: 17 }}>{o}</span></button>); })}</div>
+        const mp = { idle: { borderColor: picked === o ? C.honey : "var(--line)", background: picked === o ? "var(--surface-sel)" : "var(--surface)", opacity: checked ? 0.45 : 1 }, right: { border: "3px solid " + C.matchaDk, background: "var(--ok-bg)" }, wrong: { border: "3px solid " + C.blush, background: "var(--danger-bg)" } };
+        return (<button key={i} className="pressable" style={{ ...S.optWide, display: "flex", alignItems: "center", ...mp[stt] }} onClick={() => { if (!checked) { setPicked(o); play("tap"); } }}>
+          <span style={{ fontWeight: 800, color: stt === "right" ? C.matchaDk : stt === "wrong" ? C.blush : C.honeyDk, marginRight: 10 }}>{"ABCD"[i]}</span><span style={{ fontWeight: 800, fontSize: 17, flex: 1 }}>{o}</span>{stt === "right" && <span style={{ color: C.matchaDk, fontWeight: 900, fontSize: 20 }}>✓</span>}{stt === "wrong" && <span style={{ color: C.blush, fontWeight: 900, fontSize: 20 }}>✗</span>}</button>); })}</div>
       {checked && <div className="slide-up" style={S.fb}>正确：{cloze.answer}{cloze.point ? "　·　" + cloze.point : ""}<div style={{ fontSize: 13, marginTop: 4, color: C.inkSoft, cursor: "pointer" }} onClick={() => speakJa(item.term)}>🔊 {item.term}</div></div>}
       {checked
         ? <button className="pressable" style={{ ...S.bigBtn }} onClick={onNext}>下一个 →</button>
@@ -1049,9 +1049,9 @@ function FillRound({ item, all, play, onResult, onNext, onWrong, onHesitate, upd
     <div className="card pop-in" style={S.bigCard}><div style={{ fontSize: 22, fontWeight: 800 }}>{item.meaning}</div></div>
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{fallbackOpts.map((o) => {
       let stt = "idle"; if (checked) { if (o.id === item.id) stt = "right"; else if (picked && picked.id === o.id) stt = "wrong"; }
-      const mp = { idle: { borderColor: picked && picked.id === o.id ? C.honey : "var(--line)", background: picked && picked.id === o.id ? "var(--surface-sel)" : "var(--surface)" }, right: { borderColor: C.matchaDk, background: "var(--ok-bg)" }, wrong: { borderColor: C.blush, background: "var(--danger-bg)" } };
-      return (<button key={o.id} className="pressable" style={{ ...S.optWide, ...mp[stt] }} onClick={() => { if (!checked) { setPicked(o); play("tap"); } }} onDoubleClick={() => speakJa(o.term)}>
-        <span style={{ fontWeight: 800, fontSize: 17 }}>{o.term}</span>{o.reading && <span style={{ fontSize: 12, color: C.inkSoft, marginLeft: 8 }}>{o.reading}</span>}</button>); })}</div>
+      const mp = { idle: { borderColor: picked && picked.id === o.id ? C.honey : "var(--line)", background: picked && picked.id === o.id ? "var(--surface-sel)" : "var(--surface)", opacity: checked ? 0.45 : 1 }, right: { border: "3px solid " + C.matchaDk, background: "var(--ok-bg)" }, wrong: { border: "3px solid " + C.blush, background: "var(--danger-bg)" } };
+      return (<button key={o.id} className="pressable" style={{ ...S.optWide, display: "flex", alignItems: "center", ...mp[stt] }} onClick={() => { if (!checked) { setPicked(o); play("tap"); } }} onDoubleClick={() => speakJa(o.term)}>
+        <span style={{ fontWeight: 800, fontSize: 17 }}>{o.term}</span>{o.reading && <span style={{ fontSize: 12, color: C.inkSoft, marginLeft: 8 }}>{o.reading}</span>}<span style={{ flex: 1 }} />{stt === "right" && <span style={{ color: C.matchaDk, fontWeight: 900, fontSize: 20 }}>✓</span>}{stt === "wrong" && <span style={{ color: C.blush, fontWeight: 900, fontSize: 20 }}>✗</span>}</button>); })}</div>
     {checked && (!picked || picked.id !== item.id) && <div className="slide-up" style={S.fb}>正确：{item.term}</div>}
     {checked
       ? <button className="pressable" style={{ ...S.bigBtn }} onClick={onNext}>下一个 →</button>
