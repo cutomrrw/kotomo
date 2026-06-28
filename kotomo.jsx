@@ -870,7 +870,7 @@ function ReviewRun({ ctx, mode }) {
 
   return (<div className="fade-in" style={S.quizWrap}>
     <div style={S.quizHead}>
-      <button style={S.quitX} onClick={() => { play("tap"); ctx.setView("home"); }}>✕</button>
+      <button style={S.quitX} onClick={() => { play("tap"); const rs = Object.entries(resultsRef.current).map(([id, correct]) => ({ id, correct })); if (rs.length) finishReview(rs, Object.keys(hesitantRef.current), st.settings.energyMode); else ctx.setView("home"); }}>✕</button>
       <div style={S.progOuter}><div style={{ ...S.progInner, width: ((qi / queue.length) * 100) + "%" }} /></div>
       <div style={S.hearts}>{"❤️".repeat(Math.max(0, hearts))}<span style={{ opacity: .25 }}>{"🤍".repeat(Math.max(0, 5 - hearts))}</span></div>
     </div>
