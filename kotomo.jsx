@@ -622,6 +622,8 @@ export default function App() {
   const updateWord = useCallback((id, fn) => patch((s) => ({ ...s, words: s.words.map((w) => w.id === id ? fn(w) : w) })), []);
   // 删除 = 移入"最近删除"回收站（保留 7 天可恢复），不直接丢弃（PRD：防误删心血）
   const delWord = useCallback((id) => patch((s) => { const w = s.words.find((x) => x.id === id); return { ...s, words: s.words.filter((x) => x.id !== id), trash: w ? [{ word: w, deletedAt: now() }, ...(s.trash || [])].slice(0, 100) : (s.trash || []) }; }), []);
+  // 批量删除（多选）：一次性移入回收站
+  const delWords = useCallback((ids) => patch((s) => { const set = new Set(ids); const removed = s.words.filter((x) => set.has(x.id)); return { ...s, words: s.words.filter((x) => !set.has(x.id)), trash: [...removed.map((w) => ({ word: w, deletedAt: now() })), ...(s.trash || [])].slice(0, 100) }; }), []);
   const restoreWord = useCallback((id) => patch((s) => { const e = (s.trash || []).find((t) => t.word.id === id); return e ? { ...s, words: [...s.words, e.word], trash: (s.trash || []).filter((t) => t.word.id !== id) } : s; }), []);
   // 补充初始词库：把所选门类的种子词/句【追加】进现有库（不清空、不替换），调用方已去重
   const appendWords = useCallback((rows, ids) => patch((s) => ({ ...s, words: [...s.words, ...rows], interests: Array.from(new Set([...(s.interests || []), ...(ids || [])])) })), []);
@@ -665,7 +667,7 @@ export default function App() {
   if (!st.onboarded) return <Onboarding onDone={(interests) => { play("happy"); patch((s) => ({ ...s, onboarded: true, interests, words: buildSeedWords(interests) })); }} play={play} />;
 
   const nav = (v) => { play("tap"); setView(v); };
-  const ctx = { st, play, mastered, seg, decor, mood, nav, addWords, updateWord, delWord, restoreWord, appendWords, petLove, setSetting, finishReview, ownWordCount, reviewWrongOnly, setReviewWrongOnly, setView, expandTarget, setExpandTarget };
+  const ctx = { st, play, mastered, seg, decor, mood, nav, addWords, updateWord, delWord, delWords, restoreWord, appendWords, petLove, setSetting, finishReview, ownWordCount, reviewWrongOnly, setReviewWrongOnly, setView, expandTarget, setExpandTarget };
 
   return (
     <div style={S.shell}>
@@ -1378,11 +1380,15 @@ function ExpandTool({ ctx, initialWord, backRef, onDone }) {
 // ── 我的词库 ───────────────────────────────────────────
 const HL_COLORS = ["", "#ffe6a8", "#cdeccd", "#cfe4f0", "#f0d2e4"]; // 高亮笔：无/黄/绿/蓝/粉
 function Library({ ctx }) {
-  const { st, play, updateWord, delWord } = ctx;
+  const { st, play, updateWord, delWord, delWords } = ctx;
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [order, setOrder] = useState("new"); // new=从新到旧（默认，先看最近加的）, old=从旧到新
   const [editing, setEditing] = useState(null);
+  const [selectMode, setSelectMode] = useState(false), [sel, setSel] = useState([]); // 多选删除
+  const toggleSel = (id) => setSel((s) => s.includes(id) ? s.filter((x) => x !== id) : [...s, id]);
+  const exitSelect = () => { setSelectMode(false); setSel([]); };
+  const delSelected = () => { if (!sel.length) return; if (confirm("确定删除选中的 " + sel.length + " 个词？（可在「最近删除」里恢复）")) { delWords(sel); play("tap"); exitSelect(); } };
   const [fixing, setFixing] = useState(false), [fixMsg, setFixMsg] = useState("");
   const [tipping, setTipping] = useState(false), [tipMsg, setTipMsg] = useState("");
   const [verifying, setVerifying] = useState(false), [verifyMsg, setVerifyMsg] = useState("");
@@ -1475,7 +1481,15 @@ function Library({ ctx }) {
       <span style={{ fontSize: 12.5, fontWeight: 800, color: "var(--ink-mid)", alignSelf: "center", marginRight: 2 }}>排序</span>
       <Chip on={order === "new"} onClick={() => { setOrder("new"); play("tap"); }}>🆕 从新到旧</Chip>
       <Chip on={order === "old"} onClick={() => { setOrder("old"); play("tap"); }}>📜 从旧到新</Chip>
+      <Chip on={selectMode} onClick={() => { if (selectMode) exitSelect(); else { setSelectMode(true); setEditing(null); } play("tap"); }}>{selectMode ? "✕ 退出多选" : "☑️ 多选删除"}</Chip>
     </div>
+    {selectMode && <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, padding: "9px 11px", background: "var(--surface-sel)", borderRadius: 12, flexWrap: "wrap" }}>
+      <span style={{ fontWeight: 800, fontSize: 13, color: "var(--ink-mid)" }}>已选 {sel.length}</span>
+      <Chip on={false} onClick={() => { setSel(ordered.map((w) => w.id)); play("tap"); }}>全选 {ordered.length}</Chip>
+      <Chip on={false} onClick={() => { setSel([]); play("tap"); }}>清空</Chip>
+      <div style={{ flex: 1 }} />
+      <button className="pressable" disabled={!sel.length} style={{ background: "var(--danger-bg)", color: "var(--danger-fg)", border: "2px solid var(--danger-fg)", borderRadius: 10, padding: "8px 14px", fontWeight: 800, fontSize: 13, cursor: "pointer", fontFamily: "inherit", opacity: sel.length ? 1 : 0.45, flexShrink: 0 }} onClick={delSelected}>🗑️ 删除选中 {sel.length}</button>
+    </div>}
     <div style={S.filterRow}>
       <Chip on={filter === "all"} onClick={() => { setFilter("all"); play("tap"); }}>全部 {words.length}</Chip>
       <Chip on={filter === "freq"} onClick={() => { setFilter("freq"); play("tap"); }}>⭐高频 {words.filter((w) => w.freq).length}</Chip>
@@ -1484,10 +1498,12 @@ function Library({ ctx }) {
       {POS.map((p) => { const n = words.filter((w) => (w.pos || "other") === p.key).length; if (!n) return null; return <Chip key={p.key} on={filter === p.key} onClick={() => { setFilter(p.key); play("tap"); }}>{p.emoji}{p.label} {n}</Chip>; })}
     </div>
     <div style={S.list}>{ordered.length === 0 && <div style={S.empty}>{q ? "没找到「" + search.trim() + "」相关的词" : "这里还没有词 🌱"}</div>}
-      {ordered.map((w) => { const p = posInfo(w.pos); const done = w.mastered || (w.srs && w.srs.level >= MASTER_LEVEL); const open = editing === w.id;
-        return [(<div key={w.id} className="card" style={{ ...S.wordRow, ...(w.hl ? { background: w.hl } : {}) }}>
-          <span style={{ ...S.dot, background: p.color + "33" }} onClick={() => speakJa(w.term)}>{p.emoji}</span>
-          <div style={{ flex: 1 }} onClick={() => { play("tap"); setEditing(open ? null : w.id); }}>
+      {ordered.map((w) => { const p = posInfo(w.pos); const done = w.mastered || (w.srs && w.srs.level >= MASTER_LEVEL); const open = !selectMode && editing === w.id; const isSel = sel.includes(w.id);
+        return [(<div key={w.id} className="card" style={{ ...S.wordRow, ...(w.hl ? { background: w.hl } : {}), ...(selectMode && isSel ? { border: "2.5px solid " + C.matcha, background: "var(--ok-bg)" } : {}) }}>
+          {selectMode
+            ? <span style={{ ...S.dot, background: isSel ? C.matcha : "var(--surface)", border: "2px solid " + (isSel ? C.matcha : "var(--line)"), color: "#fff", fontWeight: 900 }} onClick={() => { toggleSel(w.id); play("tap"); }}>{isSel ? "✓" : ""}</span>
+            : <span style={{ ...S.dot, background: p.color + "33" }} onClick={() => speakJa(w.term)}>{p.emoji}</span>}
+          <div style={{ flex: 1 }} onClick={() => { play("tap"); if (selectMode) toggleSel(w.id); else setEditing(open ? null : w.id); }}>
             <JaTerm w={w} size={18} />
             {w.verified === "verified" ? <Tag bg="var(--ok-bg)" fg={C.matchaDk}>✅已核</Tag> : <Tag bg="var(--warn-bg)" fg="var(--ink-mid)">⚠️待核</Tag>}
             {w.freq && <Tag bg="#ffe6a8" fg="#a8761e">高频</Tag>}{done && <Tag bg="var(--ok-bg)" fg={C.matchaDk}>已掌握</Tag>}
