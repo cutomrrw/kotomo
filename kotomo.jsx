@@ -1033,7 +1033,12 @@ function FillRound({ item, all, play, onResult, onNext, onWrong, onHesitate, upd
         return (<button key={i} className="pressable" style={{ ...S.optWide, ...mp[stt] }} onClick={() => { if (!checked) { setPicked(o); play("tap"); } }}>
           <span style={{ fontWeight: 800, color: C.honeyDk, marginRight: 10 }}>{"ABCD"[i]}</span><span style={{ fontWeight: 800, fontSize: 17 }}>{o}</span></button>); })}</div>
       {checked && <div className="slide-up" style={S.fb}>正确：{cloze.answer}{cloze.point ? "　·　" + cloze.point : ""}<div style={{ fontSize: 13, marginTop: 4, color: C.inkSoft, cursor: "pointer" }} onClick={() => speakJa(item.term)}>🔊 {item.term}</div></div>}
-      <button className="pressable" disabled={picked == null} style={{ ...S.bigBtn, opacity: picked != null ? 1 : 0.45 }} onClick={checked ? onNext : check}>{checked ? "下一个 →" : "检查"}</button>
+      {checked
+        ? <button className="pressable" style={{ ...S.bigBtn }} onClick={onNext}>下一个 →</button>
+        : <div style={{ display: "flex", gap: 10 }}>
+            <button className="pressable" disabled={picked == null} style={{ ...S.bigBtn, flex: 1, opacity: picked != null ? 1 : 0.45 }} onClick={check}>检查</button>
+            <button className="pressable" style={{ ...S.ghostBtn, flexShrink: 0 }} title="拿不准就标「犹豫」，会更高频回来考你" onClick={() => { if (onHesitate) onHesitate(item.id); onNext(); }}>🤔 拿不准</button>
+          </div>}
     </div>);
   }
 
@@ -1048,7 +1053,12 @@ function FillRound({ item, all, play, onResult, onNext, onWrong, onHesitate, upd
       return (<button key={o.id} className="pressable" style={{ ...S.optWide, ...mp[stt] }} onClick={() => { if (!checked) { setPicked(o); play("tap"); } }} onDoubleClick={() => speakJa(o.term)}>
         <span style={{ fontWeight: 800, fontSize: 17 }}>{o.term}</span>{o.reading && <span style={{ fontSize: 12, color: C.inkSoft, marginLeft: 8 }}>{o.reading}</span>}</button>); })}</div>
     {checked && picked && picked.id !== item.id && <div className="slide-up" style={S.fb}>正确：{item.term}</div>}
-    <button className="pressable" disabled={!picked} style={{ ...S.bigBtn, opacity: picked ? 1 : 0.45 }} onClick={checked ? onNext : check}>{checked ? "下一个 →" : "检查"}</button>
+    {checked
+      ? <button className="pressable" style={{ ...S.bigBtn }} onClick={onNext}>下一个 →</button>
+      : <div style={{ display: "flex", gap: 10 }}>
+          <button className="pressable" disabled={!picked} style={{ ...S.bigBtn, flex: 1, opacity: picked ? 1 : 0.45 }} onClick={check}>检查</button>
+          <button className="pressable" style={{ ...S.ghostBtn, flexShrink: 0 }} title="拿不准就标「犹豫」，会更高频回来考你" onClick={() => { if (onHesitate) onHesitate(item.id); onNext(); }}>🤔 拿不准</button>
+        </div>}
   </div>);
 }
 
@@ -1066,7 +1076,12 @@ function GrammarRound({ item, all, play, onResult, onNext, onWrong, onHesitate }
       return (<button key={o.id} className="pressable" style={{ ...S.optWide, ...mp[stt] }} onClick={() => { if (!checked) { setPicked(o); play("tap"); } }}>
         <span style={{ fontWeight: 800, fontSize: 16 }}>{o.term}</span></button>); })}</div>
     {checked && picked && picked.id !== item.id && <div className="slide-up" style={S.fb}>正确：{item.term}</div>}
-    <button className="pressable" disabled={!picked} style={{ ...S.bigBtn, opacity: picked ? 1 : 0.45 }} onClick={checked ? onNext : check}>{checked ? "下一个 →" : "检查"}</button>
+    {checked
+      ? <button className="pressable" style={{ ...S.bigBtn }} onClick={onNext}>下一个 →</button>
+      : <div style={{ display: "flex", gap: 10 }}>
+          <button className="pressable" disabled={!picked} style={{ ...S.bigBtn, flex: 1, opacity: picked ? 1 : 0.45 }} onClick={check}>检查</button>
+          <button className="pressable" style={{ ...S.ghostBtn, flexShrink: 0 }} title="拿不准就标「犹豫」，会更高频回来考你" onClick={() => { if (onHesitate) onHesitate(item.id); onNext(); }}>🤔 拿不准</button>
+        </div>}
   </div>);
 }
 
