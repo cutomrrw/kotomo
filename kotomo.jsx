@@ -81,6 +81,12 @@ const INTERESTS = [
   { id: "housing", emoji: "🏠", label: "房屋建设" },
 ];
 
+// ── 布丁的嘴：答对=傲娇夸、答错=鄙视。先各一句，随时往数组里加更多(会随机抽一句) ──
+const PET_LINES = {
+  praise: ["哼，全对……也不是不能夸你一下啦。"],
+  scorn: ["就这？本喵对你很失望。"],
+};
+
 // ── 清脆利落的音效（解压感）──────────────────────────────
 const Sfx = (() => {
   let ctx = null;
@@ -611,7 +617,18 @@ export default function App() {
   // 进入即更新 lastSeenAt（轻量，标记"今天来过"，但延迟以便先算盲盒）
   useEffect(() => { if (loaded && st.onboarded) { const t = setTimeout(() => setSt((s) => ({ ...s, pet: { ...s.pet, lastSeenAt: now(), mood: Math.min(100, (s.pet.mood ?? 75)) } })), 1500); return () => clearTimeout(t); } }, [loaded, st.onboarded]);
 
-  const play = useCallback((n) => { if (st.settings.sound && Sfx[n]) Sfx[n](); haptic(n); }, [st.settings.sound]);
+  // 布丁反应弹窗：答对(整组/整句)傲娇夸、答错鄙视。一句话浮一下自动消失
+  const [petMsg, setPetMsg] = useState(null);
+  const petN = useRef(0), petTimer = useRef(null);
+  const petReact = useCallback((kind) => {
+    const lines = PET_LINES[kind]; if (!lines || !lines.length) return;
+    petN.current += 1;
+    setPetMsg({ kind, text: lines[Math.floor(Math.random() * lines.length)], n: petN.current });
+    if (petTimer.current) clearTimeout(petTimer.current);
+    petTimer.current = setTimeout(() => setPetMsg(null), 1900);
+  }, []);
+
+  const play = useCallback((n) => { if (st.settings.sound && Sfx[n]) Sfx[n](); haptic(n); if (n === "correct") petReact("praise"); else if (n === "wrong") petReact("scorn"); }, [st.settings.sound, petReact]);
   const mastered = useMemo(() => countMastered(st.words), [st.words]);
   const seg = segOf(mastered);
   const decor = decorFor(mastered);
@@ -679,7 +696,7 @@ export default function App() {
   if (!st.onboarded) return <Onboarding onDone={(interests) => { play("happy"); patch((s) => ({ ...s, onboarded: true, interests, words: buildSeedWords(interests) })); }} play={play} />;
 
   const nav = (v) => { play("tap"); setView(v); };
-  const ctx = { st, play, mastered, seg, decor, mood, nav, addWords, updateWord, delWord, delWords, restoreWord, appendWords, petLove, setSetting, finishReview, ownWordCount, reviewWrongOnly, setReviewWrongOnly, setView, expandTarget, setExpandTarget, amb };
+  const ctx = { st, play, petReact, mastered, seg, decor, mood, nav, addWords, updateWord, delWord, delWords, restoreWord, appendWords, petLove, setSetting, finishReview, ownWordCount, reviewWrongOnly, setReviewWrongOnly, setView, expandTarget, setExpandTarget, amb };
 
   return (
     <div style={S.shell}>
@@ -687,6 +704,10 @@ export default function App() {
       <Bg />
       {/* iOS 隐藏开关：点击它在 iPhone 上触发轻触感(安卓走 navigator.vibrate) */}
       <label id="iosHaptic" aria-hidden="true" style={{ position: "fixed", left: -9999, top: 0, width: 1, height: 1, opacity: 0, pointerEvents: "none", overflow: "hidden" }} dangerouslySetInnerHTML={{ __html: '<input type="checkbox" switch tabindex="-1" style="pointer-events:none">' }} />
+      {petMsg && (<div key={petMsg.n} className="pet-pop" style={S.petPop}>
+        <div style={S.petPopCat}><Cat size={50} bob={false} /></div>
+        <div style={{ ...S.petPopBubble, ...(petMsg.kind === "scorn" ? S.petPopScorn : S.petPopPraise) }}>{petMsg.text}</div>
+      </div>)}
       {saveErr && <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 50, background: "var(--danger-fg)", color: "#fff", textAlign: "center", padding: "6px 10px", fontSize: 12, fontWeight: 700 }}>⚠️ 本地保存异常，这台设备可能无法保留数据</div>}
       {naughty && <NaughtyModal text={naughty} emoji={seg.emoji} onClose={() => { setNaughty(null); play("happy"); }} />}
       <TopBar st={st} seg={seg} mastered={mastered} onSettings={() => nav("settings")} play={play} setSetting={setSetting} />
@@ -894,7 +915,7 @@ function ReviewRun({ ctx, mode }) {
     </div>
     {reviewWrongOnly && <div style={S.wrongBanner}>❗ 错题强化中 · 答对才算消灭</div>}
     <div style={{ fontSize: 11.5, color: C.inkSoft, textAlign: "center", margin: "2px 0 8px" }}>不确定的词，长按它 →「犹豫词」，会更高频回来考你（防排除法蒙混）</div>
-    {q.kind === "match" && <MatchRound key={qi} items={q.items} all={st.words} play={play} onResult={recordResult} onDone={advance} onWrong={loseHeart} onHesitate={markHesitate} />}
+    {q.kind === "match" && <MatchRound key={qi} items={q.items} all={st.words} play={play} petReact={ctx.petReact} onResult={recordResult} onDone={advance} onWrong={loseHeart} onHesitate={markHesitate} />}
     {q.kind === "card" && <CardRound key={qi} item={q.item} all={st.words} play={play} onResult={recordResult} onNext={advance} onWrong={loseHeart} onHesitate={markHesitate} />}
     {q.kind === "fill" && <FillRound key={qi} item={q.item} all={st.words} play={play} onResult={recordResult} onNext={advance} onWrong={loseHeart} onHesitate={markHesitate} updateWord={ctx.updateWord} aiReal={st.settings.aiReal} />}
     {q.kind === "grammar" && <GrammarRound key={qi} item={q.item} all={st.words} play={play} onResult={recordResult} onNext={advance} onWrong={loseHeart} onHesitate={markHesitate} />}
@@ -918,7 +939,7 @@ function buildQueue(pool) {
 }
 
 // 连连看：左日(含外来词括号) 右中，配对消除
-function MatchRound({ items, all, play, onResult, onDone, onWrong, onHesitate }) {
+function MatchRound({ items, all, play, petReact, onResult, onDone, onWrong, onHesitate }) {
   const [left] = useState(() => shuffle(items));
   const [right] = useState(() => shuffle(items));
   const [selL, setSelL] = useState(null), [selR, setSelR] = useState(null);
@@ -932,7 +953,7 @@ function MatchRound({ items, all, play, onResult, onDone, onWrong, onHesitate })
     if (selL === selR) { play("match"); onResult(selL, true); setMatched((m) => [...m, selL]); setSelL(null); setSelR(null); }
     else { play("wrong"); onResult(selL, false); onResult(selR, false); onWrong(); setWrongPair({ l: selL, r: selR }); setTimeout(() => { setWrongPair(null); setSelL(null); setSelR(null); }, 550); }
   } }, [selL, selR]);
-  useEffect(() => { if (matched.length === items.length) { const t = setTimeout(onDone, 350); return () => clearTimeout(t); } }, [matched]);
+  useEffect(() => { if (matched.length === items.length) { if (petReact) petReact("praise"); const t = setTimeout(onDone, 350); return () => clearTimeout(t); } }, [matched]);
   const tile = (w, side) => {
     const isM = matched.includes(w.id); const sel = side === "L" ? selL : selR; const isSel = sel === w.id;
     const isWrong = wrongPair && ((side === "L" && wrongPair.l === w.id) || (side === "R" && wrongPair.r === w.id));
@@ -1835,6 +1856,10 @@ const S = {
   dCushion: { position: "absolute", bottom: 4, left: "50%", transform: "translateX(-50%)", fontSize: 38, opacity: .9 },
   matCushion: { width: 116, height: 22, background: "var(--cushion)", borderRadius: "50%", margin: "0 auto", position: "absolute", left: "50%", transform: "translateX(-50%)", bottom: 12, opacity: .45, filter: "blur(1px)" },
   cat: { position: "relative", transition: "transform .5s", transformOrigin: "bottom center" }, catEmoji: { fontSize: 72, lineHeight: 1, display: "inline-block", animation: "bob 3.5s ease-in-out infinite" }, catFace: { fontSize: 13, fontWeight: 800, color: "var(--ink-mid)", marginTop: -6 },
+  petPop: { position: "fixed", right: 12, bottom: 100, display: "flex", flexDirection: "row-reverse", alignItems: "flex-end", gap: 6, zIndex: 60, pointerEvents: "none", maxWidth: "84%" },
+  petPopCat: { width: 50, height: 50, flexShrink: 0, filter: "drop-shadow(2px 2px 0 var(--pix-shadow))" },
+  petPopBubble: { padding: "9px 13px", fontWeight: 800, fontSize: 13.5, lineHeight: 1.35, border: "3px solid var(--pix-border)", boxShadow: "4px 4px 0 var(--pix-shadow)" },
+  petPopPraise: { background: "var(--ok-bg)", color: C.matchaDk }, petPopScorn: { background: "var(--danger-bg)", color: "var(--danger-fg)" },
   moodChip: { textAlign: "center", marginTop: 8, fontWeight: 800, fontSize: 13.5, color: "var(--ink-mid)", position: "relative", zIndex: 2 },
   segHint: { textAlign: "center", marginTop: 4, fontSize: 12, color: "var(--ink-mid)", position: "relative", zIndex: 2 },
 
@@ -1999,6 +2024,8 @@ body { margin: 0; background: var(--cream); transition: background .6s ease; }\
 button{ border:3px solid var(--pix-border) !important; box-shadow:4px 4px 0 var(--pix-shadow) !important; }\
 .pressable:active{ transform:translate(2px,2px) !important; box-shadow:1px 1px 0 var(--pix-shadow) !important; }\
 @keyframes fall{ 0%{transform:translateY(-12px) rotate(0deg);opacity:.9} 100%{transform:translateY(260px) rotate(160deg);opacity:.35} }\
+@keyframes petpop{ 0%{transform:translateY(16px) scale(.7);opacity:0} 55%{transform:translateY(-3px) scale(1.06)} 100%{transform:translateY(0) scale(1);opacity:1} }\
+.pet-pop{ animation:petpop .28s cubic-bezier(.2,1.35,.5,1) both; }\
 .cloud { position:absolute; font-size:36px; opacity:.4; animation:floatX 30s linear infinite; }\
 .c1 { top:5%; left:-12%; } .c2 { top:15%; left:-32%; animation-delay:-15s; font-size:26px; }\
 .pressable { transition:transform .07s; } .pressable:active { transform:translateY(2px) scale(.98); } .pressable:disabled { cursor:not-allowed; opacity:.55; }\
