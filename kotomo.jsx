@@ -142,7 +142,7 @@ function pickJaVoice() {
 try { if (typeof speechSynthesis !== "undefined") { _jaVoice = pickJaVoice(); speechSynthesis.onvoiceschanged = () => { _jaVoice = pickJaVoice(); }; } } catch {}
 const systemSpeak = (t) => { try { const u = new SpeechSynthesisUtterance(t); u.lang = "ja-JP"; if (!_jaVoice) _jaVoice = pickJaVoice(); if (_jaVoice) u.voice = _jaVoice; u.rate = 0.95; u.pitch = 1.0; speechSynthesis.speak(u); } catch {} };
 
-const _voiceCache = new Map(); // text -> AudioBuffer（解码后缓存，第二次秒播）｜ "pending"
+const _voiceCache = new Map(); // text -> AudioBuffer(已就绪) | Promise<AudioBuffer>(加载中)
 let _voiceSrc = null;
 const _sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function fetchVoiceBuffer(t, ctx) {
@@ -150,22 +150,29 @@ async function fetchVoiceBuffer(t, ctx) {
   const d = await r.json();
   if (!d || !d.success) throw new Error("synth busy");
   let ready = false;
-  for (let i = 0; i < 16; i++) { const s = await (await fetch(d.audioStatusUrl)).json(); if (s.isAudioError) throw new Error("synth err"); if (s.isAudioReady) { ready = true; break; } await _sleep(450); }
+  for (let i = 0; i < 20; i++) { const s = await (await fetch(d.audioStatusUrl)).json(); if (s.isAudioError) throw new Error("synth err"); if (s.isAudioReady) { ready = true; break; } await _sleep(280); }
   if (!ready) throw new Error("synth timeout");
   const ab = await (await fetch(d.mp3DownloadUrl)).arrayBuffer();
   return await ctx.decodeAudioData(ab);
 }
 function playVoiceBuffer(buf, ctx) { try { if (_voiceSrc) { try { _voiceSrc.stop(); } catch {} } const s = ctx.createBufferSource(); s.buffer = buf; s.connect(ctx.destination); s.start(); _voiceSrc = s; } catch {} }
+// 取(或复用在途的)解码音频；warm 与 speak 共用同一个 Promise，绝不重复请求
+function loadVoice(t, ctx) {
+  const e = _voiceCache.get(t);
+  if (e) return e.then ? e : Promise.resolve(e);
+  const p = fetchVoiceBuffer(t, ctx).then((buf) => { _voiceCache.set(t, buf); return buf; }).catch((err) => { _voiceCache.delete(t); throw err; });
+  _voiceCache.set(t, p);
+  return p;
+}
+// 预加载：趁用户读题时后台先合成好，等点 🔊 时秒播(失败静默，点的时候再兜底)
+const warmJa = (t) => { try { if (!t) return; const ctx = Sfx.getCtx && Sfx.getCtx(); if (ctx) loadVoice(t, ctx).catch(() => {}); } catch {} };
 const speakJa = (t) => {
   if (!t) return;
   const ctx = Sfx.getCtx(); // 手势内 resume，保证之后能播
   if (!ctx) { systemSpeak(t); return; } // 没有 Web Audio 就直接系统声
-  const cached = _voiceCache.get(t);
-  if (cached && cached !== "pending") { playVoiceBuffer(cached, ctx); return; }
-  if (cached === "pending") return;
-  _voiceCache.set(t, "pending");
-  fetchVoiceBuffer(t, ctx).then((buf) => { _voiceCache.set(t, buf); playVoiceBuffer(buf, ctx); })
-    .catch(() => { _voiceCache.delete(t); systemSpeak(t); }); // 联网失败/限流/离线 → 系统声兜底
+  const e = _voiceCache.get(t);
+  if (e && !e.then) { playVoiceBuffer(e, ctx); return; } // 已就绪 → 秒播
+  loadVoice(t, ctx).then((buf) => playVoiceBuffer(buf, ctx)).catch(() => systemSpeak(t)); // 在途则复用，失败回退系统声
 };
 // 陪伴模式：按设备本地时间/月份算「昼夜 × 春夏秋冬」
 function ambient() { const d = new Date(); const h = d.getHours(); const m = d.getMonth(); const tod = (h >= 6 && h < 18) ? "day" : "night"; const season = (m >= 2 && m <= 4) ? "spring" : (m >= 5 && m <= 7) ? "summer" : (m >= 8 && m <= 10) ? "autumn" : "winter"; return { tod, season }; }
@@ -987,6 +994,7 @@ function buildQueue(pool) {
 function MatchRound({ items, all, play, petReact, onResult, onDone, onWrong, onHesitate }) {
   const [left] = useState(() => shuffle(items));
   const [right] = useState(() => shuffle(items));
+  useEffect(() => { items.forEach((w, i) => setTimeout(() => warmJa(w.term), i * 250)); }, []); // 预加载本组日语发音(错峰，避免限流)
   const [selL, setSelL] = useState(null), [selR, setSelR] = useState(null);
   const [matched, setMatched] = useState([]); const [wrongPair, setWrongPair] = useState(null);
   const [hes, setHes] = useState({});
@@ -1030,6 +1038,7 @@ function CardRound({ item, all, play, onResult, onNext, onWrong, onHesitate }) {
     return shuffle([item, ...others]);
   }, [item, all]);
   const [picked, setPicked] = useState(null), [checked, setChecked] = useState(false), [shk, setShk] = useState(0), [hesMarked, setHesMarked] = useState(false);
+  useEffect(() => { warmJa(item.term); }, [item.id]); // 预加载该词发音
   const lpTimer = useRef(null), lpFired = useRef(false);
   const markHes = () => { if (onHesitate) onHesitate(item.id); setHesMarked(true); };
   const lpStart = () => { lpFired.current = false; lpTimer.current = setTimeout(() => { lpFired.current = true; markHes(); }, 450); };
@@ -1085,6 +1094,7 @@ function FillRound({ item, all, play, onResult, onNext, onWrong, onHesitate, upd
   const [cloze, setCloze] = useState(item.cloze || null);
   const [busy, setBusy] = useState(false);
   const [picked, setPicked] = useState(null), [checked, setChecked] = useState(false);
+  useEffect(() => { warmJa(item.term); }, [item.id]); // 预加载整句发音
   useEffect(() => {
     let alive = true;
     if (cloze || !aiReal) return;
