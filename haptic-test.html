@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ことも · 震动测试</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin: 0; font-family: -apple-system, "PingFang SC", system-ui, sans-serif; background: #f3e7d6; color: #2b2b2b; padding: 18px 16px 60px; line-height: 1.5; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: #7a7268; font-size: 13px; margin-bottom: 16px; }
+  .panel { background: #fffdf5; border: 2px solid #2b2b2b; border-radius: 12px; padding: 12px 14px; margin-bottom: 16px; font-size: 13px; }
+  .panel b { color: #4caf50; }
+  .panel .no { color: #d9534f; }
+  ol { margin: 0 0 16px; padding-left: 20px; font-size: 14px; }
+  ol li { margin-bottom: 6px; }
+  .warn { background: #fff4e0; border: 2px solid #f5a623; border-radius: 12px; padding: 12px 14px; margin-bottom: 18px; font-size: 13.5px; }
+  .btn { display: block; width: 100%; border: 3px solid #2b2b2b; background: #fffdf5; color: #2b2b2b; border-radius: 14px; padding: 18px 14px; margin-bottom: 14px; font-size: 17px; font-weight: 800; text-align: left; box-shadow: 4px 4px 0 #2b2b2b; cursor: pointer; }
+  .btn:active { transform: translate(2px,2px); box-shadow: 1px 1px 0 #2b2b2b; }
+  .btn .tag { display: inline-block; font-size: 12px; font-weight: 700; color: #fff; background: #4caf50; border-radius: 8px; padding: 2px 7px; margin-right: 8px; vertical-align: middle; }
+  .btn .desc { display: block; font-size: 12.5px; font-weight: 600; color: #7a7268; margin-top: 5px; }
+  .btn .hit { display: block; font-size: 12px; font-weight: 700; color: #4caf50; margin-top: 6px; min-height: 16px; }
+  .switchRow { display: flex; align-items: center; gap: 14px; background: #fffdf5; border: 3px solid #2b2b2b; border-radius: 14px; padding: 16px 14px; margin-bottom: 14px; box-shadow: 4px 4px 0 #2b2b2b; }
+  .switchRow .txt { font-size: 16px; font-weight: 800; }
+  .switchRow .txt small { display: block; font-size: 12.5px; font-weight: 600; color: #7a7268; margin-top: 4px; }
+  input[type=checkbox] { width: 52px; height: 32px; }
+  .hidden-host { position: absolute; left: -9999px; top: 0; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
+</style>
+</head>
+<body>
+  <h1>ことも · iPhone 震动测试 🐱</h1>
+  <div class="sub">挨个点 / 拨一遍，记住<b>哪个让手机真的「震」了一下</b>，告诉我编号。</div>
+
+  <div class="warn">
+    <b>先做两件事，否则全都不会震：</b><br>
+    ① 设置 → 声音与触感 →「<b>系统触感反馈</b>」打开<br>
+    ② 关掉「<b>低电量模式</b>」（黄色电池图标）
+  </div>
+
+  <ol>
+    <li><b>方式①</b>是关键：用手指拨那个开关，<u>它要是不震，整个 iPhone 网页就都没救</u>（只能做成原生 App）。</li>
+    <li>方式②③④ 是「程序自动触发」——App 里要用的就是这种。</li>
+    <li>每个点完会显示「已触发 ✅」（代表点到了），但<b>有没有「震感」要靠你的手感判断</b>。</li>
+  </ol>
+
+  <!-- ① 手指拨真实开关 -->
+  <div class="switchRow">
+    <div class="txt">方式①<small>用手指拨这个开关</small></div>
+    <label><input type="checkbox" switch id="realSwitch"></label>
+  </div>
+
+  <!-- ② 程序拨「可见」开关 -->
+  <button class="btn" id="b2">
+    <span><span class="tag">方式②</span>程序拨「看得见」的开关</span>
+    <span class="desc">下面这个开关会被代码自动拨动</span>
+    <span class="switchRow" style="margin-top:10px;box-shadow:none;border-width:2px;padding:10px 12px;">
+      <span class="txt" style="font-size:13px;">↓ 它会自己动</span>
+      <label><input type="checkbox" switch id="visSwitch"></label>
+    </span>
+    <span class="hit" id="h2"></span>
+  </button>
+
+  <!-- ③ 程序拨「隐藏」开关（App 现在用的） -->
+  <button class="btn" id="b3">
+    <span><span class="tag" style="background:#f5a623;">方式③</span>程序拨「藏起来」的开关</span>
+    <span class="desc">App 现在用的就是这种（你测过没震的）</span>
+    <span class="hit" id="h3"></span>
+  </button>
+
+  <!-- ④ 标准震动 API -->
+  <button class="btn" id="b4">
+    <span><span class="tag" style="background:#7a7268;">方式④</span>标准震动 vibrate()</span>
+    <span class="desc">安卓能震；iPhone 大概率无效（用来对照）</span>
+    <span class="hit" id="h4"></span>
+  </button>
+
+  <div class="panel" id="info"></div>
+
+  <!-- 隐藏开关宿主（方式③） -->
+  <span class="hidden-host"><label id="hidLabel"><input type="checkbox" switch id="hidSwitch"></label></span>
+
+<script>
+  function flash(id){ var e=document.getElementById(id); e.textContent="已触发 ✅ "+new Date().toLocaleTimeString(); }
+
+  // 方式② 程序拨可见开关：点击它的 label
+  document.getElementById('b2').addEventListener('click', function(){
+    try { var s=document.getElementById('visSwitch'); s.checked=!s.checked; s.dispatchEvent(new Event('change',{bubbles:true})); } catch(e){}
+    flash('h2');
+  });
+
+  // 方式③ 程序拨隐藏开关：点击隐藏 label（App 当前做法）
+  document.getElementById('b3').addEventListener('click', function(){
+    try { document.getElementById('hidLabel').click(); } catch(e){}
+    flash('h3');
+  });
+
+  // 方式④ 标准震动
+  document.getElementById('b4').addEventListener('click', function(){
+    try { if (navigator.vibrate) navigator.vibrate([0,30,50,30]); } catch(e){}
+    flash('h4');
+  });
+
+  // 设备信息
+  (function(){
+    var hasVib = ('vibrate' in navigator);
+    var standalone = (window.navigator.standalone === true) || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+    var ua = navigator.userAgent;
+    var ver = (ua.match(/OS (\d+[_\d]*) like Mac/) || [,'?'])[1].replace(/_/g,'.');
+    document.getElementById('info').innerHTML =
+      '<div>navigator.vibrate 存在：' + (hasVib ? '<b>是</b>' : '<span class="no">否（iPhone 正常如此）</span>') + '</div>' +
+      '<div>iOS 版本：<b>' + ver + '</b>（开关触感需 17.4+）</div>' +
+      '<div>独立 PWA 模式：' + (standalone ? '是' : '否（Safari 标签页）') + '</div>';
+  })();
+</script>
+</body>
+</html>
