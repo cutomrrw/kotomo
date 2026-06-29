@@ -83,8 +83,8 @@ const INTERESTS = [
 
 // ── 布丁的嘴：答对=傲娇夸、答错=鄙视。先各一句，随时往数组里加更多(会随机抽一句) ──
 const PET_LINES = {
-  praise: ["哼，全对……也不是不能夸你一下啦。"],
-  scorn: ["就这？本喵对你很失望。"],
+  praise: ["你是我的神", "请你吃猫条", "够燥的", "兄弟 我爱你"],
+  scorn: ["是八嘎吗？", "狗叫？", "请你吃大便", "伤感网络 下线了88。", "不安です。"],
 };
 
 // ── 清脆利落的音效（解压感）──────────────────────────────
@@ -619,11 +619,14 @@ export default function App() {
 
   // 布丁反应弹窗：答对(整组/整句)傲娇夸、答错鄙视。一句话浮一下自动消失
   const [petMsg, setPetMsg] = useState(null);
-  const petN = useRef(0), petTimer = useRef(null);
+  const petN = useRef(0), petTimer = useRef(null), petLast = useRef({});
   const petReact = useCallback((kind) => {
     const lines = PET_LINES[kind]; if (!lines || !lines.length) return;
+    let text = lines[Math.floor(Math.random() * lines.length)];
+    if (lines.length > 1 && text === petLast.current[kind]) text = lines[(lines.indexOf(text) + 1) % lines.length]; // 不连续重复同一句
+    petLast.current[kind] = text;
     petN.current += 1;
-    setPetMsg({ kind, text: lines[Math.floor(Math.random() * lines.length)], n: petN.current });
+    setPetMsg({ kind, text, n: petN.current });
     if (petTimer.current) clearTimeout(petTimer.current);
     petTimer.current = setTimeout(() => setPetMsg(null), 1900);
   }, []);
