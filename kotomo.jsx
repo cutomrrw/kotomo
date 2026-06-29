@@ -109,6 +109,10 @@ const Sfx = (() => {
 })();
 const vibrate = (ms) => { try { if (navigator.vibrate) navigator.vibrate(ms); } catch {} };
 const speakJa = (t) => { try { const u = new SpeechSynthesisUtterance(t); u.lang = "ja-JP"; u.rate = 0.85; speechSynthesis.speak(u); } catch {} };
+// 陪伴模式：按设备本地时间/月份算「昼夜 × 春夏秋冬」
+function ambient() { const d = new Date(); const h = d.getHours(); const m = d.getMonth(); const tod = (h >= 6 && h < 18) ? "day" : "night"; const season = (m >= 2 && m <= 4) ? "spring" : (m >= 5 && m <= 7) ? "summer" : (m >= 8 && m <= 10) ? "autumn" : "winter"; return { tod, season }; }
+const SEASON_CH = { spring: "🌸", summer: "🍃", autumn: "🍁", winter: "❄️" };
+function AmbientParticles({ season, n }) { const ch = SEASON_CH[season] || "🌸"; const cnt = n || 7; return (<div style={{ position: "absolute", inset: 0, overflow: "hidden", pointerEvents: "none", zIndex: 1 }}>{Array.from({ length: cnt }).map((_, i) => (<span key={i} style={{ position: "absolute", left: (6 + i * 13) + "%", top: "-8%", fontSize: 12 + (i % 3) * 4, opacity: 0.85, animation: "fall " + (6 + (i % 4)) + "s linear " + (i * 0.7) + "s infinite" }}>{ch}</span>))}</div>); }
 
 // ── 120 词初始库（六场景 × 20）──────────────────────────
 // 词条格式：[正体(有汉字就用汉字，否则假名/片假名), 平假名读音, 中文, 词性, 是否高频, 外来词?]
@@ -554,7 +558,7 @@ function freshState() {
     trash: [],
     pet: { mood: 75, lastSeenAt: now() },
     streak: { totalDays: 0, monthDays: 0, lastStudyDay: null, calendar: {} },
-    settings: { sound: true, aiReal: false, energyMode: "normal", theme: "light" },
+    settings: { sound: true, aiReal: false, energyMode: "normal" },
   };
 }
 
@@ -587,15 +591,13 @@ export default function App() {
   useEffect(() => { if (loaded) saveState(st).then((ok) => setSaveErr(!ok)); }, [st, loaded]);
   // 计时器（刷新心情等）
   useEffect(() => { const t = setInterval(() => setTick((x) => x + 1), 30000); return () => clearInterval(t); }, []);
-  // 主题：把 settings.theme 应用到 <html data-theme>，"system"跟随手机白天/夜里
-  const theme = st.settings.theme || "light";
+  // 陪伴模式：像素常驻 + 按你本地时间/季节自动切「昼夜 × 春夏秋冬」场景（每5分钟重算，自动跨昼夜）
+  const [amb, setAmb] = useState(ambient);
   useEffect(() => {
-    const root = document.documentElement;
-    const mq = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
-    const apply = () => root.setAttribute("data-theme", theme === "system" ? ((mq && mq.matches) ? "dark" : "light") : theme);
+    const apply = () => { const a = ambient(); const r = document.documentElement; r.setAttribute("data-tod", a.tod); r.setAttribute("data-season", a.season); setAmb(a); };
     apply();
-    if (theme === "system" && mq) { try { mq.addEventListener("change", apply); } catch (e) { mq.addListener && mq.addListener(apply); } return () => { try { mq.removeEventListener("change", apply); } catch (e) { mq.removeListener && mq.removeListener(apply); } }; }
-  }, [theme]);
+    const t = setInterval(apply, 5 * 60 * 1000); return () => clearInterval(t);
+  }, []);
   // 进入即更新 lastSeenAt（轻量，标记"今天来过"，但延迟以便先算盲盒）
   useEffect(() => { if (loaded && st.onboarded) { const t = setTimeout(() => setSt((s) => ({ ...s, pet: { ...s.pet, lastSeenAt: now(), mood: Math.min(100, (s.pet.mood ?? 75)) } })), 1500); return () => clearTimeout(t); } }, [loaded, st.onboarded]);
 
@@ -667,7 +669,7 @@ export default function App() {
   if (!st.onboarded) return <Onboarding onDone={(interests) => { play("happy"); patch((s) => ({ ...s, onboarded: true, interests, words: buildSeedWords(interests) })); }} play={play} />;
 
   const nav = (v) => { play("tap"); setView(v); };
-  const ctx = { st, play, mastered, seg, decor, mood, nav, addWords, updateWord, delWord, delWords, restoreWord, appendWords, petLove, setSetting, finishReview, ownWordCount, reviewWrongOnly, setReviewWrongOnly, setView, expandTarget, setExpandTarget };
+  const ctx = { st, play, mastered, seg, decor, mood, nav, addWords, updateWord, delWord, delWords, restoreWord, appendWords, petLove, setSetting, finishReview, ownWordCount, reviewWrongOnly, setReviewWrongOnly, setView, expandTarget, setExpandTarget, amb };
 
   return (
     <div style={S.shell}>
@@ -719,7 +721,6 @@ function TopBar({ st, seg, mastered, onSettings, play, setSetting }) {
       <Stat icon="🔥" val={st.streak.totalDays} label="累计天" tone={C.honeyDk} />
       <Stat icon="🌸" val={mastered} label="已掌握" tone={C.matchaDk} />
       <button style={{ ...S.aiToggle, background: aiReal ? C.matcha : "var(--ai-off)", color: aiReal ? "#fff" : C.inkSoft }} onClick={() => { setSetting("aiReal", !aiReal); play("pop"); }} title="AI：真Claude/模拟">{aiReal ? "AI真" : "AI拟"}</button>
-      <button style={S.iconBtn} title="主题：浅色 / 深色 / 像素" onClick={() => { const order = ["light", "dark", "pixel"]; const cur = st.settings.theme || "light"; const nx = order[(order.indexOf(cur) + 1) % order.length]; setSetting("theme", nx); play("pop"); }}>{ { light: "☀️", dark: "🌙", pixel: "🕹️", system: "🌗" }[st.settings.theme || "light"] }</button>
       <button style={S.iconBtn} onClick={() => { setSetting("sound", !st.settings.sound); if (!st.settings.sound) Sfx.pop(); }}>{st.settings.sound ? "🔔" : "🔕"}</button>
       <button style={S.iconBtn} onClick={onSettings}>⚙️</button>
     </div>
@@ -729,7 +730,7 @@ const Stat = ({ icon, val, label, tone }) => (<div style={S.stat}><span style={{
 
 // ── 首页 ───────────────────────────────────────────────
 function Home({ ctx }) {
-  const { st, play, mastered, seg, decor, mood, nav } = ctx;
+  const { st, play, mastered, seg, decor, mood, nav, amb } = ctx;
   const due = useMemo(() => dueWords(st.words, st.settings.energyMode), [st.words, st.settings.energyMode]);
   const wrongs = useMemo(() => wrongWords(st.words), [st.words]);
   const canReview = useMemo(() => st.words.some((w) => !w.mastered), [st.words]);
@@ -751,7 +752,10 @@ function Home({ ctx }) {
 
     {/* 窝 + 猫 */}
     <div style={S.room}>
-      <div style={S.window}><div style={S.sun}>☀️</div></div>
+      {/* 陪伴：随本地时间的天体（白天太阳/夜晚月亮）+ 夜晚星星 + 季节粒子 */}
+      <div style={{ position: "absolute", top: 12, right: 16, fontSize: 34, zIndex: 1, filter: "drop-shadow(2px 2px 0 rgba(0,0,0,.18))" }}>{amb && amb.tod === "night" ? "🌙" : "🌞"}</div>
+      {amb && amb.tod === "night" && [[16, 28], [38, 16], [68, 38], [86, 20], [28, 54], [54, 30]].map((p, i) => <span key={i} style={{ position: "absolute", left: p[0] + "%", top: p[1] + "px", color: "#fff", fontSize: 10, opacity: 0.85, zIndex: 1 }}>✦</span>)}
+      <AmbientParticles season={amb ? amb.season : "spring"} />
       {decor.includes("plant") && <div style={S.dPlant}>🪴</div>}
       {decor.includes("lamp") && <div style={S.dLamp}>🏮</div>}
       <div style={S.bubble} className="float-soft">{mood.word}</div>
@@ -1750,10 +1754,7 @@ function Settings({ ctx }) {
   };
   return (<div className="fade-in"><BackRow ctx={ctx} title="⚙️ 设置" />
     <div className="card" style={S.setCard}>
-      <Row label="外观主题" hint="浅色 / 深色 / 像素，或跟随手机白天夜里自动切">
-        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", justifyContent: "flex-end" }}>{[["light", "☀️浅"], ["dark", "🌙深"], ["pixel", "🕹️像素"], ["system", "🌗跟随"]].map(([m, l]) => (
-          <button key={m} className="pressable" style={{ ...S.energyBtn, width: "auto", padding: "6px 9px", fontSize: 12, fontWeight: 800, ...((st.settings.theme || "light") === m ? S.energyOn : {}) }} onClick={() => { setSetting("theme", m); play("tap"); }}>{l}</button>))}</div>
-      </Row>
+      <Row label="外观" hint="像素风 · 昼夜与四季跟你本地时间自动切换（陪伴模式）"><span style={{ fontSize: 13, color: "var(--ink-mid)", fontWeight: 800 }}>🕹️ 自动同频</span></Row>
       <Row label="音效" hint="清脆解压的按键音"><Switch on={st.settings.sound} onClick={() => { setSetting("sound", !st.settings.sound); if (!st.settings.sound) Sfx.pop(); }} /></Row>
       <Row label="AI 模式" hint="真AI(需密钥+联网，补意思/关联词/展开) / 离线(kuromoji 只补读音和词性)"><Switch on={st.settings.aiReal} label={st.settings.aiReal ? "真" : "拟"} onClick={() => { setSetting("aiReal", !st.settings.aiReal); play("pop"); }} /></Row>
       <Row label="AI 密钥" hint="OpenAI(sk-…) 或 Claude(sk-ant-…)，贴哪家就用哪家，只存本机不上传">
@@ -1814,7 +1815,7 @@ const S = {
 
   nudge: { display: "flex", alignItems: "center", gap: 10, borderRadius: 16, padding: "11px 14px", marginBottom: 12, border: "2px solid rgba(0,0,0,.04)" },
 
-  room: { position: "relative", background: "linear-gradient(180deg,var(--room1) 0%,var(--room2) 60%,var(--room3) 100%)", borderRadius: 28, padding: "18px 16px 20px", border: "4px solid var(--card-edge)", boxShadow: "0 10px 0 var(--room-bevel), 0 14px 28px rgba(150,110,60,.16)", overflow: "hidden", minHeight: 250, marginBottom: 14 },
+  room: { position: "relative", background: "linear-gradient(180deg,var(--room1),var(--room3))", borderRadius: 28, padding: "18px 16px 20px", border: "4px solid var(--card-edge)", boxShadow: "4px 4px 0 var(--pix-shadow)", overflow: "hidden", minHeight: 250, marginBottom: 14 },
   window: { position: "absolute", top: 14, right: 16, width: 54, height: 54, background: "var(--window)", borderRadius: 14, border: "5px solid var(--card-edge)" }, sun: { position: "absolute", top: 4, left: 6, fontSize: 18 },
   dPlant: { position: "absolute", bottom: 12, left: 14, fontSize: 28 }, dLamp: { position: "absolute", top: 12, left: 18, fontSize: 22 },
   bubble: { margin: "0 auto 6px", maxWidth: 260, background: "var(--surface)", borderRadius: 16, padding: "9px 14px", fontSize: 13, fontWeight: 700, textAlign: "center", color: "var(--ink-mid)", boxShadow: "0 4px 0 var(--bevel)", position: "relative", zIndex: 2 },
@@ -1948,39 +1949,44 @@ const S = {
 const CSS = "\
 @import url('https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&display=swap');\
 @import url('https://fonts.googleapis.com/css2?family=DotGothic16&display=swap');\
-:root,[data-theme=light]{\
---cream:#faf6ee;--shell-top:#fdf8ee;--surface:#ffffff;--surface-sel:#fdf2e0;--surface2:#f4ecdc;--card-edge:#ffffff;--knob:#ffffff;\
---honey:#e8a85c;--honey-dk:#c98a3e;--matcha:#8fb878;--matcha-dk:#6f9a59;--wood:#a9805a;\
---blush:#e89b86;--blush-dk:#c97a64;--sky:#7bb4c4;--grape:#c79bd4;--grape-dk:#a87bb8;\
---ink:#5a4634;--ink-soft:#9b8674;--ink-mid:#7a6244;\
---line:#ecdfca;--line-soft:#f3e7d3;--bevel:#efe2cd;--track:#eaddc6;--pill-bg:#eef2e6;\
---danger-bg:#fbeae2;--danger-fg:#c4684f;--danger-line:#f0ddd5;--danger-bevel:#e7c0b3;--ok-bg:#eaf4e0;--warn-bg:#fff4e0;\
---room1:#fbe9cf;--room2:#f6dcb6;--room3:#e9c79a;--room-bevel:#e3cba2;--window:#bfe3f0;--cushion:#d99a7c;--ai-off:#eadcc6;--switch-off:#d8cdbb;\
-}\
-[data-theme=dark]{\
---cream:#0c1733;--shell-top:#16224d;--surface:#1b2a55;--surface-sel:#26397a;--surface2:#21306a;--card-edge:rgba(255,255,255,.06);--knob:#eef1ff;\
---honey:#f0b760;--honey-dk:#b9863a;--matcha:#8ea0ff;--matcha-dk:#6b7fe0;--wood:#9fb0d9;\
---blush:#f0a0b8;--blush-dk:#c76d86;--sky:#7fc8df;--grape:#c2a0e8;--grape-dk:#9a7bc8;\
---ink:#eef1ff;--ink-soft:#9fb0d9;--ink-mid:#bcc8ea;\
---line:rgba(255,255,255,.10);--line-soft:rgba(255,255,255,.07);--bevel:rgba(0,0,0,.30);--track:#2a3a6a;--pill-bg:#26397a;\
---danger-bg:#4a2532;--danger-fg:#ffabbf;--danger-line:#5e2c3c;--danger-bevel:rgba(0,0,0,.3);--ok-bg:#1e3a32;--warn-bg:#3d3320;\
---room1:#1c2a56;--room2:#16224a;--room3:#101b3d;--room-bevel:rgba(0,0,0,.4);--window:#2b4488;--cushion:#2a3a6a;--ai-off:#2a3a6a;--switch-off:#3a4a7a;\
-}\
-[data-theme=pixel]{\
---cream:#f3e7d6;--shell-top:#f3e7d6;--surface:#fffdf5;--surface-sel:#fff3c4;--surface2:#e9dcc4;--card-edge:#2b2b2b;--knob:#fffdf5;\
+:root{\
+/* 像素基底（常驻）·默认=白天中性 */\
+--shell-top:#f3e7d6;--surface:#fffdf5;--surface-sel:#fff3c4;--surface2:#e9dcc4;--card-edge:#2b2b2b;--knob:#fffdf5;\
 --honey:#f5a623;--honey-dk:#b87410;--matcha:#4caf50;--matcha-dk:#2f8a34;--wood:#8a5a3a;\
 --blush:#e23b3b;--blush-dk:#a02020;--sky:#3a7bd5;--grape:#9b59b6;--grape-dk:#6a3d8a;\
 --ink:#2b2b2b;--ink-soft:#6a6a6a;--ink-mid:#4a4a4a;\
 --line:#2b2b2b;--line-soft:#2b2b2b;--bevel:#2b2b2b;--track:#cdbfa6;--pill-bg:#d7f0d0;\
 --danger-bg:#ffd9d9;--danger-fg:#c0392b;--danger-line:#2b2b2b;--danger-bevel:#2b2b2b;--ok-bg:#d7f0d0;--warn-bg:#fff3c4;\
---room1:#cfe0f5;--room2:#bcd4ef;--room3:#a8c8ea;--room-bevel:#2b2b2b;--window:#3a7bd5;--cushion:#8a5a3a;--ai-off:#cdbfa6;--switch-off:#9a9a9a;\
+--room-bevel:#2b2b2b;--window:#3a7bd5;--cushion:#8a5a3a;--ai-off:#cdbfa6;--switch-off:#9a9a9a;\
+--pix-border:#2b2b2b;--pix-shadow:#2b2b2b;\
+--cream:#f3e7d6;--room1:#bcd4ef;--room3:#a8c8ea;\
 }\
-* { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }\
-body { margin: 0; background: var(--cream); }\
-.card { background:var(--surface); border:3px solid var(--line-soft); box-shadow:0 6px 0 var(--bevel); }\
-[data-theme=pixel] *{ border-radius:0 !important; font-family:'DotGothic16','PingFang SC',monospace !important; }\
-[data-theme=pixel] .card,[data-theme=pixel] button{ border:3px solid #2b2b2b !important; box-shadow:4px 4px 0 #2b2b2b !important; }\
-[data-theme=pixel] .pressable:active{ transform:translate(2px,2px) !important; box-shadow:1px 1px 0 #2b2b2b !important; }\
+/* 夜晚：暗像素（压暗、文字转亮、描边转亮） */\
+[data-tod=night]{\
+--shell-top:#1a1832;--surface:#2b2746;--surface-sel:#3a3460;--surface2:#241f3c;--card-edge:#6a6390;--knob:#efeaff;\
+--honey:#ffc24d;--honey-dk:#c98a2a;--matcha:#6dd06f;--matcha-dk:#4aa84c;--wood:#b8a0d0;\
+--blush:#ff6b6b;--blush-dk:#c04848;--sky:#6aa0ff;--grape:#c78fe0;--grape-dk:#9a6fc0;\
+--ink:#f0ecff;--ink-soft:#b8b0d8;--ink-mid:#d0c8ec;\
+--line:#6a6390;--line-soft:#4a4470;--bevel:rgba(0,0,0,.5);--track:#3a3460;--pill-bg:#234034;\
+--danger-bg:#4a2532;--danger-fg:#ff9db0;--danger-line:#6a6390;--danger-bevel:#000;--ok-bg:#234034;--warn-bg:#3d3320;\
+--cushion:#3a3460;--ai-off:#3a3460;--switch-off:#5a5478;--window:#3a4a88;--room-bevel:#000;\
+--pix-border:#6a6390;--pix-shadow:rgba(0,0,0,.6);\
+}\
+/* 季节 × 昼夜：页面底 + 猫屋天空 */\
+[data-tod=day][data-season=spring]{--cream:#f8eef1;--room1:#d6e9ff;--room3:#ffe1ee;}\
+[data-tod=day][data-season=summer]{--cream:#eef7ee;--room1:#a8d8ff;--room3:#dff4ff;}\
+[data-tod=day][data-season=autumn]{--cream:#f7ecdc;--room1:#ffe2b0;--room3:#ffcfa0;}\
+[data-tod=day][data-season=winter]{--cream:#eef3f8;--room1:#dcebf7;--room3:#eef4fb;}\
+[data-tod=night][data-season=spring]{--cream:#211a38;--room1:#2c2550;--room3:#1a1838;}\
+[data-tod=night][data-season=summer]{--cream:#161a36;--room1:#16224a;--room3:#0e1838;}\
+[data-tod=night][data-season=autumn]{--cream:#241a2c;--room1:#3a2540;--room3:#221428;}\
+[data-tod=night][data-season=winter]{--cream:#141c34;--room1:#1a2848;--room3:#101e38;}\
+* { -webkit-tap-highlight-color: transparent; box-sizing: border-box; border-radius:0 !important; font-family:'DotGothic16','PingFang SC','Microsoft YaHei',monospace !important; }\
+body { margin: 0; background: var(--cream); transition: background .6s ease; }\
+.card { background:var(--surface); border:3px solid var(--pix-border); box-shadow:4px 4px 0 var(--pix-shadow); }\
+button{ border:3px solid var(--pix-border) !important; box-shadow:4px 4px 0 var(--pix-shadow) !important; }\
+.pressable:active{ transform:translate(2px,2px) !important; box-shadow:1px 1px 0 var(--pix-shadow) !important; }\
+@keyframes fall{ 0%{transform:translateY(-12px) rotate(0deg);opacity:.9} 100%{transform:translateY(260px) rotate(160deg);opacity:.35} }\
 .cloud { position:absolute; font-size:36px; opacity:.4; animation:floatX 30s linear infinite; }\
 .c1 { top:5%; left:-12%; } .c2 { top:15%; left:-32%; animation-delay:-15s; font-size:26px; }\
 .pressable { transition:transform .07s; } .pressable:active { transform:translateY(2px) scale(.98); } .pressable:disabled { cursor:not-allowed; opacity:.55; }\
