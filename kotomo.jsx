@@ -111,6 +111,7 @@ const Sfx = (() => {
     coin: () => { tone(1318, 0, 0.05, "square", 0.07); tone(1760, 0.04, 0.08, "square", 0.06); },
     happy: () => { tone(880, 0, 0.1, "sine", 0.1); tone(1100, 0.08, 0.14, "sine", 0.1); },
     listen: () => tone(988, 0, 0.08, "sine", 0.08),
+    getCtx: ensure, // 复用同一个 AudioContext 播 VOICEVOX 语音(手势内 resume 后即可随时播，绕开 iOS 自动播放限制)
   };
 })();
 const vibrate = (ms) => { try { if (navigator.vibrate) navigator.vibrate(ms); } catch {} };
@@ -124,19 +125,48 @@ function haptic(kind) {
   vibrate(err ? [0, 26, 45, 26] : 16);
   iosHaptic();
 }
-// 语音：自带 TTS 没有真·声优音色，但「选更年轻的日语声 + 拔高音调」能逼近二次元/奶/傲娇的听感
+// ── 语音：主用 VOICEVOX「ずんだもん」(在线萌系奶音)，缓存 + 联网失败/离线自动回退系统声 ──
+const VOICE_SPEAKER = 3; // VOICEVOX: ずんだもん（ノーマル）
+const VOICE_API = "https://api.tts.quest/v3/voicevox/synthesis";
+// 系统自带声(离线兜底)：用自然音调，不拔高(拔高了反而难听)
 let _jaVoice = null;
 function pickJaVoice() {
   try {
     const vs = (speechSynthesis.getVoices() || []).filter((v) => /ja[-_]?JP/i.test(v.lang || "") || /japan|日本/i.test(v.name || ""));
     if (!vs.length) return null;
-    const pref = ["nanami", "mizuki", "sayaka", "ayumi", "google", "kyoko", "o-ren", "haruka"]; // 偏年轻/清亮的优先
+    const pref = ["nanami", "mizuki", "sayaka", "ayumi", "google", "kyoko", "o-ren", "haruka"];
     for (const p of pref) { const hit = vs.find((v) => (v.name || "").toLowerCase().includes(p)); if (hit) return hit; }
     return vs[0];
   } catch { return null; }
 }
 try { if (typeof speechSynthesis !== "undefined") { _jaVoice = pickJaVoice(); speechSynthesis.onvoiceschanged = () => { _jaVoice = pickJaVoice(); }; } } catch {}
-const speakJa = (t) => { try { const u = new SpeechSynthesisUtterance(t); u.lang = "ja-JP"; if (!_jaVoice) _jaVoice = pickJaVoice(); if (_jaVoice) u.voice = _jaVoice; u.rate = 0.92; u.pitch = 1.5; speechSynthesis.speak(u); } catch {} };
+const systemSpeak = (t) => { try { const u = new SpeechSynthesisUtterance(t); u.lang = "ja-JP"; if (!_jaVoice) _jaVoice = pickJaVoice(); if (_jaVoice) u.voice = _jaVoice; u.rate = 0.95; u.pitch = 1.0; speechSynthesis.speak(u); } catch {} };
+
+const _voiceCache = new Map(); // text -> AudioBuffer（解码后缓存，第二次秒播）｜ "pending"
+let _voiceSrc = null;
+const _sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function fetchVoiceBuffer(t, ctx) {
+  const r = await fetch(VOICE_API + "?text=" + encodeURIComponent(t) + "&speaker=" + VOICE_SPEAKER);
+  const d = await r.json();
+  if (!d || !d.success) throw new Error("synth busy");
+  let ready = false;
+  for (let i = 0; i < 16; i++) { const s = await (await fetch(d.audioStatusUrl)).json(); if (s.isAudioError) throw new Error("synth err"); if (s.isAudioReady) { ready = true; break; } await _sleep(450); }
+  if (!ready) throw new Error("synth timeout");
+  const ab = await (await fetch(d.mp3DownloadUrl)).arrayBuffer();
+  return await ctx.decodeAudioData(ab);
+}
+function playVoiceBuffer(buf, ctx) { try { if (_voiceSrc) { try { _voiceSrc.stop(); } catch {} } const s = ctx.createBufferSource(); s.buffer = buf; s.connect(ctx.destination); s.start(); _voiceSrc = s; } catch {} }
+const speakJa = (t) => {
+  if (!t) return;
+  const ctx = Sfx.getCtx(); // 手势内 resume，保证之后能播
+  if (!ctx) { systemSpeak(t); return; } // 没有 Web Audio 就直接系统声
+  const cached = _voiceCache.get(t);
+  if (cached && cached !== "pending") { playVoiceBuffer(cached, ctx); return; }
+  if (cached === "pending") return;
+  _voiceCache.set(t, "pending");
+  fetchVoiceBuffer(t, ctx).then((buf) => { _voiceCache.set(t, buf); playVoiceBuffer(buf, ctx); })
+    .catch(() => { _voiceCache.delete(t); systemSpeak(t); }); // 联网失败/限流/离线 → 系统声兜底
+};
 // 陪伴模式：按设备本地时间/月份算「昼夜 × 春夏秋冬」
 function ambient() { const d = new Date(); const h = d.getHours(); const m = d.getMonth(); const tod = (h >= 6 && h < 18) ? "day" : "night"; const season = (m >= 2 && m <= 4) ? "spring" : (m >= 5 && m <= 7) ? "summer" : (m >= 8 && m <= 10) ? "autumn" : "winter"; return { tod, season }; }
 const SEASON_CH = { spring: "🌸", summer: "🍃", autumn: "🍁", winter: "❄️" };
