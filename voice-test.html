@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ことも · 语音试听</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin: 0; font-family: -apple-system, "PingFang SC", system-ui, sans-serif; background: #f3e7d6; color: #2b2b2b; padding: 18px 16px 60px; line-height: 1.5; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: #7a7268; font-size: 13px; margin-bottom: 14px; }
+  .warn { background: #fff4e0; border: 2px solid #f5a623; border-radius: 12px; padding: 11px 13px; margin-bottom: 16px; font-size: 13px; }
+  .phrase { background: #fffdf5; border: 2px dashed #c9bfae; border-radius: 12px; padding: 10px 13px; margin-bottom: 16px; font-size: 14px; }
+  .phrase b { color: #4caf50; }
+  .btn { display: flex; align-items: center; gap: 12px; width: 100%; border: 3px solid #2b2b2b; background: #fffdf5; color: #2b2b2b; border-radius: 14px; padding: 15px 14px; margin-bottom: 13px; font-size: 16px; font-weight: 800; text-align: left; box-shadow: 4px 4px 0 #2b2b2b; cursor: pointer; }
+  .btn:active { transform: translate(2px,2px); box-shadow: 1px 1px 0 #2b2b2b; }
+  .btn[disabled] { opacity: .55; }
+  .btn .ico { font-size: 22px; flex-shrink: 0; width: 26px; text-align: center; }
+  .btn .body { flex: 1; min-width: 0; }
+  .btn .nm { font-size: 16px; }
+  .btn .ds { display: block; font-size: 12px; font-weight: 600; color: #7a7268; margin-top: 3px; }
+  .btn .st { font-size: 12px; font-weight: 800; color: #4caf50; flex-shrink: 0; }
+  .sec { font-size: 13px; font-weight: 800; color: #7a7268; margin: 18px 0 8px; }
+  .baseline { background: #efe7d8; }
+</style>
+</head>
+<body>
+  <h1>ことも · 语音试听 🎧</h1>
+  <div class="sub">挨个点「▶ 试听」，挑你最喜欢的那个，把名字告诉我，我接进 App。</div>
+
+  <div class="warn">这些是<b>在线动漫语音(VOICEVOX)</b>，要联网、第一次合成会等 1～3 秒。手机记得开声音、别静音。</div>
+
+  <div class="phrase">试听句：<b>こんにちは！ねこと いっしょに がんばろうね！</b><br><span style="color:#7a7268;font-size:12px;">（你好！和小猫一起加油吧！）</span></div>
+
+  <div class="sec">🌸 二次元 / 傲娇 / 萝莉角色声（在线）</div>
+  <div id="list"></div>
+
+  <div class="sec">📱 对照：手机自带声（离线·现在 App 用的那种）</div>
+  <button class="btn baseline" id="sys">
+    <span class="ico">▶</span>
+    <span class="body"><span class="nm">系统自带日语声</span><span class="ds">iPhone=Kyoko，原音不拔高（对照用）</span></span>
+    <span class="st" id="sys-st"></span>
+  </button>
+
+<script>
+  var TEXT = "こんにちは！ねこと いっしょに がんばろうね！";
+  var VOICES = [
+    { id: 3,  name: "ずんだもん・普通",   desc: "萌系吉祥物 · 中性奶音（人气No.1）" },
+    { id: 1,  name: "ずんだもん・甜",     desc: "更甜更撒娇" },
+    { id: 6,  name: "四国めたん・傲娇",   desc: "ツンツン · 凶凶的傲娇（最接近你要的）" },
+    { id: 2,  name: "四国めたん・普通",   desc: "标准美少女音" },
+    { id: 8,  name: "春日部つむぎ",       desc: "元气辣妹 · 明亮甜" },
+    { id: 10, name: "雨晴はう",           desc: "温柔软妹 · 治愈系" },
+    { id: 14, name: "冥鳴ひまり",         desc: "清亮少女" },
+    { id: 16, name: "九州そら・普通",     desc: "御姐偏成熟（对比用）" },
+  ];
+
+  function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
+  var busy = false;
+
+  async function playVoice(speaker, stEl, btn){
+    if (busy) return; busy = true; btn.setAttribute('disabled','');
+    stEl.textContent = '⏳ 合成中…';
+    try {
+      var r = await fetch('https://api.tts.quest/v3/voicevox/synthesis?text=' + encodeURIComponent(TEXT) + '&speaker=' + speaker);
+      var d = await r.json();
+      if (!d || !d.success) throw new Error(d && d.error ? d.error : '接口忙(可能限流)');
+      var ready = false;
+      for (var i = 0; i < 25; i++){
+        var s = await (await fetch(d.audioStatusUrl)).json();
+        if (s.isAudioError) throw new Error('合成出错');
+        if (s.isAudioReady){ ready = true; break; }
+        await sleep(700);
+      }
+      if (!ready) throw new Error('超时');
+      stEl.textContent = '🔊 播放';
+      var a = new Audio(d.mp3DownloadUrl);
+      a.onended = function(){ stEl.textContent = '✓ 已听'; };
+      a.onerror = function(){ stEl.textContent = '✗ 播放失败'; };
+      await a.play();
+    } catch(e){
+      stEl.textContent = '✗ ' + (e.message || '失败') + '，再点一次';
+    } finally {
+      busy = false; btn.removeAttribute('disabled');
+    }
+  }
+
+  var list = document.getElementById('list');
+  VOICES.forEach(function(v){
+    var b = document.createElement('button');
+    b.className = 'btn';
+    b.innerHTML = '<span class="ico">▶</span><span class="body"><span class="nm">' + v.name + '</span><span class="ds">' + v.desc + '</span></span><span class="st"></span>';
+    var st = b.querySelector('.st');
+    b.addEventListener('click', function(){ playVoice(v.id, st, b); });
+    list.appendChild(b);
+  });
+
+  // 系统自带声对照
+  document.getElementById('sys').addEventListener('click', function(){
+    var stEl = document.getElementById('sys-st');
+    try {
+      var u = new SpeechSynthesisUtterance(TEXT);
+      u.lang = 'ja-JP'; u.rate = 0.95; u.pitch = 1.0;
+      var vs = (speechSynthesis.getVoices()||[]).filter(function(x){ return /ja[-_]?JP/i.test(x.lang||''); });
+      if (vs.length) u.voice = vs[0];
+      u.onend = function(){ stEl.textContent = '✓ 已听'; };
+      stEl.textContent = '🔊 播放';
+      speechSynthesis.cancel(); speechSynthesis.speak(u);
+    } catch(e){ stEl.textContent = '✗ 失败'; }
+  });
+</script>
+</body>
+</html>
