@@ -124,7 +124,19 @@ function haptic(kind) {
   vibrate(err ? [0, 26, 45, 26] : 16);
   iosHaptic();
 }
-const speakJa = (t) => { try { const u = new SpeechSynthesisUtterance(t); u.lang = "ja-JP"; u.rate = 0.85; speechSynthesis.speak(u); } catch {} };
+// 语音：自带 TTS 没有真·声优音色，但「选更年轻的日语声 + 拔高音调」能逼近二次元/奶/傲娇的听感
+let _jaVoice = null;
+function pickJaVoice() {
+  try {
+    const vs = (speechSynthesis.getVoices() || []).filter((v) => /ja[-_]?JP/i.test(v.lang || "") || /japan|日本/i.test(v.name || ""));
+    if (!vs.length) return null;
+    const pref = ["nanami", "mizuki", "sayaka", "ayumi", "google", "kyoko", "o-ren", "haruka"]; // 偏年轻/清亮的优先
+    for (const p of pref) { const hit = vs.find((v) => (v.name || "").toLowerCase().includes(p)); if (hit) return hit; }
+    return vs[0];
+  } catch { return null; }
+}
+try { if (typeof speechSynthesis !== "undefined") { _jaVoice = pickJaVoice(); speechSynthesis.onvoiceschanged = () => { _jaVoice = pickJaVoice(); }; } } catch {}
+const speakJa = (t) => { try { const u = new SpeechSynthesisUtterance(t); u.lang = "ja-JP"; if (!_jaVoice) _jaVoice = pickJaVoice(); if (_jaVoice) u.voice = _jaVoice; u.rate = 0.92; u.pitch = 1.5; speechSynthesis.speak(u); } catch {} };
 // 陪伴模式：按设备本地时间/月份算「昼夜 × 春夏秋冬」
 function ambient() { const d = new Date(); const h = d.getHours(); const m = d.getMonth(); const tod = (h >= 6 && h < 18) ? "day" : "night"; const season = (m >= 2 && m <= 4) ? "spring" : (m >= 5 && m <= 7) ? "summer" : (m >= 8 && m <= 10) ? "autumn" : "winter"; return { tod, season }; }
 const SEASON_CH = { spring: "🌸", summer: "🍃", autumn: "🍁", winter: "❄️" };
