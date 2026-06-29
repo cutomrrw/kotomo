@@ -9,3 +9,7 @@
 # 准确性引擎：JMdict 常用词词典（自托管，供 GitHub Pages 离线核实读音/写法）
 !dict/
 !dict/jmdict-common.json.gz
+# 宠物 IP「日狗」像素素材（抠图自创始人 GPT 设计稿，供 App 加载）
+!assets/
+!assets/cat/
+!assets/cat/*.png
