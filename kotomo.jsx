@@ -108,6 +108,16 @@ const Sfx = (() => {
   };
 })();
 const vibrate = (ms) => { try { if (navigator.vibrate) navigator.vibrate(ms); } catch {} };
+// iPhone Safari 不开放震动 API；用 iOS 17.4+ 的隐藏开关 hack 触发一个很轻的触感(尽力而为)
+const iosHaptic = () => { try { const el = document.getElementById("iosHaptic"); if (el) el.click(); } catch {} };
+// 统一反馈触感：答对/答错不同节奏(安卓真震动)+ iOS 尽力轻触
+function haptic(kind) {
+  const ok = (kind === "correct" || kind === "match" || kind === "win" || kind === "coin" || kind === "levelup");
+  const err = (kind === "wrong");
+  if (!ok && !err) return;
+  vibrate(err ? [0, 26, 45, 26] : 16);
+  iosHaptic();
+}
 const speakJa = (t) => { try { const u = new SpeechSynthesisUtterance(t); u.lang = "ja-JP"; u.rate = 0.85; speechSynthesis.speak(u); } catch {} };
 // 陪伴模式：按设备本地时间/月份算「昼夜 × 春夏秋冬」
 function ambient() { const d = new Date(); const h = d.getHours(); const m = d.getMonth(); const tod = (h >= 6 && h < 18) ? "day" : "night"; const season = (m >= 2 && m <= 4) ? "spring" : (m >= 5 && m <= 7) ? "summer" : (m >= 8 && m <= 10) ? "autumn" : "winter"; return { tod, season }; }
@@ -601,7 +611,7 @@ export default function App() {
   // 进入即更新 lastSeenAt（轻量，标记"今天来过"，但延迟以便先算盲盒）
   useEffect(() => { if (loaded && st.onboarded) { const t = setTimeout(() => setSt((s) => ({ ...s, pet: { ...s.pet, lastSeenAt: now(), mood: Math.min(100, (s.pet.mood ?? 75)) } })), 1500); return () => clearTimeout(t); } }, [loaded, st.onboarded]);
 
-  const play = useCallback((n) => { if (st.settings.sound && Sfx[n]) Sfx[n](); }, [st.settings.sound]);
+  const play = useCallback((n) => { if (st.settings.sound && Sfx[n]) Sfx[n](); haptic(n); }, [st.settings.sound]);
   const mastered = useMemo(() => countMastered(st.words), [st.words]);
   const seg = segOf(mastered);
   const decor = decorFor(mastered);
@@ -675,6 +685,8 @@ export default function App() {
     <div style={S.shell}>
       <style>{CSS}</style>
       <Bg />
+      {/* iOS 隐藏开关：点击它在 iPhone 上触发轻触感(安卓走 navigator.vibrate) */}
+      <label id="iosHaptic" aria-hidden="true" style={{ position: "fixed", left: -9999, top: 0, width: 1, height: 1, opacity: 0, pointerEvents: "none", overflow: "hidden" }} dangerouslySetInnerHTML={{ __html: '<input type="checkbox" switch tabindex="-1" style="pointer-events:none">' }} />
       {saveErr && <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 50, background: "var(--danger-fg)", color: "#fff", textAlign: "center", padding: "6px 10px", fontSize: 12, fontWeight: 700 }}>⚠️ 本地保存异常，这台设备可能无法保留数据</div>}
       {naughty && <NaughtyModal text={naughty} emoji={seg.emoji} onClose={() => { setNaughty(null); play("happy"); }} />}
       <TopBar st={st} seg={seg} mastered={mastered} onSettings={() => nav("settings")} play={play} setSetting={setSetting} />
@@ -862,7 +874,7 @@ function ReviewRun({ ctx, mode }) {
   const resultsRef = useRef({}); // id -> correct(bool)，一个词若任一次错则记错
   const hesitantRef = useRef({}); // id -> true：长按标"犹豫"，按错处理且记进犹豫词
   const recordResult = (id, correct) => { if (resultsRef.current[id] === undefined) resultsRef.current[id] = correct; else if (!correct) resultsRef.current[id] = false; };
-  const markHesitate = (id) => { hesitantRef.current[id] = true; recordResult(id, false); play("wrong"); vibrate(30); };
+  const markHesitate = (id) => { hesitantRef.current[id] = true; recordResult(id, false); play("wrong"); };
 
   if (queue.length === 0) return <EmptyReview ctx={ctx} />;
   const done = qi >= queue.length || hearts <= 0;
@@ -917,8 +929,8 @@ function MatchRound({ items, all, play, onResult, onDone, onWrong, onHesitate })
   const lpStart = (id) => { lpFired.current = false; lpTimer.current = setTimeout(() => { lpFired.current = true; markHes(id); }, 450); };
   const lpCancel = () => { if (lpTimer.current) { clearTimeout(lpTimer.current); lpTimer.current = null; } };
   useEffect(() => { if (selL && selR) {
-    if (selL === selR) { play("match"); vibrate(15); onResult(selL, true); setMatched((m) => [...m, selL]); setSelL(null); setSelR(null); }
-    else { play("wrong"); vibrate([20, 40, 20]); onResult(selL, false); onResult(selR, false); onWrong(); setWrongPair({ l: selL, r: selR }); setTimeout(() => { setWrongPair(null); setSelL(null); setSelR(null); }, 550); }
+    if (selL === selR) { play("match"); onResult(selL, true); setMatched((m) => [...m, selL]); setSelL(null); setSelR(null); }
+    else { play("wrong"); onResult(selL, false); onResult(selR, false); onWrong(); setWrongPair({ l: selL, r: selR }); setTimeout(() => { setWrongPair(null); setSelL(null); setSelR(null); }, 550); }
   } }, [selL, selR]);
   useEffect(() => { if (matched.length === items.length) { const t = setTimeout(onDone, 350); return () => clearTimeout(t); } }, [matched]);
   const tile = (w, side) => {
