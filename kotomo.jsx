@@ -931,7 +931,7 @@ function MatchRound({ items, all, play, onResult, onDone, onWrong, onHesitate })
       onClick={() => { if (lpFired.current) { lpFired.current = false; return; } if (isM) return; play("tap"); if (side === "L") { setSelL(w.id); speakJa(w.term); } else setSelR(w.id); }}>
       {isM ? <div style={{ fontWeight: 800, fontSize: 20 }}>✓</div> : <>
         <div style={{ fontSize: 10, color: C.inkSoft, height: 12, lineHeight: "12px", overflow: "hidden", whiteSpace: "nowrap", width: "100%" }}>{side === "L" && hasKanji(w.term) && w.reading && !isRomaji(w.reading) && w.reading !== w.term ? w.reading : ""}</div>
-        <div style={{ fontWeight: 800, fontSize: label.length > 6 ? 14 : label.length > 4 ? 16 : 18, lineHeight: 1.15, width: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{hes[w.id] ? "🤔 " : ""}{label}</div>
+        <div style={{ fontWeight: 800, fontSize: label.length > 12 ? 11 : label.length > 8 ? 13 : label.length > 5 ? 15 : 17, lineHeight: 1.12, width: "100%", overflow: "hidden", wordBreak: "break-word", display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: 2 }}>{hes[w.id] ? "🤔 " : ""}{label}</div>
       </>}</button>);
   };
   return (<div className="fade-in">
@@ -1857,9 +1857,9 @@ const S = {
   optWide: { border: "2.5px solid var(--line)", borderRadius: 14, padding: "14px 16px", cursor: "pointer", textAlign: "left", transition: "all .12s", boxShadow: "0 4px 0 var(--bevel)", background: "var(--surface)" },
   reviewPick: { display: "flex", alignItems: "center", gap: 14, width: "100%", boxSizing: "border-box", background: "var(--surface)", border: "2.5px solid var(--line)", borderRadius: 16, padding: "16px 18px", cursor: "pointer", fontFamily: "inherit", color: C.ink, boxShadow: "0 4px 0 var(--bevel)" },
   fb: { borderRadius: 14, padding: "12px 16px", fontWeight: 700, fontSize: 14, background: "var(--danger-bg)" },
-  matchCard: { borderRadius: 22, padding: 16 }, matchCols: { display: "flex", gap: 12 }, matchCol: { flex: 1, display: "flex", flexDirection: "column", gap: 8 },
+  matchCard: { borderRadius: 22, padding: 16, overflow: "hidden" }, matchCols: { display: "flex", gap: 10 }, matchCol: { flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 8 },
   colHead: { textAlign: "center", fontWeight: 800, fontSize: 13, color: C.inkSoft, marginBottom: 2 },
-  tile: { border: "2.5px solid var(--line)", borderRadius: 14, padding: "6px 8px", cursor: "pointer", textAlign: "center", background: "var(--surface)", boxShadow: "0 3px 0 var(--bevel)", fontFamily: "inherit", transition: "all .12s", height: 62, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  tile: { border: "2.5px solid var(--line)", borderRadius: 14, padding: "6px 6px", cursor: "pointer", textAlign: "center", background: "var(--surface)", boxShadow: "0 3px 0 var(--bevel)", fontFamily: "inherit", transition: "all .12s", height: 68, width: "100%", maxWidth: "100%", boxSizing: "border-box", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", overflow: "hidden" },
   tileSel: { borderColor: C.honey, background: "var(--surface-sel)", transform: "scale(1.03)" },
   tileDone: { borderColor: C.matcha, background: "var(--ok-bg)", color: C.matchaDk, cursor: "default", boxShadow: "none" },
   matchHint: { textAlign: "center", fontSize: 12, color: C.inkSoft, marginTop: 12 },
