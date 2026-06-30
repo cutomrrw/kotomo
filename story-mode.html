@@ -3,99 +3,106 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>ことも · Story Mode（UI 还原）</title>
+<title>ことも · Story Mode（UI 还原 v2）</title>
 <style>
   :root{
-    --bg:#fbfbf5; --card:#ffffff; --line:#ecefe4; --ink:#3c3f37; --ink2:#6e7366;
-    --soft:#a3a896; --green:#86ad72; --green-dk:#5f8a4e; --green-soft:#eef4e7; --heart:#4a4d43;
+    --bg:#d3e1b9; --dot:rgba(95,110,63,.14);
+    --card:#f4f0df; --border:#5d6c3d; --ink:#3b4030; --ink2:#73785c; --soft:#9aa07c;
+    --green:#7e9a4c; --green-dk:#5f7536; --heart:#46502c; --heart-off:#cdd2b2; --tag:#e7ecd2;
+    --sh:#5d6c3d;
   }
-  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0}
-  body{font-family:-apple-system,"PingFang SC",system-ui,sans-serif;background:var(--bg);color:var(--ink);padding:14px 16px 92px;line-height:1.5;}
-  ruby rt{font-size:.5em;color:var(--soft);font-weight:500;}
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  body{font-family:-apple-system,"PingFang SC",system-ui,sans-serif;color:var(--ink);
+    background-color:var(--bg);background-image:radial-gradient(var(--dot) 1.6px,transparent 1.6px);background-size:11px 11px;
+    padding:14px 15px 96px;line-height:1.5;}
+  ruby rt{font-size:.5em;color:var(--soft);font-weight:600;}
+  .pix{border:2.5px solid var(--border);border-radius:9px;box-shadow:3px 3px 0 var(--sh);background:var(--card);}
 
-  /* 顶部 */
-  .top{display:flex;align-items:center;justify-content:space-between;position:relative;padding:6px 2px 2px;}
-  .brand{font-size:22px;font-weight:800;letter-spacing:1px;display:flex;align-items:center;gap:7px;}
-  .brand .st{color:var(--green);font-size:19px;}
-  .topicons{display:flex;gap:14px;color:var(--soft);font-size:18px;}
-  .stars{position:absolute;inset:0;pointer-events:none;}
-  .stars i{position:absolute;color:var(--green);opacity:.5;font-style:normal;}
-  .sub{display:flex;align-items:baseline;gap:9px;margin:6px 2px 16px;}
-  .sub b{font-size:17px;font-weight:800;}
-  .sub span{font-size:12.5px;color:var(--soft);}
+  .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
+  .logo{font-size:15px;font-weight:800;letter-spacing:.5px;padding:7px 13px;display:flex;align-items:center;gap:6px;}
+  .logo .s{color:var(--green-dk);}
+  .ticons{display:flex;gap:9px;}
+  .ticons span{width:38px;height:34px;display:grid;place-items:center;font-size:16px;color:var(--ink2);}
 
-  /* 故事卡 */
-  .card{background:var(--card);border:1.5px solid var(--line);border-radius:20px;padding:16px 16px 12px;margin-bottom:14px;box-shadow:0 6px 18px rgba(120,130,100,.06);}
-  .chead{display:flex;align-items:center;gap:9px;margin-bottom:11px;}
+  .h1{font-size:25px;font-weight:800;letter-spacing:.5px;}
+  .h2{font-size:13px;color:var(--ink2);margin:1px 0 16px;}
+
+  .card{padding:13px 14px 10px;margin-bottom:13px;}
+  .chead{display:flex;align-items:center;gap:9px;margin-bottom:9px;}
   .chead.rev{flex-direction:row-reverse;}
-  .ava{width:38px;height:38px;border-radius:50%;background:var(--green-soft);border:1.5px solid var(--line);overflow:hidden;flex-shrink:0;display:grid;place-items:center;}
-  .ava img{width:118%;height:118%;object-fit:cover;margin-top:3px;}
-  .who{flex:1;font-weight:800;font-size:14.5px;}
+  .ava{width:40px;height:40px;border:2.5px solid var(--border);border-radius:7px;background:var(--tag);overflow:hidden;flex-shrink:0;}
+  .ava img{width:118%;height:118%;object-fit:cover;margin:2px 0 0 -8%;}
+  .who{flex:1;font-weight:800;font-size:15px;}
   .chead.rev .who{text-align:right;}
   .meta{display:flex;align-items:center;gap:8px;flex-shrink:0;}
-  .idx{font-size:12px;font-weight:800;color:var(--soft);}
-  .hearts{letter-spacing:1px;font-size:13px;color:var(--heart);}
-  .hearts b{color:var(--ink);}.hearts s{color:#d9ddcf;text-decoration:none;}
+  .hearts{font-size:13px;letter-spacing:1.5px;color:var(--heart);}
+  .hearts s{color:var(--heart-off);text-decoration:none;}
+  .idx{font-size:12.5px;font-weight:800;color:var(--ink2);}
 
-  .en{font-style:italic;color:var(--ink2);font-size:13px;margin:0 2px 9px;}
-  .jp{font-size:19px;line-height:2;color:var(--ink);font-weight:600;letter-spacing:.3px;margin:0 0 8px;}
-  .zh{display:inline-block;font-size:13px;color:var(--green-dk);background:var(--green-soft);border-radius:9px;padding:4px 10px;margin-bottom:10px;}
-  .cfoot{display:flex;align-items:center;justify-content:space-between;border-top:1px dashed var(--line);padding-top:9px;}
+  .en{font-style:italic;color:var(--ink2);font-size:13px;margin:0 1px 9px;}
+  .jp{font-size:18px;line-height:2;font-weight:600;letter-spacing:.3px;margin-bottom:8px;}
+  .zh{display:inline-block;font-size:12.5px;color:var(--green-dk);background:var(--tag);border:1.5px solid #d9dec0;border-radius:7px;padding:3px 9px;margin-bottom:10px;}
+  .cfoot{display:flex;align-items:center;justify-content:space-between;border-top:1.5px dashed #d6dabb;padding-top:8px;}
   .time{font-size:11.5px;color:var(--soft);}
-  .trash{color:var(--soft);font-size:15px;}
+  .fr{display:flex;align-items:center;gap:12px;color:var(--soft);font-size:15px;}
 
-  .reroll{text-align:center;margin:4px 0 16px;font-size:13px;color:var(--soft);}
-  .reroll a{color:var(--green-dk);font-weight:800;text-decoration:none;}
+  .reroll{display:flex;align-items:center;gap:9px;margin:2px 0 15px;}
+  .arrow{width:46px;height:38px;display:grid;place-items:center;font-size:18px;color:var(--ink);flex-shrink:0;}
+  .rmid{flex:1;text-align:center;padding:9px;font-weight:800;font-size:14px;color:var(--green-dk);}
+  .rmid .s{color:var(--green);}
 
-  /* 底部输入 */
-  .inbar{position:fixed;left:0;right:0;bottom:0;padding:10px 16px calc(12px + env(safe-area-inset-bottom));background:linear-gradient(to top,var(--bg) 70%,rgba(251,251,245,0));}
-  .inwrap{display:flex;align-items:center;gap:9px;background:var(--card);border:1.5px solid var(--line);border-radius:24px;padding:7px 8px 7px 16px;box-shadow:0 4px 14px rgba(120,130,100,.08);}
-  .inwrap input{flex:1;border:0;outline:0;font-size:14.5px;background:transparent;color:var(--ink);font-family:inherit;}
-  .inwrap input::placeholder{color:var(--soft);}
-  .magic{color:var(--green);font-size:18px;}
-  .send{width:38px;height:38px;border-radius:50%;background:var(--green);color:#fff;border:0;display:grid;place-items:center;font-size:17px;flex-shrink:0;box-shadow:0 3px 8px rgba(111,168,95,.4);cursor:pointer;}
+  .inbar{position:fixed;left:0;right:0;bottom:0;display:flex;gap:9px;align-items:center;
+    padding:10px 15px calc(12px + env(safe-area-inset-bottom));
+    background:linear-gradient(to top,var(--bg) 72%,rgba(211,225,185,0));}
+  .input{flex:1;height:42px;display:flex;align-items:center;padding:0 15px;color:var(--soft);font-size:14.5px;}
+  .iconbtn{width:42px;height:42px;display:grid;place-items:center;font-size:17px;flex-shrink:0;color:var(--ink);}
+  .iconbtn.go{background:var(--green);color:#fff;box-shadow:3px 3px 0 var(--green-dk);border-color:var(--green-dk);}
 </style>
 </head>
 <body>
   <div class="top">
-    <div class="brand"><span class="st">✦</span>STORY</div>
-    <div class="topicons"><span>⌁</span><span>≡</span><span>⚙</span></div>
-    <div class="stars"><i style="left:34%;top:2px;font-size:11px">✦</i><i style="left:52%;top:18px;font-size:9px">✧</i><i style="left:70%;top:0;font-size:13px">✦</i><i style="left:88%;top:22px;font-size:8px">✧</i><i style="left:24%;top:20px;font-size:8px">✧</i></div>
+    <div class="logo pix"><span class="s">★</span> STORY</div>
+    <div class="ticons"><span class="pix">⊟</span><span class="pix">🗑</span></div>
   </div>
-  <div class="sub"><b>Story Mode</b><span>2 cards · 69 words</span></div>
+  <div class="h1">Story Mode</div>
+  <div class="h2">2 cards · 89 words</div>
 
   <!-- 卡 1 -->
-  <div class="card">
+  <div class="card pix">
     <div class="chead">
       <div class="ava"><img src="assets/cat/avatar.png" alt="日狗"></div>
-      <div class="who">日狗</div>
-      <div class="meta"><span class="hearts"><b>♥</b><b>♥</b><s>♥</s></span><span class="idx">#1</span></div>
+      <div class="who">测试员</div>
+      <div class="meta"><span class="hearts">♥♥<s>♥</s></span><span class="idx">#1</span></div>
     </div>
-    <div class="en">if only I were in your eyes…</div>
+    <div class="en">If only I were in your eye …</div>
     <div class="jp"><ruby>君<rt>きみ</rt></ruby>の<ruby>瞳<rt>ひとみ</rt></ruby>に、<ruby>僕<rt>ぼく</rt></ruby>がいたらいいのに。</div>
     <div class="zh">要是我能映在你眼里，就好了</div>
-    <div class="cfoot"><span class="time">2026年5月19日 17:37</span><span class="trash">🗑</span></div>
+    <div class="cfoot"><span class="time">2026年5月19日 17:37</span><span class="fr"><span>···</span><span>🗑</span></span></div>
   </div>
 
-  <div class="reroll">✦ Latest · <a href="#">Re-roll</a></div>
+  <div class="reroll">
+    <div class="arrow pix">←</div>
+    <div class="rmid pix"><span class="s">✦</span> Latest · Re-roll</div>
+    <div class="arrow pix">→</div>
+  </div>
 
   <!-- 卡 2（镜像） -->
-  <div class="card">
+  <div class="card pix">
     <div class="chead rev">
       <div class="ava"><img src="assets/cat/avatar.png" alt="日狗"></div>
       <div class="who">小祁</div>
-      <div class="meta"><span class="idx">#2</span><span class="hearts"><b>♥</b><b>♥</b><s>♥</s></span></div>
+      <div class="meta"><span class="idx">#2</span><span class="hearts">♥♥<s>♥</s></span></div>
     </div>
     <div class="en">love, too humble 🌱</div>
     <div class="jp"><ruby>世界<rt>せかい</rt></ruby>はこんなに<ruby>広<rt>ひろ</rt></ruby>いのに、<ruby>何<rt>なに</rt></ruby>を<ruby>諦<rt>あきら</rt></ruby>めれば<ruby>楽<rt>らく</rt></ruby>になる？</div>
     <div class="zh">世界如此辽阔，放弃什么才会变轻松</div>
-    <div class="cfoot"><span class="time">2026年5月19日 22:15</span><span class="trash">🗑</span></div>
+    <div class="cfoot"><span class="time">2026年5月19日 22:15</span><span class="fr"><span>···</span><span>🗑</span></span></div>
   </div>
 
-  <div class="inbar"><div class="inwrap">
-    <input placeholder="write something…">
-    <span class="magic">✦</span>
-    <button class="send">✎</button>
-  </div></div>
+  <div class="inbar">
+    <div class="input pix">write something…</div>
+    <div class="iconbtn pix">✦</div>
+    <div class="iconbtn go pix">✎</div>
+  </div>
 </body>
 </html>
