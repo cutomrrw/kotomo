@@ -81,16 +81,17 @@ const EggSplatSVG = () => (
     <ellipse cx="90" cy="71" rx="11" ry="8" fill="#ffd97a" />
   </svg>
 );
-// 猫条(一组全对的奖励)
-const ChuruSVG = () => (
-  <svg viewBox="0 0 80 154" width="100%" height="100%" style={{ overflow: "visible" }}>
-    <path d="M28 8 L52 8 L52 22 L28 22 Z" fill="#dcd6c8" stroke="#2b2b2b" strokeWidth="3" strokeLinejoin="round" />
-    <path d="M28 16 L34 24 L40 16 L46 24 L52 16" fill="none" stroke="#2b2b2b" strokeWidth="2" />
-    <rect x="20" y="24" width="40" height="118" rx="12" fill="#fdf3e3" stroke="#2b2b2b" strokeWidth="3" />
-    <rect x="20" y="66" width="40" height="40" fill="#ff9fb2" /><rect x="20" y="66" width="40" height="40" fill="none" stroke="#2b2b2b" strokeWidth="3" />
-    <circle cx="40" cy="86" r="11" fill="#fff" stroke="#2b2b2b" strokeWidth="2" />
-    <path d="M35 86 q5 -7 10 0 q-5 7 -10 0 Z" fill="#ff9fb2" /><path d="M45 86 l5 -3 v6 Z" fill="#ff9fb2" />
-    <line x1="24" y1="126" x2="56" y2="126" stroke="#2b2b2b" strokeWidth="2" />
+// 小鱼(答对的奖励)
+const FishSVG = () => (
+  <svg viewBox="0 0 140 92" width="100%" height="100%" style={{ overflow: "visible" }}>
+    <path d="M120 46 L139 24 Q132 46 139 68 Z" fill="#7fc7e6" stroke="#2b2b2b" strokeWidth="4" strokeLinejoin="round" />
+    <path d="M58 18 Q70 2 86 16 Z" fill="#5fb3d6" stroke="#2b2b2b" strokeWidth="3.5" strokeLinejoin="round" />
+    <path d="M56 72 Q66 86 80 72 Z" fill="#5fb3d6" stroke="#2b2b2b" strokeWidth="3.5" strokeLinejoin="round" />
+    <path d="M18 46 Q34 16 76 18 Q112 20 122 46 Q112 72 76 74 Q34 76 18 46 Z" fill="#8fd0e8" stroke="#2b2b2b" strokeWidth="4" strokeLinejoin="round" />
+    <path d="M42 28 Q35 46 42 64" fill="none" stroke="#2b2b2b" strokeWidth="2.6" />
+    <ellipse cx="60" cy="54" rx="7" ry="4.5" fill="#ffb3c1" opacity="0.6" />
+    <circle cx="33" cy="42" r="7" fill="#fff" stroke="#2b2b2b" strokeWidth="2.6" />
+    <circle cx="32" cy="43" r="3.2" fill="#2b2b2b" />
   </svg>
 );
 // 扔东西覆盖层：egg 飞入→砸屏摊开；churu 抛起→奖励
@@ -102,7 +103,7 @@ function PetThrow({ kind, n }) {
     {kind === "egg"
       ? <><div className="egg-fly" data-a="egg-fly" style={S.eggFly}>🥚</div>
           <div className="egg-splat" data-a="egg-splat" style={S.eggSplat}><EggSplatSVG /></div></>
-      : <><div className="churu-fly" data-a="churu-fly" style={S.churuFly}><ChuruSVG /></div>
+      : <><div className="churu-fly" data-a="churu-fly" style={S.churuFly}><FishSVG /></div>
           <div className="churu-spark" data-a="churu-spark" style={{ ...S.churuSpark, left: "38%" }}>✨</div>
           <div className="churu-spark" data-a="churu-spark" style={{ ...S.churuSpark, right: "38%", left: "auto", animationDelay: ".15s" }}>💛</div></>}
   </div>);
@@ -1979,7 +1980,7 @@ const S = {
   throwWrap: { position: "fixed", inset: 0, zIndex: 70, pointerEvents: "none", overflow: "hidden" },
   eggFly: { position: "absolute", left: "calc(50% - 22px)", top: "42%", fontSize: 44, lineHeight: 1, filter: "drop-shadow(2px 3px 0 rgba(0,0,0,.25))" },
   eggSplat: { position: "absolute", left: "calc(50% - 110px)", top: "calc(42% - 70px)", width: 220, height: 180, filter: "drop-shadow(3px 4px 0 rgba(0,0,0,.18))" },
-  churuFly: { position: "absolute", left: "calc(50% - 30px)", top: "38%", width: 60, height: 116, filter: "drop-shadow(3px 4px 0 var(--pix-shadow))" },
+  churuFly: { position: "absolute", left: "calc(50% - 62px)", top: "40%", width: 124, height: 82, filter: "drop-shadow(3px 4px 0 var(--pix-shadow))" },
   churuSpark: { position: "absolute", top: "34%", fontSize: 28 },
   moodChip: { textAlign: "center", marginTop: 8, fontWeight: 800, fontSize: 13.5, color: "var(--ink-mid)", position: "relative", zIndex: 2 },
   segHint: { textAlign: "center", marginTop: 4, fontSize: 12, color: "var(--ink-mid)", position: "relative", zIndex: 2 },
