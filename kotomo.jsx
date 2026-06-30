@@ -137,6 +137,22 @@ const PET_LINES = {
   scorn: ["狗叫？", "请你吃大便", "不安です。"],
 };
 
+// ── 鱼干小铺：答对攒鱼(积分)，鱼买猫服饰(穿在日狗身上) ──
+const FISH_PER = 10; // 每答对 10 题得 1 🐟
+const SHOP_ITEMS = [
+  { id: "w_bow", icon: "🎀", name: "蝴蝶结", price: 3 },
+  { id: "w_scarf", icon: "🧣", name: "围巾", price: 5 },
+  { id: "w_cap", icon: "🧢", name: "棒球帽", price: 6 },
+  { id: "w_glasses", icon: "🕶️", name: "墨镜", price: 8 },
+  { id: "w_hat", icon: "🎩", name: "绅士帽", price: 10 },
+  { id: "w_ribbon", icon: "🎗️", name: "胸花", price: 7 },
+  { id: "w_party", icon: "🥳", name: "派对帽", price: 9 },
+  { id: "w_crown", icon: "👑", name: "皇冠", price: 18 },
+];
+const SHOP_BY_ID = Object.fromEntries(SHOP_ITEMS.map((x) => [x.id, x]));
+// 答对一题：攒鱼进度 +1，满 FISH_PER 折成 1 🐟
+function earnFish(s) { let prog = (s.fishProg || 0) + 1, fish = s.fish || 0; if (prog >= FISH_PER) { fish += Math.floor(prog / FISH_PER); prog = prog % FISH_PER; } return { ...s, fishProg: prog, fish }; }
+
 // ── 清脆利落的音效（解压感）──────────────────────────────
 const Sfx = (() => {
   let ctx = null;
@@ -676,6 +692,7 @@ function freshState() {
     pet: { mood: 75, lastSeenAt: now() },
     streak: { totalDays: 0, monthDays: 0, lastStudyDay: null, calendar: {} },
     settings: { sound: true, aiReal: false, energyMode: "normal" },
+    fish: 0, fishProg: 0, owned: [], wearing: null, // 鱼干小铺：鱼积分 / 进度 / 已购物品 / 当前穿戴
   };
 }
 
@@ -742,7 +759,10 @@ export default function App() {
     throwTimer.current = setTimeout(() => setPetThrow(null), kind === "egg" ? 2100 : 1900);
   }, []);
 
-  const play = useCallback((n) => { if (st.settings.sound && Sfx[n]) Sfx[n](); haptic(n); if (n === "correct") petReact("praise"); else if (n === "wrong") { petReact("scorn"); throwReact("egg"); } }, [st.settings.sound, petReact, throwReact]);
+  const play = useCallback((n) => { if (st.settings.sound && Sfx[n]) Sfx[n](); haptic(n); if (n === "correct") petReact("praise"); else if (n === "wrong") { petReact("scorn"); throwReact("egg"); } if (n === "correct" || n === "match") setSt((s) => earnFish(s)); }, [st.settings.sound, petReact, throwReact]);
+  // 鱼干小铺：买东西(扣鱼+入库，服装首件自动穿)/ 穿脱
+  const buyItem = (item) => setSt((s) => ((s.fish || 0) >= item.price && !(s.owned || []).includes(item.id)) ? { ...s, fish: s.fish - item.price, owned: [...(s.owned || []), item.id], wearing: s.wearing || item.id } : s);
+  const setWearing = (id) => setSt((s) => ({ ...s, wearing: s.wearing === id ? null : id }));
   const mastered = useMemo(() => countMastered(st.words), [st.words]);
   const seg = segOf(mastered);
   const decor = decorFor(mastered);
@@ -810,7 +830,7 @@ export default function App() {
   if (!st.onboarded) return <Onboarding onDone={(interests) => { play("happy"); patch((s) => ({ ...s, onboarded: true, interests, words: buildSeedWords(interests) })); }} play={play} />;
 
   const nav = (v) => { play("tap"); setView(v); };
-  const ctx = { st, play, petReact, throwReact, mastered, seg, decor, mood, nav, addWords, updateWord, delWord, delWords, restoreWord, appendWords, petLove, setSetting, finishReview, ownWordCount, reviewWrongOnly, setReviewWrongOnly, setView, expandTarget, setExpandTarget, amb };
+  const ctx = { st, play, petReact, throwReact, mastered, seg, decor, mood, nav, addWords, updateWord, delWord, delWords, restoreWord, appendWords, petLove, buyItem, setWearing, setSetting, finishReview, ownWordCount, reviewWrongOnly, setReviewWrongOnly, setView, expandTarget, setExpandTarget, amb };
 
   return (
     <div style={S.shell}>
@@ -830,6 +850,7 @@ export default function App() {
         {view === "library" && <Library ctx={ctx} />}
         {view === "center" && <ReviewCenter ctx={ctx} />}
         {view === "kana" && <KanaChart ctx={ctx} />}
+        {view === "shop" && <Shop ctx={ctx} />}
         {view === "settings" && <Settings ctx={ctx} />}
       </main>
     </div>
@@ -864,6 +885,7 @@ function TopBar({ st, seg, mastered, onSettings, play, setSetting }) {
       <div><div style={S.brandName}>ことも</div><div style={S.brandSub}>{seg.emoji} {seg.title}</div></div></div>
     <div style={S.stats}>
       <Stat icon="🔥" val={st.streak.totalDays} label="累计天" tone={C.honeyDk} />
+      <Stat icon="🐟" val={st.fish || 0} label="鱼" tone={C.grape} />
       <Stat icon="🌸" val={mastered} label="已掌握" tone={C.matchaDk} />
       <button style={{ ...S.aiToggle, background: aiReal ? C.matcha : "var(--ai-off)", color: aiReal ? "#fff" : C.inkSoft }} onClick={() => { setSetting("aiReal", !aiReal); play("pop"); }} title="AI：真Claude/模拟">{aiReal ? "AI真" : "AI拟"}</button>
       <button style={S.iconBtn} onClick={() => { setSetting("sound", !st.settings.sound); if (!st.settings.sound) Sfx.pop(); }}>{st.settings.sound ? "🔔" : "🔕"}</button>
@@ -907,7 +929,10 @@ function Home({ ctx }) {
       <div style={S.catWrap} className="pressable" onClick={() => { play("happy"); ctx.petLove(); }}>
         {decor.includes("cushion") && <div style={S.dCushion}>🛋️</div>}
         <div style={S.matCushion} />
-        <div style={{ ...S.cat, transform: "scale(" + catSize + ")" }}><Cat size={100} /></div>
+        <div style={{ ...S.cat, transform: "scale(" + catSize + ")" }}>
+          <Cat size={100} />
+          {st.wearing && SHOP_BY_ID[st.wearing] && <span style={S.catWear}>{SHOP_BY_ID[st.wearing].icon}</span>}
+        </div>
       </div>
       <div style={S.moodChip}>{seg.emoji} {seg.title} · 已掌握 {mastered} 词</div>
       {ns && <div style={S.segHint}>再掌握 {ns.min - mastered} 个 → {ns.emoji} {ns.title}</div>}
@@ -936,6 +961,12 @@ function Home({ ctx }) {
     <button className="pressable card" style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", padding: "13px 15px", marginBottom: 12, cursor: "pointer", fontFamily: "inherit" }} onClick={() => nav("kana")}>
       <span style={{ fontSize: 24, width: 44, height: 44, borderRadius: 12, background: "var(--window)", display: "grid", placeItems: "center", flexShrink: 0 }}>🔤</span>
       <div style={{ flex: 1, textAlign: "left" }}><div style={{ fontWeight: 800, fontSize: 16, color: C.ink }}>五十音图</div><div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 2 }}>假名表 · 认读练习 — 零基础先练这个</div></div>
+      <span style={{ fontSize: 20, color: "var(--ink-soft)" }}>›</span>
+    </button>
+
+    <button className="pressable card" style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", padding: "13px 15px", marginBottom: 12, cursor: "pointer", fontFamily: "inherit" }} onClick={() => nav("shop")}>
+      <span style={{ fontSize: 24, width: 44, height: 44, borderRadius: 12, background: "var(--window)", display: "grid", placeItems: "center", flexShrink: 0 }}>🐟</span>
+      <div style={{ flex: 1, textAlign: "left" }}><div style={{ fontWeight: 800, fontSize: 16, color: C.ink }}>鱼干小铺 · 给日狗换装</div><div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 2 }}>你有 <b style={{ color: C.grape }}>{st.fish || 0} 🐟</b> · 再答对 {FISH_PER - (st.fishProg || 0)} 题 +1🐟</div></div>
       <span style={{ fontSize: 20, color: "var(--ink-soft)" }}>›</span>
     </button>
 
@@ -1880,6 +1911,30 @@ function KanaChart({ ctx }) {
   </div>);
 }
 
+// ── 鱼干小铺：答对攒的鱼 → 买猫服饰，穿在日狗身上 ──
+function Shop({ ctx }) {
+  const { st, play, buyItem, setWearing } = ctx;
+  const fish = st.fish || 0, owned = st.owned || [], wearing = st.wearing;
+  return (<div className="fade-in"><BackRow ctx={ctx} title="🐟 鱼干小铺" />
+    <div style={S.shopHead}>
+      <div style={{ fontWeight: 800, fontSize: 16, color: C.ink }}>你有 <span style={{ color: C.grape, fontSize: 24 }}>{fish}</span> 🐟</div>
+      <div style={{ fontSize: 12.5, color: "var(--ink-soft)", marginTop: 3 }}>再答对 <b style={{ color: C.honeyDk }}>{FISH_PER - (st.fishProg || 0)}</b> 题 +1🐟（每答对 10 题换 1 条鱼）</div>
+    </div>
+    <div style={{ fontSize: 12.5, color: "var(--ink-soft)", textAlign: "center", margin: "0 0 12px" }}>买完点「穿上」戴到日狗身上，点「脱下」取下 · 一次戴一件 🐱</div>
+    <div style={S.shopGrid}>{SHOP_ITEMS.map((it) => {
+      const have = owned.includes(it.id), worn = wearing === it.id, afford = fish >= it.price;
+      return (<div key={it.id} className="card" style={{ ...S.shopItem, ...(worn ? S.shopItemWorn : {}) }}>
+        {worn && <div style={S.shopWornTag}>穿着</div>}
+        <div style={{ fontSize: 40, lineHeight: 1, margin: "2px 0 6px" }}>{it.icon}</div>
+        <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 8 }}>{it.name}</div>
+        {!have
+          ? <button className="pressable" disabled={!afford} style={{ ...S.shopBuy, opacity: afford ? 1 : 0.5 }} onClick={() => { if (afford) { buyItem(it); play("coin"); } }}>{it.price} 🐟</button>
+          : <button className="pressable" style={{ ...S.shopBuy, background: worn ? C.grape : C.matcha, color: "#fff", borderColor: "var(--pix-border)" }} onClick={() => { setWearing(it.id); play("pop"); }}>{worn ? "脱下" : "穿上"}</button>}
+      </div>);
+    })}</div>
+  </div>);
+}
+
 function Settings({ ctx }) {
   const { st, play, setSetting } = ctx;
   const [aiKey, setAiKey] = useState(""); const [keyMsg, setKeyMsg] = useState("");
@@ -1982,6 +2037,13 @@ const S = {
   eggSplat: { position: "absolute", left: "calc(50% - 110px)", top: "calc(42% - 70px)", width: 220, height: 180, filter: "drop-shadow(3px 4px 0 rgba(0,0,0,.18))" },
   churuFly: { position: "absolute", left: "calc(50% - 62px)", top: "40%", width: 124, height: 82, filter: "drop-shadow(3px 4px 0 var(--pix-shadow))" },
   churuSpark: { position: "absolute", top: "34%", fontSize: 28 },
+  catWear: { position: "absolute", top: -6, left: "50%", transform: "translateX(-50%)", fontSize: 30, zIndex: 3, filter: "drop-shadow(1px 2px 0 rgba(0,0,0,.22))", pointerEvents: "none" },
+  shopHead: { textAlign: "center", padding: "12px 14px", marginBottom: 10, background: "var(--surface)", border: "3px solid var(--pix-border)", boxShadow: "4px 4px 0 var(--pix-shadow)" },
+  shopGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 11 },
+  shopItem: { position: "relative", display: "flex", flexDirection: "column", alignItems: "center", padding: "14px 8px 12px", textAlign: "center" },
+  shopItemWorn: { borderColor: C.grape, background: "var(--surface-sel)" },
+  shopWornTag: { position: "absolute", top: 6, right: 6, fontSize: 10, fontWeight: 800, color: "#fff", background: C.grape, padding: "1px 6px", borderRadius: 8 },
+  shopBuy: { width: "100%", padding: "8px 6px", fontWeight: 800, fontSize: 14, fontFamily: "inherit", border: "3px solid var(--pix-border)", background: "var(--warn-bg)", color: C.honeyDk, boxShadow: "3px 3px 0 var(--pix-shadow)", cursor: "pointer" },
   moodChip: { textAlign: "center", marginTop: 8, fontWeight: 800, fontSize: 13.5, color: "var(--ink-mid)", position: "relative", zIndex: 2 },
   segHint: { textAlign: "center", marginTop: 4, fontSize: 12, color: "var(--ink-mid)", position: "relative", zIndex: 2 },
 
