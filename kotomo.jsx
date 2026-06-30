@@ -756,7 +756,7 @@ export default function App() {
     throwN.current += 1;
     setPetThrow({ kind, n: throwN.current });
     if (throwTimer.current) clearTimeout(throwTimer.current);
-    throwTimer.current = setTimeout(() => setPetThrow(null), kind === "egg" ? 2100 : 1900);
+    throwTimer.current = setTimeout(() => setPetThrow(null), 1050); // 砸出/抛出后快速消失，不挡词
   }, []);
 
   const play = useCallback((n) => { if (st.settings.sound && Sfx[n]) Sfx[n](); haptic(n); if (n === "correct") petReact("praise"); else if (n === "wrong") { petReact("scorn"); throwReact("egg"); } if (n === "correct" || n === "match") setSt((s) => earnFish(s)); }, [st.settings.sound, petReact, throwReact]);
@@ -2212,12 +2212,12 @@ button{ border:3px solid var(--pix-border) !important; box-shadow:4px 4px 0 var(
 .pet-pop{ animation:petpop .28s cubic-bezier(.2,1.35,.5,1) both; }\
 @keyframes eggFly{ 0%{transform:translate(40vw,46vh) scale(.5) rotate(0deg);opacity:0} 14%{opacity:1} 88%{transform:translate(0,0) scale(1.05) rotate(500deg);opacity:1} 100%{transform:translate(-1vw,-1vh) scale(.35) rotate(560deg);opacity:0} }\
 .egg-fly{ animation:eggFly .42s cubic-bezier(.45,.05,.7,.6) forwards; }\
-@keyframes eggSplat{ 0%{transform:scale(0) rotate(-10deg);opacity:0} 8%{transform:scale(1.18) rotate(-4deg);opacity:1} 16%{transform:scale(.94)} 24%{transform:scale(1.04)} 32%{transform:scale(1)} 72%{transform:scale(1);opacity:1} 100%{transform:scale(1);opacity:0} }\
-.egg-splat{ animation:eggSplat 1.7s ease-out .36s both; transform-origin:center; }\
-@keyframes churuFly{ 0%{transform:translate(0,52vh) rotate(-22deg) scale(.5);opacity:0} 18%{opacity:1} 48%{transform:translate(0,-5vh) rotate(12deg) scale(1.12)} 64%{transform:translate(0,0) rotate(-5deg) scale(1)} 80%{transform:translate(0,0) rotate(0deg) scale(1);opacity:1} 100%{transform:translate(0,-7vh) scale(.95);opacity:0} }\
-.churu-fly{ animation:churuFly 1.6s cubic-bezier(.3,1.1,.5,1) forwards; }\
-@keyframes churuSpark{ 0%{transform:scale(0) rotate(0);opacity:0} 40%{transform:scale(1.2) rotate(20deg);opacity:1} 70%{transform:scale(1) rotate(-10deg);opacity:1} 100%{transform:scale(.6) translateY(-20px);opacity:0} }\
-.churu-spark{ animation:churuSpark 1.3s ease-out .4s both; }\
+@keyframes eggSplat{ 0%{transform:scale(0) rotate(-10deg);opacity:0} 20%{transform:scale(1.2) rotate(-3deg);opacity:1} 40%{transform:scale(1)} 55%{transform:scale(1);opacity:.95} 100%{transform:scale(1.08);opacity:0} }\
+.egg-splat{ animation:eggSplat .66s ease-out .34s both; transform-origin:center; }\
+@keyframes churuFly{ 0%{transform:translate(0,46vh) rotate(-20deg) scale(.5);opacity:0} 16%{opacity:1} 42%{transform:translate(0,-6vh) rotate(10deg) scale(1.12);opacity:1} 66%{opacity:1} 100%{transform:translate(0,-36vh) rotate(-6deg) scale(.8);opacity:0} }\
+.churu-fly{ animation:churuFly .95s cubic-bezier(.3,.9,.5,1) forwards; }\
+@keyframes churuSpark{ 0%{transform:scale(0) rotate(0);opacity:0} 35%{transform:scale(1.2) rotate(16deg);opacity:1} 60%{transform:scale(1) rotate(-8deg);opacity:1} 100%{transform:scale(.6) translateY(-18px);opacity:0} }\
+.churu-spark{ animation:churuSpark .8s ease-out .25s both; }\
 .cloud { position:absolute; font-size:36px; opacity:.4; animation:floatX 30s linear infinite; }\
 .c1 { top:5%; left:-12%; } .c2 { top:15%; left:-32%; animation-delay:-15s; font-size:26px; }\
 .pressable { transition:transform .07s; } .pressable:active { transform:translateY(2px) scale(.98); } .pressable:disabled { cursor:not-allowed; opacity:.55; }\
