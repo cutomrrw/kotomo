@@ -1979,7 +1979,7 @@ const Switch = ({ on, label, onClick }) => (<button className="pressable" style=
 const BackRow = ({ ctx, title, onBack }) => (<div style={S.backRow}><button className="pressable" style={S.backBtn} onClick={() => { ctx.play("tap"); onBack ? onBack() : ctx.setView("home"); }}>← 返回</button><h2 style={S.pageTitle}>{title}</h2></div>);
 
 const S = {
-  shell: { minHeight: "100vh", background: "linear-gradient(180deg,var(--shell-top) 0%," + C.cream + " 45%)", color: C.ink, fontFamily: "'Zen Maru Gothic','PingFang SC','Microsoft YaHei',sans-serif", position: "relative", overflow: "hidden" },
+  shell: { minHeight: "100vh", background: "radial-gradient(var(--dot) 2.4px, transparent 2.4px), linear-gradient(180deg,var(--shell-top) 0%," + C.cream + " 45%)", backgroundSize: "16px 16px, 100% 100%", color: C.ink, fontFamily: "'Zen Maru Gothic','PingFang SC','Microsoft YaHei',sans-serif", position: "relative", overflow: "hidden" },
   bg: { position: "fixed", inset: 0, zIndex: 0, overflow: "hidden", pointerEvents: "none" },
   main: { position: "relative", zIndex: 1, maxWidth: 600, margin: "0 auto", padding: "8px calc(16px + env(safe-area-inset-right)) calc(60px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left))" },
   top: { position: "relative", zIndex: 2, maxWidth: 600, margin: "0 auto", padding: "calc(14px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) 6px calc(16px + env(safe-area-inset-left))", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 },
@@ -2157,42 +2157,42 @@ const CSS = "\
 @import url('https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&display=swap');\
 @import url('https://fonts.googleapis.com/css2?family=DotGothic16&display=swap');\
 :root{\
-/* 像素基底（常驻）·默认=白天中性 */\
---shell-top:#f3e7d6;--surface:#fffdf5;--surface-sel:#fff3c4;--surface2:#e9dcc4;--card-edge:#2b2b2b;--knob:#fffdf5;\
---honey:#f5a623;--honey-dk:#b87410;--matcha:#4caf50;--matcha-dk:#2f8a34;--wood:#8a5a3a;\
---blush:#e23b3b;--blush-dk:#a02020;--sky:#3a7bd5;--grape:#9b59b6;--grape-dk:#6a3d8a;\
---ink:#2b2b2b;--ink-soft:#6a6a6a;--ink-mid:#4a4a4a;\
---line:#2b2b2b;--line-soft:#2b2b2b;--bevel:#2b2b2b;--track:#cdbfa6;--pill-bg:#d7f0d0;\
---danger-bg:#ffd9d9;--danger-fg:#c0392b;--danger-line:#2b2b2b;--danger-bevel:#2b2b2b;--ok-bg:#d7f0d0;--warn-bg:#fff3c4;\
---room-bevel:#2b2b2b;--window:#3a7bd5;--cushion:#8a5a3a;--ai-off:#cdbfa6;--switch-off:#9a9a9a;\
---pix-border:#2b2b2b;--pix-shadow:#2b2b2b;\
---cream:#f3e7d6;--room1:#bcd4ef;--room3:#a8c8ea;\
+/* 绿像素基底（常驻）·默认=白天 */\
+--shell-top:#c6d8a8;--surface:#f4f0df;--surface-sel:#e8eccb;--surface2:#e6e2cd;--card-edge:#5d6c3d;--knob:#f4f0df;\
+--honey:#e3a93e;--honey-dk:#9c6f1c;--matcha:#7e9a4c;--matcha-dk:#5f7536;--wood:#7a6a44;\
+--blush:#cf5b4b;--blush-dk:#9a3a2c;--sky:#5a8fb0;--grape:#9b7ab0;--grape-dk:#6f5288;\
+--ink:#3b4030;--ink-soft:#767b5e;--ink-mid:#565b40;\
+--line:#5d6c3d;--line-soft:#5d6c3d;--bevel:#5d6c3d;--track:#c2c8a6;--pill-bg:#e0e8c4;\
+--danger-bg:#f1d8cd;--danger-fg:#b5432f;--danger-line:#5d6c3d;--danger-bevel:#5d6c3d;--ok-bg:#e0e8c4;--warn-bg:#f2e9c2;\
+--room-bevel:#5d6c3d;--window:#6f8a4e;--cushion:#7a6a44;--ai-off:#c2c8a6;--switch-off:#9aa07c;\
+--pix-border:#5d6c3d;--pix-shadow:#5d6c3d;--dot:rgba(93,108,61,.13);\
+--cream:#d3e1b9;--room1:#cfe0b3;--room3:#bcd29c;\
 }\
 /* 夜晚：暗像素（压暗、文字转亮、描边转亮） */\
 [data-tod=night]{\
---shell-top:#1a1832;--surface:#2b2746;--surface-sel:#3a3460;--surface2:#241f3c;--card-edge:#6a6390;--knob:#efeaff;\
---honey:#ffc24d;--honey-dk:#c98a2a;--matcha:#6dd06f;--matcha-dk:#4aa84c;--wood:#b8a0d0;\
---blush:#ff6b6b;--blush-dk:#c04848;--sky:#6aa0ff;--grape:#c78fe0;--grape-dk:#9a6fc0;\
---ink:#f0ecff;--ink-soft:#b8b0d8;--ink-mid:#d0c8ec;\
---line:#6a6390;--line-soft:#4a4470;--bevel:rgba(0,0,0,.5);--track:#3a3460;--pill-bg:#234034;\
---danger-bg:#4a2532;--danger-fg:#ff9db0;--danger-line:#6a6390;--danger-bevel:#000;--ok-bg:#234034;--warn-bg:#3d3320;\
---cushion:#3a3460;--ai-off:#3a3460;--switch-off:#5a5478;--window:#3a4a88;--room-bevel:#000;\
---pix-border:#6a6390;--pix-shadow:rgba(0,0,0,.6);\
+--shell-top:#1e2417;--surface:#2c3322;--surface-sel:#3a4430;--surface2:#262c1c;--card-edge:#6f7d52;--knob:#e8ecd6;\
+--honey:#e0b85a;--honey-dk:#b08a3a;--matcha:#9ab86a;--matcha-dk:#6f8a44;--wood:#b0a878;\
+--blush:#e07a68;--blush-dk:#b0503e;--sky:#7aa0b8;--grape:#b0a0c8;--grape-dk:#8878a0;\
+--ink:#eef0dc;--ink-soft:#b8bca0;--ink-mid:#d0d4b8;\
+--line:#6f7d52;--line-soft:#4f5a38;--bevel:rgba(0,0,0,.5);--track:#3a4430;--pill-bg:#2c3a26;\
+--danger-bg:#4a2c26;--danger-fg:#f0a090;--danger-line:#6f7d52;--danger-bevel:#000;--ok-bg:#2c3a26;--warn-bg:#3d3a20;\
+--cushion:#3a4430;--ai-off:#3a4430;--switch-off:#5a6048;--window:#4a5a38;--room-bevel:#000;\
+--pix-border:#6f7d52;--pix-shadow:rgba(0,0,0,.6);--dot:rgba(255,255,255,.06);\
 }\
 /* 季节 × 昼夜：页面底 + 猫屋天空 */\
-[data-tod=day][data-season=spring]{--cream:#f8eef1;--room1:#d6e9ff;--room3:#ffe1ee;}\
-[data-tod=day][data-season=summer]{--cream:#eef7ee;--room1:#a8d8ff;--room3:#dff4ff;}\
-[data-tod=day][data-season=autumn]{--cream:#f7ecdc;--room1:#ffe2b0;--room3:#ffcfa0;}\
-[data-tod=day][data-season=winter]{--cream:#eef3f8;--room1:#dcebf7;--room3:#eef4fb;}\
-[data-tod=night][data-season=spring]{--cream:#211a38;--room1:#2c2550;--room3:#1a1838;}\
-[data-tod=night][data-season=summer]{--cream:#161a36;--room1:#16224a;--room3:#0e1838;}\
-[data-tod=night][data-season=autumn]{--cream:#241a2c;--room1:#3a2540;--room3:#221428;}\
-[data-tod=night][data-season=winter]{--cream:#141c34;--room1:#1a2848;--room3:#101e38;}\
+[data-tod=day][data-season=spring]{--cream:#dde6c2;--room1:#d6e6c2;--room3:#ecdcc8;}\
+[data-tod=day][data-season=summer]{--cream:#d3e1b9;--room1:#c8e0a8;--room3:#dceec0;}\
+[data-tod=day][data-season=autumn]{--cream:#e6dcb2;--room1:#e4d49c;--room3:#d8c68c;}\
+[data-tod=day][data-season=winter]{--cream:#dde4cd;--room1:#d2e0c8;--room3:#e2e6d6;}\
+[data-tod=night][data-season=spring]{--cream:#1f2718;--room1:#2a3420;--room3:#1c2416;}\
+[data-tod=night][data-season=summer]{--cream:#1a2414;--room1:#22301a;--room3:#142010;}\
+[data-tod=night][data-season=autumn]{--cream:#262414;--room1:#34301a;--room3:#221e10;}\
+[data-tod=night][data-season=winter]{--cream:#1c2418;--room1:#243020;--room3:#161e14;}\
 * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; border-radius:0 !important; font-family:'DotGothic16','PingFang SC','Microsoft YaHei',monospace !important; }\
 body { margin: 0; background: var(--cream); transition: background .6s ease; }\
-.card { background:var(--surface); border:3px solid var(--pix-border); box-shadow:4px 4px 0 var(--pix-shadow); }\
-button{ border:3px solid var(--pix-border) !important; box-shadow:4px 4px 0 var(--pix-shadow) !important; }\
-.pressable:active{ transform:translate(2px,2px) !important; box-shadow:1px 1px 0 var(--pix-shadow) !important; }\
+.card { background:var(--surface); border:4px solid var(--pix-border); box-shadow:5px 5px 0 var(--pix-shadow); }\
+button{ border:4px solid var(--pix-border) !important; box-shadow:5px 5px 0 var(--pix-shadow) !important; }\
+.pressable:active{ transform:translate(2px,2px) !important; box-shadow:2px 2px 0 var(--pix-shadow) !important; }\
 @keyframes fall{ 0%{transform:translateY(-12px) rotate(0deg);opacity:.9} 100%{transform:translateY(260px) rotate(160deg);opacity:.35} }\
 @keyframes petpop{ 0%{transform:translateY(16px) scale(.7);opacity:0} 55%{transform:translateY(-3px) scale(1.06)} 100%{transform:translateY(0) scale(1);opacity:1} }\
 .pet-pop{ animation:petpop .28s cubic-bezier(.2,1.35,.5,1) both; }\
