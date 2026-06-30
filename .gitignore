@@ -5,6 +5,7 @@
 !kotomo.jsx
 !haptic-test.html
 !voice-test.html
+!story-mode.html
 !.gitignore
 # 准确性引擎：JMdict 常用词词典（自托管，供 GitHub Pages 离线核实读音/写法）
 !dict/

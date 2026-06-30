@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ことも · Story Mode（UI 还原）</title>
+<style>
+  :root{
+    --bg:#fbfbf5; --card:#ffffff; --line:#ecefe4; --ink:#3c3f37; --ink2:#6e7366;
+    --soft:#a3a896; --green:#86ad72; --green-dk:#5f8a4e; --green-soft:#eef4e7; --heart:#4a4d43;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0}
+  body{font-family:-apple-system,"PingFang SC",system-ui,sans-serif;background:var(--bg);color:var(--ink);padding:14px 16px 92px;line-height:1.5;}
+  ruby rt{font-size:.5em;color:var(--soft);font-weight:500;}
+
+  /* 顶部 */
+  .top{display:flex;align-items:center;justify-content:space-between;position:relative;padding:6px 2px 2px;}
+  .brand{font-size:22px;font-weight:800;letter-spacing:1px;display:flex;align-items:center;gap:7px;}
+  .brand .st{color:var(--green);font-size:19px;}
+  .topicons{display:flex;gap:14px;color:var(--soft);font-size:18px;}
+  .stars{position:absolute;inset:0;pointer-events:none;}
+  .stars i{position:absolute;color:var(--green);opacity:.5;font-style:normal;}
+  .sub{display:flex;align-items:baseline;gap:9px;margin:6px 2px 16px;}
+  .sub b{font-size:17px;font-weight:800;}
+  .sub span{font-size:12.5px;color:var(--soft);}
+
+  /* 故事卡 */
+  .card{background:var(--card);border:1.5px solid var(--line);border-radius:20px;padding:16px 16px 12px;margin-bottom:14px;box-shadow:0 6px 18px rgba(120,130,100,.06);}
+  .chead{display:flex;align-items:center;gap:9px;margin-bottom:11px;}
+  .chead.rev{flex-direction:row-reverse;}
+  .ava{width:38px;height:38px;border-radius:50%;background:var(--green-soft);border:1.5px solid var(--line);overflow:hidden;flex-shrink:0;display:grid;place-items:center;}
+  .ava img{width:118%;height:118%;object-fit:cover;margin-top:3px;}
+  .who{flex:1;font-weight:800;font-size:14.5px;}
+  .chead.rev .who{text-align:right;}
+  .meta{display:flex;align-items:center;gap:8px;flex-shrink:0;}
+  .idx{font-size:12px;font-weight:800;color:var(--soft);}
+  .hearts{letter-spacing:1px;font-size:13px;color:var(--heart);}
+  .hearts b{color:var(--ink);}.hearts s{color:#d9ddcf;text-decoration:none;}
+
+  .en{font-style:italic;color:var(--ink2);font-size:13px;margin:0 2px 9px;}
+  .jp{font-size:19px;line-height:2;color:var(--ink);font-weight:600;letter-spacing:.3px;margin:0 0 8px;}
+  .zh{display:inline-block;font-size:13px;color:var(--green-dk);background:var(--green-soft);border-radius:9px;padding:4px 10px;margin-bottom:10px;}
+  .cfoot{display:flex;align-items:center;justify-content:space-between;border-top:1px dashed var(--line);padding-top:9px;}
+  .time{font-size:11.5px;color:var(--soft);}
+  .trash{color:var(--soft);font-size:15px;}
+
+  .reroll{text-align:center;margin:4px 0 16px;font-size:13px;color:var(--soft);}
+  .reroll a{color:var(--green-dk);font-weight:800;text-decoration:none;}
+
+  /* 底部输入 */
+  .inbar{position:fixed;left:0;right:0;bottom:0;padding:10px 16px calc(12px + env(safe-area-inset-bottom));background:linear-gradient(to top,var(--bg) 70%,rgba(251,251,245,0));}
+  .inwrap{display:flex;align-items:center;gap:9px;background:var(--card);border:1.5px solid var(--line);border-radius:24px;padding:7px 8px 7px 16px;box-shadow:0 4px 14px rgba(120,130,100,.08);}
+  .inwrap input{flex:1;border:0;outline:0;font-size:14.5px;background:transparent;color:var(--ink);font-family:inherit;}
+  .inwrap input::placeholder{color:var(--soft);}
+  .magic{color:var(--green);font-size:18px;}
+  .send{width:38px;height:38px;border-radius:50%;background:var(--green);color:#fff;border:0;display:grid;place-items:center;font-size:17px;flex-shrink:0;box-shadow:0 3px 8px rgba(111,168,95,.4);cursor:pointer;}
+</style>
+</head>
+<body>
+  <div class="top">
+    <div class="brand"><span class="st">✦</span>STORY</div>
+    <div class="topicons"><span>⌁</span><span>≡</span><span>⚙</span></div>
+    <div class="stars"><i style="left:34%;top:2px;font-size:11px">✦</i><i style="left:52%;top:18px;font-size:9px">✧</i><i style="left:70%;top:0;font-size:13px">✦</i><i style="left:88%;top:22px;font-size:8px">✧</i><i style="left:24%;top:20px;font-size:8px">✧</i></div>
+  </div>
+  <div class="sub"><b>Story Mode</b><span>2 cards · 69 words</span></div>
+
+  <!-- 卡 1 -->
+  <div class="card">
+    <div class="chead">
+      <div class="ava"><img src="assets/cat/avatar.png" alt="日狗"></div>
+      <div class="who">日狗</div>
+      <div class="meta"><span class="hearts"><b>♥</b><b>♥</b><s>♥</s></span><span class="idx">#1</span></div>
+    </div>
+    <div class="en">if only I were in your eyes…</div>
+    <div class="jp"><ruby>君<rt>きみ</rt></ruby>の<ruby>瞳<rt>ひとみ</rt></ruby>に、<ruby>僕<rt>ぼく</rt></ruby>がいたらいいのに。</div>
+    <div class="zh">要是我能映在你眼里，就好了</div>
+    <div class="cfoot"><span class="time">2026年5月19日 17:37</span><span class="trash">🗑</span></div>
+  </div>
+
+  <div class="reroll">✦ Latest · <a href="#">Re-roll</a></div>
+
+  <!-- 卡 2（镜像） -->
+  <div class="card">
+    <div class="chead rev">
+      <div class="ava"><img src="assets/cat/avatar.png" alt="日狗"></div>
+      <div class="who">小祁</div>
+      <div class="meta"><span class="idx">#2</span><span class="hearts"><b>♥</b><b>♥</b><s>♥</s></span></div>
+    </div>
+    <div class="en">love, too humble 🌱</div>
+    <div class="jp"><ruby>世界<rt>せかい</rt></ruby>はこんなに<ruby>広<rt>ひろ</rt></ruby>いのに、<ruby>何<rt>なに</rt></ruby>を<ruby>諦<rt>あきら</rt></ruby>めれば<ruby>楽<rt>らく</rt></ruby>になる？</div>
+    <div class="zh">世界如此辽阔，放弃什么才会变轻松</div>
+    <div class="cfoot"><span class="time">2026年5月19日 22:15</span><span class="trash">🗑</span></div>
+  </div>
+
+  <div class="inbar"><div class="inwrap">
+    <input placeholder="write something…">
+    <span class="magic">✦</span>
+    <button class="send">✎</button>
+  </div></div>
+</body>
+</html>
