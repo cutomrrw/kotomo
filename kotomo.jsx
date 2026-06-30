@@ -182,6 +182,8 @@ function pickJaVoice() {
 }
 try { if (typeof speechSynthesis !== "undefined") { _jaVoice = pickJaVoice(); speechSynthesis.onvoiceschanged = () => { _jaVoice = pickJaVoice(); }; } } catch {}
 const systemSpeak = (t) => { try { const u = new SpeechSynthesisUtterance(t); u.lang = "ja-JP"; if (!_jaVoice) _jaVoice = pickJaVoice(); if (_jaVoice) u.voice = _jaVoice; u.rate = 0.95; u.pitch = 1.0; speechSynthesis.speak(u); } catch {} };
+// 单个假名发音：用系统声(清晰、即时、离线)。VOICEVOX 角色声读单音节会很怪、且联网有延迟，故不走它
+const speakKana = (k) => { try { speechSynthesis.cancel(); } catch {} const u = (() => { try { const x = new SpeechSynthesisUtterance(k); x.lang = "ja-JP"; if (!_jaVoice) _jaVoice = pickJaVoice(); if (_jaVoice) x.voice = _jaVoice; x.rate = 0.8; x.pitch = 1.05; return x; } catch { return null; } })(); if (u) { try { speechSynthesis.speak(u); } catch {} } };
 
 const _voiceCache = new Map(); // text -> AudioBuffer(已就绪) | Promise<AudioBuffer>(加载中)
 let _voiceSrc = null;
@@ -1828,7 +1830,7 @@ function KanaTable({ idx, onTap }) {
     <div style={{ ...S.setNote, marginTop: 8 }}>点任意假名听发音 🔊</div>
   </div>);
 }
-function KanaDrill({ idx, play }) {
+function KanaDrill({ idx, play, throwReact }) {
   const [q, setQ] = useState(() => kanaQ(idx));
   const [picked, setPicked] = useState(null);
   const [score, setScore] = useState(0), [total, setTotal] = useState(0), [streak, setStreak] = useState(0);
@@ -1836,14 +1838,16 @@ function KanaDrill({ idx, play }) {
   const pick = (opt) => {
     if (picked) return; setPicked(opt); setTotal((t) => t + 1);
     const ok = opt === q.ans[2];
-    if (ok) { play("coin"); setScore((s) => s + 1); setStreak((s) => s + 1); } else { play("pop"); setStreak(0); }
-    setTimeout(() => { setPicked(null); setQ(kanaQ(idx)); }, ok ? 650 : 1300);
+    speakKana(q.ans[idx]); // 答完读出这个假名，建立 符号↔读音 联系
+    if (ok) { play("correct"); if (throwReact) throwReact("churu"); setScore((s) => s + 1); setStreak((s) => s + 1); } // 答对→猫夸+送猫条
+    else { play("wrong"); setStreak(0); } // 答错→play("wrong") 自动触发 猫骂+扔鸡蛋
+    setTimeout(() => { setPicked(null); setQ(kanaQ(idx)); }, ok ? 750 : 1400);
   };
   return (<div className="fade-in">
     <div style={{ textAlign: "center", marginBottom: 12, fontSize: 13, color: "var(--ink-mid)", fontWeight: 800 }}>得分 {score}/{total} · 连对 {streak} 🔥</div>
-    <div className="card pop-in" key={q.ans[idx] + total} style={{ ...S.bigCard, padding: "34px 20px" }}>
+    <div className="card pop-in" key={q.ans[idx] + total} style={{ ...S.bigCard, padding: "34px 20px", cursor: picked ? "pointer" : "default" }} onClick={() => { if (picked) speakKana(q.ans[idx]); }}>
       <div style={{ fontSize: 68, fontWeight: 800, lineHeight: 1 }}>{q.ans[idx]}</div>
-      <div style={{ fontSize: 13, color: "var(--ink-soft)", marginTop: 8 }}>这个假名读什么？</div>
+      <div style={{ fontSize: 13, color: "var(--ink-soft)", marginTop: 8 }}>{picked ? "🔊 " + q.ans[2] + " · 点卡片再听一次" : "这个假名读什么？"}</div>
     </div>
     <div style={{ ...S.optGrid, marginTop: 14 }}>{q.options.map((opt, i) => {
       let s2 = { ...S.opt };
@@ -1866,7 +1870,7 @@ function KanaChart({ ctx }) {
       <button className="pressable" style={{ ...S.seg, ...(mode === "chart" ? S.segOn : {}) }} onClick={() => { setMode("chart"); play("tap"); }}>📋 假名表</button>
       <button className="pressable" style={{ ...S.seg, ...(mode === "drill" ? S.segOn : {}) }} onClick={() => { setMode("drill"); play("tap"); }}>🎯 认读练习</button>
     </div>
-    {mode === "chart" ? <KanaTable idx={idx} onTap={(c) => { speakJa(c[idx]); play("tap"); }} /> : <KanaDrill idx={idx} play={play} />}
+    {mode === "chart" ? <KanaTable idx={idx} onTap={(c) => { speakKana(c[idx]); }} /> : <KanaDrill idx={idx} play={play} throwReact={ctx.throwReact} />}
   </div>);
 }
 
