@@ -94,20 +94,28 @@ const ChuruSVG = () => (
   </svg>
 );
 // 扔东西覆盖层：egg 飞入→砸屏摊开；churu 抛起→奖励
-function PetThrow({ kind }) {
-  if (kind === "egg") return (
-    <div style={S.throwWrap}>
-      <div className="egg-fly" style={S.eggFly}>🥚</div>
-      <div className="egg-splat" style={S.eggSplat}><EggSplatSVG /></div>
-    </div>
-  );
-  return (
-    <div style={S.throwWrap}>
-      <div className="churu-fly" style={S.churuFly}><ChuruSVG /></div>
-      <div className="churu-spark" style={{ ...S.churuSpark, left: "38%" }}>✨</div>
-      <div className="churu-spark" style={{ ...S.churuSpark, right: "38%", left: "auto", animationDelay: ".15s" }}>💛</div>
-    </div>
-  );
+function PetThrow({ kind, n }) {
+  const ref = useRef(null);
+  // 同一个覆盖层原地更新(不靠 key 重挂载，避免 iOS fixed 残影叠加)，每次重启所有子动画
+  useEffect(() => { const root = ref.current; if (!root) return; root.querySelectorAll("[data-a]").forEach((el) => { const a = el.getAttribute("data-a"); el.classList.remove(a); void el.offsetWidth; el.classList.add(a); }); }, [n, kind]);
+  return (<div ref={ref} style={S.throwWrap}>
+    {kind === "egg"
+      ? <><div className="egg-fly" data-a="egg-fly" style={S.eggFly}>🥚</div>
+          <div className="egg-splat" data-a="egg-splat" style={S.eggSplat}><EggSplatSVG /></div></>
+      : <><div className="churu-fly" data-a="churu-fly" style={S.churuFly}><ChuruSVG /></div>
+          <div className="churu-spark" data-a="churu-spark" style={{ ...S.churuSpark, left: "38%" }}>✨</div>
+          <div className="churu-spark" data-a="churu-spark" style={{ ...S.churuSpark, right: "38%", left: "auto", animationDelay: ".15s" }}>💛</div></>}
+  </div>);
+}
+// 反应弹窗：用同一个元素原地更新(不靠 key 重挂载)，避免 iOS Safari fixed 图层残影叠加；每次换词重启入场动画
+function PetPop({ msg }) {
+  const ref = useRef(null);
+  useEffect(() => { const el = ref.current; if (!el) return; el.classList.remove("pet-pop"); void el.offsetWidth; el.classList.add("pet-pop"); }, [msg.n]);
+  const scorn = msg.kind === "scorn";
+  return (<div ref={ref} className="pet-pop" style={S.petPop}>
+    <div style={S.petPopCat}><Cat size={54} bob={false} exp={scorn ? "scorn" : "praise"} /></div>
+    <div style={{ ...S.petPopBubble, ...(scorn ? S.petPopScorn : S.petPopPraise) }}>{msg.text}</div>
+  </div>);
 }
 
 // 兴趣场景
@@ -809,11 +817,8 @@ export default function App() {
       <Bg />
       {/* iOS 隐藏开关：点击它在 iPhone 上触发轻触感(安卓走 navigator.vibrate) */}
       <label id="iosHaptic" aria-hidden="true" style={{ position: "fixed", left: -9999, top: 0, width: 1, height: 1, opacity: 0, pointerEvents: "none", overflow: "hidden" }} dangerouslySetInnerHTML={{ __html: '<input type="checkbox" switch tabindex="-1" style="pointer-events:none">' }} />
-      {petMsg && (<div key={petMsg.n} className="pet-pop" style={S.petPop}>
-        <div style={S.petPopCat}><Cat size={54} bob={false} exp={petMsg.kind === "scorn" ? "scorn" : "praise"} /></div>
-        <div style={{ ...S.petPopBubble, ...(petMsg.kind === "scorn" ? S.petPopScorn : S.petPopPraise) }}>{petMsg.text}</div>
-      </div>)}
-      {petThrow && <PetThrow key={petThrow.n} kind={petThrow.kind} />}
+      {petMsg && <PetPop msg={petMsg} />}
+      {petThrow && <PetThrow n={petThrow.n} kind={petThrow.kind} />}
       {saveErr && <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 50, background: "var(--danger-fg)", color: "#fff", textAlign: "center", padding: "6px 10px", fontSize: 12, fontWeight: 700 }}>⚠️ 本地保存异常，这台设备可能无法保留数据</div>}
       {naughty && <NaughtyModal text={naughty} emoji={seg.emoji} onClose={() => { setNaughty(null); play("happy"); }} />}
       <TopBar st={st} seg={seg} mastered={mastered} onSettings={() => nav("settings")} play={play} setSetting={setSetting} />
