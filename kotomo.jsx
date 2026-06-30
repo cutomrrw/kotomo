@@ -72,6 +72,44 @@ const Cat = ({ size = 100, bob = true, exp = "idle" }) => (
     style={{ width: size, height: "auto", display: "inline-block", objectFit: "contain", animation: bob ? "bob 3.5s ease-in-out infinite" : "none", pointerEvents: "none" }} />
 );
 
+// 摊在屏幕上的煎蛋(答错时日狗砸过来)
+const EggSplatSVG = () => (
+  <svg viewBox="0 0 200 170" width="100%" height="100%" style={{ overflow: "visible" }}>
+    <path d="M44 78 Q18 46 52 34 Q70 14 102 30 Q126 12 156 34 Q192 46 170 84 Q196 108 160 124 Q154 158 112 142 Q82 162 56 134 Q16 122 44 78 Z" fill="#fff8e6" stroke="#ece0c2" strokeWidth="3" />
+    <circle cx="26" cy="120" r="8" fill="#fff8e6" /><circle cx="184" cy="118" r="6" fill="#fff8e6" /><circle cx="116" cy="158" r="7" fill="#fff8e6" /><circle cx="40" cy="40" r="5" fill="#fff8e6" />
+    <ellipse cx="102" cy="84" rx="36" ry="33" fill="#f7b733" stroke="#e2961a" strokeWidth="3" />
+    <ellipse cx="90" cy="71" rx="11" ry="8" fill="#ffd97a" />
+  </svg>
+);
+// 猫条(一组全对的奖励)
+const ChuruSVG = () => (
+  <svg viewBox="0 0 80 154" width="100%" height="100%" style={{ overflow: "visible" }}>
+    <path d="M28 8 L52 8 L52 22 L28 22 Z" fill="#dcd6c8" stroke="#2b2b2b" strokeWidth="3" strokeLinejoin="round" />
+    <path d="M28 16 L34 24 L40 16 L46 24 L52 16" fill="none" stroke="#2b2b2b" strokeWidth="2" />
+    <rect x="20" y="24" width="40" height="118" rx="12" fill="#fdf3e3" stroke="#2b2b2b" strokeWidth="3" />
+    <rect x="20" y="66" width="40" height="40" fill="#ff9fb2" /><rect x="20" y="66" width="40" height="40" fill="none" stroke="#2b2b2b" strokeWidth="3" />
+    <circle cx="40" cy="86" r="11" fill="#fff" stroke="#2b2b2b" strokeWidth="2" />
+    <path d="M35 86 q5 -7 10 0 q-5 7 -10 0 Z" fill="#ff9fb2" /><path d="M45 86 l5 -3 v6 Z" fill="#ff9fb2" />
+    <line x1="24" y1="126" x2="56" y2="126" stroke="#2b2b2b" strokeWidth="2" />
+  </svg>
+);
+// 扔东西覆盖层：egg 飞入→砸屏摊开；churu 抛起→奖励
+function PetThrow({ kind }) {
+  if (kind === "egg") return (
+    <div style={S.throwWrap}>
+      <div className="egg-fly" style={S.eggFly}>🥚</div>
+      <div className="egg-splat" style={S.eggSplat}><EggSplatSVG /></div>
+    </div>
+  );
+  return (
+    <div style={S.throwWrap}>
+      <div className="churu-fly" style={S.churuFly}><ChuruSVG /></div>
+      <div className="churu-spark" style={{ ...S.churuSpark, left: "38%" }}>✨</div>
+      <div className="churu-spark" style={{ ...S.churuSpark, right: "38%", left: "auto", animationDelay: ".15s" }}>💛</div>
+    </div>
+  );
+}
+
 // 兴趣场景
 const INTERESTS = [
   { id: "kana", emoji: "🔤", label: "五十音图" },
@@ -86,7 +124,7 @@ const INTERESTS = [
 
 // ── 布丁的嘴：答对=傲娇夸、答错=鄙视。先各一句，随时往数组里加更多(会随机抽一句) ──
 const PET_LINES = {
-  praise: ["你是我的神", "请你吃猫条", "够燥的", "兄弟 我爱你"],
+  praise: ["你是我的神", "请你吃猫条", "够燥的", "兄弟你好香"],
   scorn: ["是八嘎吗？", "狗叫？", "请你吃大便", "伤感网络 下线了88。", "不安です。"],
 };
 
@@ -683,7 +721,17 @@ export default function App() {
     petTimer.current = setTimeout(() => setPetMsg(null), 1900);
   }, []);
 
-  const play = useCallback((n) => { if (st.settings.sound && Sfx[n]) Sfx[n](); haptic(n); if (n === "correct") petReact("praise"); else if (n === "wrong") petReact("scorn"); }, [st.settings.sound, petReact]);
+  // 扔东西：答错→鸡蛋砸屏幕摊开，一组全对→扔猫条奖励。覆盖在最上层，自动消失
+  const [petThrow, setPetThrow] = useState(null);
+  const throwN = useRef(0), throwTimer = useRef(null);
+  const throwReact = useCallback((kind) => {
+    throwN.current += 1;
+    setPetThrow({ kind, n: throwN.current });
+    if (throwTimer.current) clearTimeout(throwTimer.current);
+    throwTimer.current = setTimeout(() => setPetThrow(null), kind === "egg" ? 2100 : 1900);
+  }, []);
+
+  const play = useCallback((n) => { if (st.settings.sound && Sfx[n]) Sfx[n](); haptic(n); if (n === "correct") petReact("praise"); else if (n === "wrong") { petReact("scorn"); throwReact("egg"); } }, [st.settings.sound, petReact, throwReact]);
   const mastered = useMemo(() => countMastered(st.words), [st.words]);
   const seg = segOf(mastered);
   const decor = decorFor(mastered);
@@ -751,7 +799,7 @@ export default function App() {
   if (!st.onboarded) return <Onboarding onDone={(interests) => { play("happy"); patch((s) => ({ ...s, onboarded: true, interests, words: buildSeedWords(interests) })); }} play={play} />;
 
   const nav = (v) => { play("tap"); setView(v); };
-  const ctx = { st, play, petReact, mastered, seg, decor, mood, nav, addWords, updateWord, delWord, delWords, restoreWord, appendWords, petLove, setSetting, finishReview, ownWordCount, reviewWrongOnly, setReviewWrongOnly, setView, expandTarget, setExpandTarget, amb };
+  const ctx = { st, play, petReact, throwReact, mastered, seg, decor, mood, nav, addWords, updateWord, delWord, delWords, restoreWord, appendWords, petLove, setSetting, finishReview, ownWordCount, reviewWrongOnly, setReviewWrongOnly, setView, expandTarget, setExpandTarget, amb };
 
   return (
     <div style={S.shell}>
@@ -763,6 +811,7 @@ export default function App() {
         <div style={S.petPopCat}><Cat size={54} bob={false} exp={petMsg.kind === "scorn" ? "scorn" : "praise"} /></div>
         <div style={{ ...S.petPopBubble, ...(petMsg.kind === "scorn" ? S.petPopScorn : S.petPopPraise) }}>{petMsg.text}</div>
       </div>)}
+      {petThrow && <PetThrow key={petThrow.n} kind={petThrow.kind} />}
       {saveErr && <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 50, background: "var(--danger-fg)", color: "#fff", textAlign: "center", padding: "6px 10px", fontSize: 12, fontWeight: 700 }}>⚠️ 本地保存异常，这台设备可能无法保留数据</div>}
       {naughty && <NaughtyModal text={naughty} emoji={seg.emoji} onClose={() => { setNaughty(null); play("happy"); }} />}
       <TopBar st={st} seg={seg} mastered={mastered} onSettings={() => nav("settings")} play={play} setSetting={setSetting} />
@@ -970,7 +1019,7 @@ function ReviewRun({ ctx, mode }) {
     </div>
     {reviewWrongOnly && <div style={S.wrongBanner}>❗ 错题强化中 · 答对才算消灭</div>}
     <div style={{ fontSize: 11.5, color: C.inkSoft, textAlign: "center", margin: "2px 0 8px" }}>不确定的词，长按它 →「犹豫词」，会更高频回来考你（防排除法蒙混）</div>
-    {q.kind === "match" && <MatchRound key={qi} items={q.items} all={st.words} play={play} petReact={ctx.petReact} onResult={recordResult} onDone={advance} onWrong={loseHeart} onHesitate={markHesitate} />}
+    {q.kind === "match" && <MatchRound key={qi} items={q.items} all={st.words} play={play} petReact={ctx.petReact} throwReact={ctx.throwReact} onResult={recordResult} onDone={advance} onWrong={loseHeart} onHesitate={markHesitate} />}
     {q.kind === "card" && <CardRound key={qi} item={q.item} all={st.words} play={play} onResult={recordResult} onNext={advance} onWrong={loseHeart} onHesitate={markHesitate} />}
     {q.kind === "fill" && <FillRound key={qi} item={q.item} all={st.words} play={play} onResult={recordResult} onNext={advance} onWrong={loseHeart} onHesitate={markHesitate} updateWord={ctx.updateWord} aiReal={st.settings.aiReal} />}
     {q.kind === "grammar" && <GrammarRound key={qi} item={q.item} all={st.words} play={play} onResult={recordResult} onNext={advance} onWrong={loseHeart} onHesitate={markHesitate} />}
@@ -994,7 +1043,7 @@ function buildQueue(pool) {
 }
 
 // 连连看：左日(含外来词括号) 右中，配对消除
-function MatchRound({ items, all, play, petReact, onResult, onDone, onWrong, onHesitate }) {
+function MatchRound({ items, all, play, petReact, throwReact, onResult, onDone, onWrong, onHesitate }) {
   const [left] = useState(() => shuffle(items));
   const [right] = useState(() => shuffle(items));
   useEffect(() => { items.forEach((w, i) => setTimeout(() => warmJa(w.term), i * 250)); }, []); // 预加载本组日语发音(错峰，避免限流)
@@ -1009,7 +1058,7 @@ function MatchRound({ items, all, play, petReact, onResult, onDone, onWrong, onH
     if (selL === selR) { play("match"); onResult(selL, true); setMatched((m) => [...m, selL]); setSelL(null); setSelR(null); }
     else { play("wrong"); onResult(selL, false); onResult(selR, false); onWrong(); setWrongPair({ l: selL, r: selR }); setTimeout(() => { setWrongPair(null); setSelL(null); setSelR(null); }, 550); }
   } }, [selL, selR]);
-  useEffect(() => { if (matched.length === items.length) { if (petReact) petReact("praise"); const t = setTimeout(onDone, 350); return () => clearTimeout(t); } }, [matched]);
+  useEffect(() => { if (matched.length === items.length) { if (petReact) petReact("praise"); if (throwReact) throwReact("churu"); const t = setTimeout(onDone, 350); return () => clearTimeout(t); } }, [matched]);
   const tile = (w, side) => {
     const isM = matched.includes(w.id); const sel = side === "L" ? selL : selR; const isSel = sel === w.id;
     const isWrong = wrongPair && ((side === "L" && wrongPair.l === w.id) || (side === "R" && wrongPair.r === w.id));
@@ -1918,6 +1967,11 @@ const S = {
   petPopCat: { flexShrink: 0, lineHeight: 0, filter: "drop-shadow(2px 2px 0 var(--pix-shadow))" },
   petPopBubble: { padding: "9px 13px", fontWeight: 800, fontSize: 13.5, lineHeight: 1.35, border: "3px solid var(--pix-border)", boxShadow: "4px 4px 0 var(--pix-shadow)" },
   petPopPraise: { background: "var(--ok-bg)", color: C.matchaDk }, petPopScorn: { background: "var(--danger-bg)", color: "var(--danger-fg)" },
+  throwWrap: { position: "fixed", inset: 0, zIndex: 70, pointerEvents: "none", overflow: "hidden" },
+  eggFly: { position: "absolute", left: "calc(50% - 22px)", top: "42%", fontSize: 44, lineHeight: 1, filter: "drop-shadow(2px 3px 0 rgba(0,0,0,.25))" },
+  eggSplat: { position: "absolute", left: "calc(50% - 110px)", top: "calc(42% - 70px)", width: 220, height: 180, filter: "drop-shadow(3px 4px 0 rgba(0,0,0,.18))" },
+  churuFly: { position: "absolute", left: "calc(50% - 30px)", top: "38%", width: 60, height: 116, filter: "drop-shadow(3px 4px 0 var(--pix-shadow))" },
+  churuSpark: { position: "absolute", top: "34%", fontSize: 28 },
   moodChip: { textAlign: "center", marginTop: 8, fontWeight: 800, fontSize: 13.5, color: "var(--ink-mid)", position: "relative", zIndex: 2 },
   segHint: { textAlign: "center", marginTop: 4, fontSize: 12, color: "var(--ink-mid)", position: "relative", zIndex: 2 },
 
@@ -2084,6 +2138,14 @@ button{ border:3px solid var(--pix-border) !important; box-shadow:4px 4px 0 var(
 @keyframes fall{ 0%{transform:translateY(-12px) rotate(0deg);opacity:.9} 100%{transform:translateY(260px) rotate(160deg);opacity:.35} }\
 @keyframes petpop{ 0%{transform:translateY(16px) scale(.7);opacity:0} 55%{transform:translateY(-3px) scale(1.06)} 100%{transform:translateY(0) scale(1);opacity:1} }\
 .pet-pop{ animation:petpop .28s cubic-bezier(.2,1.35,.5,1) both; }\
+@keyframes eggFly{ 0%{transform:translate(40vw,46vh) scale(.5) rotate(0deg);opacity:0} 14%{opacity:1} 88%{transform:translate(0,0) scale(1.05) rotate(500deg);opacity:1} 100%{transform:translate(-1vw,-1vh) scale(.35) rotate(560deg);opacity:0} }\
+.egg-fly{ animation:eggFly .42s cubic-bezier(.45,.05,.7,.6) forwards; }\
+@keyframes eggSplat{ 0%{transform:scale(0) rotate(-10deg);opacity:0} 8%{transform:scale(1.18) rotate(-4deg);opacity:1} 16%{transform:scale(.94)} 24%{transform:scale(1.04)} 32%{transform:scale(1)} 72%{transform:scale(1);opacity:1} 100%{transform:scale(1);opacity:0} }\
+.egg-splat{ animation:eggSplat 1.7s ease-out .36s both; transform-origin:center; }\
+@keyframes churuFly{ 0%{transform:translate(0,52vh) rotate(-22deg) scale(.5);opacity:0} 18%{opacity:1} 48%{transform:translate(0,-5vh) rotate(12deg) scale(1.12)} 64%{transform:translate(0,0) rotate(-5deg) scale(1)} 80%{transform:translate(0,0) rotate(0deg) scale(1);opacity:1} 100%{transform:translate(0,-7vh) scale(.95);opacity:0} }\
+.churu-fly{ animation:churuFly 1.6s cubic-bezier(.3,1.1,.5,1) forwards; }\
+@keyframes churuSpark{ 0%{transform:scale(0) rotate(0);opacity:0} 40%{transform:scale(1.2) rotate(20deg);opacity:1} 70%{transform:scale(1) rotate(-10deg);opacity:1} 100%{transform:scale(.6) translateY(-20px);opacity:0} }\
+.churu-spark{ animation:churuSpark 1.3s ease-out .4s both; }\
 .cloud { position:absolute; font-size:36px; opacity:.4; animation:floatX 30s linear infinite; }\
 .c1 { top:5%; left:-12%; } .c2 { top:15%; left:-32%; animation-delay:-15s; font-size:26px; }\
 .pressable { transition:transform .07s; } .pressable:active { transform:translateY(2px) scale(.98); } .pressable:disabled { cursor:not-allowed; opacity:.55; }\
