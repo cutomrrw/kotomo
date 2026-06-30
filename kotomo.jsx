@@ -72,40 +72,26 @@ const Cat = ({ size = 100, bob = true, exp = "idle" }) => (
     style={{ width: size, height: "auto", display: "inline-block", objectFit: "contain", animation: bob ? "bob 3.5s ease-in-out infinite" : "none", pointerEvents: "none" }} />
 );
 
-// 摊在屏幕上的煎蛋(答错时日狗砸过来)
-const EggSplatSVG = () => (
-  <svg viewBox="0 0 200 170" width="100%" height="100%" style={{ overflow: "visible" }}>
-    <path d="M44 78 Q18 46 52 34 Q70 14 102 30 Q126 12 156 34 Q192 46 170 84 Q196 108 160 124 Q154 158 112 142 Q82 162 56 134 Q16 122 44 78 Z" fill="#fff8e6" stroke="#ece0c2" strokeWidth="3" />
-    <circle cx="26" cy="120" r="8" fill="#fff8e6" /><circle cx="184" cy="118" r="6" fill="#fff8e6" /><circle cx="116" cy="158" r="7" fill="#fff8e6" /><circle cx="40" cy="40" r="5" fill="#fff8e6" />
-    <ellipse cx="102" cy="84" rx="36" ry="33" fill="#f7b733" stroke="#e2961a" strokeWidth="3" />
-    <ellipse cx="90" cy="71" rx="11" ry="8" fill="#ffd97a" />
-  </svg>
-);
-// 小鱼(答对的奖励)
-const FishSVG = () => (
-  <svg viewBox="0 0 140 92" width="100%" height="100%" style={{ overflow: "visible" }}>
-    <path d="M120 46 L139 24 Q132 46 139 68 Z" fill="#7fc7e6" stroke="#2b2b2b" strokeWidth="4" strokeLinejoin="round" />
-    <path d="M58 18 Q70 2 86 16 Z" fill="#5fb3d6" stroke="#2b2b2b" strokeWidth="3.5" strokeLinejoin="round" />
-    <path d="M56 72 Q66 86 80 72 Z" fill="#5fb3d6" stroke="#2b2b2b" strokeWidth="3.5" strokeLinejoin="round" />
-    <path d="M18 46 Q34 16 76 18 Q112 20 122 46 Q112 72 76 74 Q34 76 18 46 Z" fill="#8fd0e8" stroke="#2b2b2b" strokeWidth="4" strokeLinejoin="round" />
-    <path d="M42 28 Q35 46 42 64" fill="none" stroke="#2b2b2b" strokeWidth="2.6" />
-    <ellipse cx="60" cy="54" rx="7" ry="4.5" fill="#ffb3c1" opacity="0.6" />
-    <circle cx="33" cy="42" r="7" fill="#fff" stroke="#2b2b2b" strokeWidth="2.6" />
-    <circle cx="32" cy="43" r="3.2" fill="#2b2b2b" />
-  </svg>
-);
-// 扔东西覆盖层：egg 飞入→砸屏摊开；churu 抛起→奖励
+// ── 大块像素精灵：纯色方块网格 + crispEdges 硬边，画煎蛋 / 银色带鱼 ──
+const PIX_COLORS = { K: "#2b2b2b", W: "#fff7e2", w: "#ece0c2", Y: "#f5b733", y: "#ffd24a", S: "#c7cfd8", L: "#ffffff", D: "#9aa4af", E: "#1a1a1a" };
+function PixelSprite({ rows, cell = 13 }) {
+  const w = Math.max.apply(null, rows.map((r) => r.length)), h = rows.length, rects = [];
+  for (let y = 0; y < h; y++) { const row = rows[y]; for (let x = 0; x < row.length; x++) { const c = row[x]; if (c !== "." && c !== " ") rects.push(<rect key={x + "_" + y} x={x * cell} y={y * cell} width={cell + 0.6} height={cell + 0.6} fill={PIX_COLORS[c] || "#000"} />); } }
+  return (<svg viewBox={"0 0 " + (w * cell) + " " + (h * cell)} width="100%" height="100%" shapeRendering="crispEdges" style={{ overflow: "visible" }}>{rects}</svg>);
+}
+// 煎蛋(答错)：大块像素
+const EGG_ROWS = ["...KKKK...", "..KWWWWK..", ".KWWWWWWK.", "KWWWYYWWK.", "KWWYYYYWK.", "KWWWYYWWWK", ".KWWWWWWK.", "..KWWWWK..", "...KKKK..."];
+// 银色带鱼(答对奖励)：长条银色，左头带眼、右尾尖
+const FISH_ROWS = ["..KKKKKKKKKKKKKK...", ".KLLLSSSSSSSSSSSK..", "KKESSSSDDSSSSSSSSKK", ".KLSSSSSSSSSSSSSSK..", "..KKKKKKKKKKKKKK..."];
+// 扔东西覆盖层：egg 砸出快闪即消；带鱼 抛起冲出屏幕顶。原地更新避免 iOS 残影
 function PetThrow({ kind, n }) {
   const ref = useRef(null);
-  // 同一个覆盖层原地更新(不靠 key 重挂载，避免 iOS fixed 残影叠加)，每次重启所有子动画
   useEffect(() => { const root = ref.current; if (!root) return; root.querySelectorAll("[data-a]").forEach((el) => { const a = el.getAttribute("data-a"); el.classList.remove(a); void el.offsetWidth; el.classList.add(a); }); }, [n, kind]);
   return (<div ref={ref} style={S.throwWrap}>
     {kind === "egg"
-      ? <><div className="egg-fly" data-a="egg-fly" style={S.eggFly}>🥚</div>
-          <div className="egg-splat" data-a="egg-splat" style={S.eggSplat}><EggSplatSVG /></div></>
-      : <><div className="churu-fly" data-a="churu-fly" style={S.churuFly}><FishSVG /></div>
-          <div className="churu-spark" data-a="churu-spark" style={{ ...S.churuSpark, left: "38%" }}>✨</div>
-          <div className="churu-spark" data-a="churu-spark" style={{ ...S.churuSpark, right: "38%", left: "auto", animationDelay: ".15s" }}>💛</div></>}
+      ? <div className="egg-splat" data-a="egg-splat" style={S.eggSplat}><PixelSprite rows={EGG_ROWS} cell={14} /></div>
+      : <><div className="churu-fly" data-a="churu-fly" style={S.churuFly}><PixelSprite rows={FISH_ROWS} cell={11} /></div>
+          <div className="churu-spark" data-a="churu-spark" style={{ ...S.churuSpark, left: "44%" }}>✨</div></>}
   </div>);
 }
 // 反应弹窗：用同一个元素原地更新(不靠 key 重挂载)，避免 iOS Safari fixed 图层残影叠加；每次换词重启入场动画
@@ -756,7 +742,7 @@ export default function App() {
     throwN.current += 1;
     setPetThrow({ kind, n: throwN.current });
     if (throwTimer.current) clearTimeout(throwTimer.current);
-    throwTimer.current = setTimeout(() => setPetThrow(null), 1050); // 砸出/抛出后快速消失，不挡词
+    throwTimer.current = setTimeout(() => setPetThrow(null), kind === "egg" ? 600 : 800); // 砸出/抛出后最快消失，不挡词
   }, []);
 
   const play = useCallback((n) => { if (st.settings.sound && Sfx[n]) Sfx[n](); haptic(n); if (n === "correct") petReact("praise"); else if (n === "wrong") { petReact("scorn"); throwReact("egg"); } if (n === "correct" || n === "match") setSt((s) => earnFish(s)); }, [st.settings.sound, petReact, throwReact]);
@@ -2034,9 +2020,9 @@ const S = {
   petPopPraise: { background: "var(--ok-bg)", color: C.matchaDk }, petPopScorn: { background: "var(--danger-bg)", color: "var(--danger-fg)" },
   throwWrap: { position: "fixed", inset: 0, zIndex: 70, pointerEvents: "none", overflow: "hidden" },
   eggFly: { position: "absolute", left: "calc(50% - 22px)", top: "42%", fontSize: 44, lineHeight: 1, filter: "drop-shadow(2px 3px 0 rgba(0,0,0,.25))" },
-  eggSplat: { position: "absolute", left: "calc(50% - 110px)", top: "calc(42% - 70px)", width: 220, height: 180, filter: "drop-shadow(3px 4px 0 rgba(0,0,0,.18))" },
-  churuFly: { position: "absolute", left: "calc(50% - 62px)", top: "40%", width: 124, height: 82, filter: "drop-shadow(3px 4px 0 var(--pix-shadow))" },
-  churuSpark: { position: "absolute", top: "34%", fontSize: 28 },
+  eggSplat: { position: "absolute", left: "calc(50% - 70px)", top: "calc(44% - 56px)", width: 140, height: 126, filter: "drop-shadow(3px 4px 0 var(--pix-shadow))" },
+  churuFly: { position: "absolute", left: "calc(50% - 95px)", top: "40%", width: 190, height: 56, filter: "drop-shadow(3px 4px 0 var(--pix-shadow))" },
+  churuSpark: { position: "absolute", top: "34%", fontSize: 26 },
   catWear: { position: "absolute", top: -6, left: "50%", transform: "translateX(-50%)", fontSize: 30, zIndex: 3, filter: "drop-shadow(1px 2px 0 rgba(0,0,0,.22))", pointerEvents: "none" },
   shopHead: { textAlign: "center", padding: "12px 14px", marginBottom: 10, background: "var(--surface)", border: "3px solid var(--pix-border)", boxShadow: "4px 4px 0 var(--pix-shadow)" },
   shopGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 11 },
@@ -2212,12 +2198,12 @@ button{ border:3px solid var(--pix-border) !important; box-shadow:4px 4px 0 var(
 .pet-pop{ animation:petpop .28s cubic-bezier(.2,1.35,.5,1) both; }\
 @keyframes eggFly{ 0%{transform:translate(40vw,46vh) scale(.5) rotate(0deg);opacity:0} 14%{opacity:1} 88%{transform:translate(0,0) scale(1.05) rotate(500deg);opacity:1} 100%{transform:translate(-1vw,-1vh) scale(.35) rotate(560deg);opacity:0} }\
 .egg-fly{ animation:eggFly .42s cubic-bezier(.45,.05,.7,.6) forwards; }\
-@keyframes eggSplat{ 0%{transform:scale(0) rotate(-10deg);opacity:0} 20%{transform:scale(1.2) rotate(-3deg);opacity:1} 40%{transform:scale(1)} 55%{transform:scale(1);opacity:.95} 100%{transform:scale(1.08);opacity:0} }\
-.egg-splat{ animation:eggSplat .66s ease-out .34s both; transform-origin:center; }\
-@keyframes churuFly{ 0%{transform:translate(0,46vh) rotate(-20deg) scale(.5);opacity:0} 16%{opacity:1} 42%{transform:translate(0,-6vh) rotate(10deg) scale(1.12);opacity:1} 66%{opacity:1} 100%{transform:translate(0,-36vh) rotate(-6deg) scale(.8);opacity:0} }\
-.churu-fly{ animation:churuFly .95s cubic-bezier(.3,.9,.5,1) forwards; }\
-@keyframes churuSpark{ 0%{transform:scale(0) rotate(0);opacity:0} 35%{transform:scale(1.2) rotate(16deg);opacity:1} 60%{transform:scale(1) rotate(-8deg);opacity:1} 100%{transform:scale(.6) translateY(-18px);opacity:0} }\
-.churu-spark{ animation:churuSpark .8s ease-out .25s both; }\
+@keyframes eggSplat{ 0%{transform:translateY(-26px) scale(.5);opacity:0} 26%{transform:translateY(0) scale(1.15);opacity:1} 46%{transform:scale(.98)} 60%{transform:scale(1);opacity:1} 100%{transform:scale(1);opacity:0} }\
+.egg-splat{ animation:eggSplat .5s ease-out both; transform-origin:center; }\
+@keyframes churuFly{ 0%{transform:translate(0,36vh) scale(.6);opacity:0} 22%{opacity:1} 46%{transform:translate(0,-3vh) scale(1.06);opacity:1} 100%{transform:translate(0,-44vh) scale(.82);opacity:0} }\
+.churu-fly{ animation:churuFly .7s cubic-bezier(.3,.8,.5,1) forwards; }\
+@keyframes churuSpark{ 0%{transform:scale(0);opacity:0} 40%{transform:scale(1.2);opacity:1} 100%{transform:scale(.6) translateY(-16px);opacity:0} }\
+.churu-spark{ animation:churuSpark .5s ease-out .1s both; }\
 .cloud { position:absolute; font-size:36px; opacity:.4; animation:floatX 30s linear infinite; }\
 .c1 { top:5%; left:-12%; } .c2 { top:15%; left:-32%; animation-delay:-15s; font-size:26px; }\
 .pressable { transition:transform .07s; } .pressable:active { transform:translateY(2px) scale(.98); } .pressable:disabled { cursor:not-allowed; opacity:.55; }\
