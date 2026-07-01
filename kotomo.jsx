@@ -95,8 +95,7 @@ function PetThrow({ kind, n }) {
   useEffect(() => { const root = ref.current; if (!root) return; root.querySelectorAll("[data-a]").forEach((el) => { const a = el.getAttribute("data-a"); el.classList.remove(a); void el.offsetWidth; el.classList.add(a); }); }, [n, kind]);
   return (<div ref={ref} style={S.throwWrap}>
     {kind === "egg"
-      ? <><div className="egg-fly" data-a="egg-fly" style={S.eggFly}><PixelSprite rows={POOP_ROWS} cell={6} /></div>
-          <div className="egg-stain" data-a="egg-stain" style={S.eggStain}><PixelSprite rows={POOP_STAIN_ROWS} cell={9} /></div></>
+      ? <div className="churu-fly" data-a="churu-fly" style={S.eggFly}><PixelSprite rows={POOP_ROWS} cell={6} /></div>
       : <><div className="churu-fly" data-a="churu-fly" style={S.churuFly}><PixelSprite rows={FISH_ROWS} cell={9} /></div>
           <div className="churu-spark" data-a="churu-spark" style={{ ...S.churuSpark, left: "45%" }}>✨</div></>}
   </div>);
@@ -746,7 +745,7 @@ export default function App() {
     throwN.current += 1;
     setPetThrow({ kind, n: throwN.current });
     if (throwTimer.current) clearTimeout(throwTimer.current);
-    throwTimer.current = setTimeout(() => setPetThrow(null), kind === "egg" ? 1300 : 800); // 💩:从右下角旋转扔入→落屏停顿→淡掉留屎渍；鱼:抛起冲出
+    throwTimer.current = setTimeout(() => setPetThrow(null), 800); // 💩 和鱼一模一样的路径/速度(churu-fly)：从下往上抛起冲出屏幕顶，干脆利落
   }, []);
 
   const play = useCallback((n) => { if (st.settings.sound && Sfx[n]) Sfx[n](); haptic(n); if (n === "correct") petReact("praise"); else if (n === "wrong") { petReact("scorn"); throwReact("egg"); } if (n === "correct" || n === "match") setSt((s) => earnFish(s)); }, [st.settings.sound, petReact, throwReact]);
@@ -2020,7 +2019,7 @@ const S = {
   petPopBubble: { padding: "9px 13px", fontWeight: 800, fontSize: 13.5, lineHeight: 1.35, border: "3px solid var(--pix-border)", boxShadow: "4px 4px 0 var(--pix-shadow)" },
   petPopPraise: { background: "var(--ok-bg)", color: C.matchaDk }, petPopScorn: { background: "var(--danger-bg)", color: "var(--danger-fg)" },
   throwWrap: { position: "fixed", inset: 0, zIndex: 70, pointerEvents: "none", overflow: "hidden" },
-  eggFly: { position: "absolute", left: "calc(50% - 39px)", top: "46%", width: 78, height: 72, filter: "drop-shadow(2px 3px 0 var(--pix-shadow))" },
+  eggFly: { position: "absolute", left: "calc(50% - 39px)", top: "44%", width: 78, height: 72, filter: "drop-shadow(2px 3px 0 var(--pix-shadow))" },
   eggStain: { position: "absolute", left: "calc(50% - 45px)", top: "52%", width: 90, height: 63 },
   churuFly: { position: "absolute", left: "calc(50% - 41px)", top: "44%", width: 82, height: 64, filter: "drop-shadow(2px 3px 0 var(--pix-shadow))" },
   churuSpark: { position: "absolute", top: "40%", fontSize: 22 },
