@@ -73,19 +73,20 @@ const Cat = ({ size = 100, bob = true, exp = "idle" }) => (
 );
 
 // ── 大块像素精灵：纯色方块网格 + crispEdges 硬边，画煎蛋 / 银色带鱼 ──
-const PIX_COLORS = { K: "#2b2b2b", W: "#fff7e2", w: "#ece0c2", Y: "#f2a01c", y: "#ffca4a", S: "#c7cfd8", L: "#ffffff", D: "#9aa4af", E: "#1a1a1a",
-  m: "rgba(150,120,50,0.55)", o: "rgba(120,95,40,0.7)", n: "rgba(225,150,25,0.62)" }; // "蛋液水渍"色(做深)
+const PIX_COLORS = { K: "#2b2b2b", W: "#ffffff", w: "#ece0c2", Y: "#f2a01c", y: "#ffca4a", S: "#c7cfd8", L: "#ffffff", D: "#9aa4af", E: "#1a1a1a",
+  B: "#8a5a2a", b: "#654019", H: "#a8763e", // 💩 棕色(答错惩罚)
+  m: "rgba(95,62,26,0.52)", o: "rgba(60,38,15,0.66)", n: "rgba(120,80,34,0.56)" }; // 屎渍色(棕·半透明)
 function PixelSprite({ rows, cell = 13 }) {
   const w = Math.max.apply(null, rows.map((r) => r.length)), h = rows.length, rects = [];
   for (let y = 0; y < h; y++) { const row = rows[y]; for (let x = 0; x < row.length; x++) { const c = row[x]; if (c !== "." && c !== " ") rects.push(<rect key={x + "_" + y} x={x * cell} y={y * cell} width={cell + 0.4} height={cell + 0.4} fill={PIX_COLORS[c] || "#000"} />); } }
   return (<svg viewBox={"0 0 " + (w * cell) + " " + (h * cell)} width="100%" height="100%" shapeRendering="crispEdges" style={{ overflow: "visible" }}>{rects}</svg>);
 }
-// 飞行的整蛋(抛掷段·斗地主式砸过来)
-const EGG_ROWS = ["..KK..", ".KWWK.", ".KWWK.", "KWWWWK", "KWWWWK", "KWWWWK", ".KWWK.", "..KK.."];
-// 答错·煎蛋(白+橙黄蛋黄，一眼看得出是蛋)：细像素
-const EGG_SPLAT_ROWS = ["...KKKKK...", "..KWWWWWK..", ".KWWWWWWWK.", "KWWWYyYWWWK", "KWWYYYYYWWK", "KWWWYYYWWWK", ".KWWWWWWWK.", "..KWWWWWK..", "...KKKKK..."];
-// 煎蛋最后变成的更深蛋液水渍(半透明偏深)
-const EGG_STAIN_ROWS = ["..m.n.m..", ".mnnnnnm.", "mnooooonm", "nooooooon", "mnooooonm", ".mnnnnnm.", "..m.n.m.."];
+// 答错惩罚·一坨💩(带脸，抛掷段·斗地主式砸过来)
+const POOP_ROWS = ["...KK....", "..KHBK...", ".KHBBBK..", ".KBBBBBK.", "KBBWBWBBK", "KBWEBEWBK", "KBBBBBBBK", "KBbBBBbBK", ".KKKKKKK."];
+// 💩 砸开(棕色泼溅)
+const POOP_SPLAT_ROWS = ["..B..b.B..", ".BBB.BB.B.", "B.BBBBBB.B", ".BBBBBBBB.", "B.BBBBBB.B", ".BB.BBB.BB", "..B.b..B.."];
+// 最后星星点点屎渍(棕·半透明·过分一点)
+const POOP_STAIN_ROWS = ["m..n..m.n.", ".nm.o.mn..", "o.nmmno.m.", ".mno.nmm.n", "m.omnm.no.", ".n.mmo.m..", "o..n.m..n."];
 // 银色小鱼(答对奖励)：银身、左头带眼、右叉尾
 const FISH_ROWS = ["..KKKK...", ".KSSSSK.K", "KESSSSKKK", "KLSSSSSSK", "KSSSSSKKK", ".KSSSSK.K", "..KKKK..."];
 // 扔东西覆盖层：egg 砸出快闪即消；带鱼 抛起冲出屏幕顶。原地更新避免 iOS 残影
@@ -94,9 +95,9 @@ function PetThrow({ kind, n }) {
   useEffect(() => { const root = ref.current; if (!root) return; root.querySelectorAll("[data-a]").forEach((el) => { const a = el.getAttribute("data-a"); el.classList.remove(a); void el.offsetWidth; el.classList.add(a); }); }, [n, kind]);
   return (<div ref={ref} style={S.throwWrap}>
     {kind === "egg"
-      ? <><div className="egg-fly" data-a="egg-fly" style={S.eggFly}><PixelSprite rows={EGG_ROWS} cell={8} /></div>
-          <div className="egg-splat" data-a="egg-splat" style={S.eggSplat}><PixelSprite rows={EGG_SPLAT_ROWS} cell={6} /></div>
-          <div className="egg-stain" data-a="egg-stain" style={S.eggStain}><PixelSprite rows={EGG_STAIN_ROWS} cell={9} /></div></>
+      ? <><div className="egg-fly" data-a="egg-fly" style={S.eggFly}><PixelSprite rows={POOP_ROWS} cell={7} /></div>
+          <div className="egg-splat" data-a="egg-splat" style={S.eggSplat}><PixelSprite rows={POOP_SPLAT_ROWS} cell={7} /></div>
+          <div className="egg-stain" data-a="egg-stain" style={S.eggStain}><PixelSprite rows={POOP_STAIN_ROWS} cell={9} /></div></>
       : <><div className="churu-fly" data-a="churu-fly" style={S.churuFly}><PixelSprite rows={FISH_ROWS} cell={9} /></div>
           <div className="churu-spark" data-a="churu-spark" style={{ ...S.churuSpark, left: "45%" }}>✨</div></>}
   </div>);
@@ -2021,9 +2022,9 @@ const S = {
   petPopPraise: { background: "var(--ok-bg)", color: C.matchaDk }, petPopScorn: { background: "var(--danger-bg)", color: "var(--danger-fg)" },
   throwWrap: { position: "fixed", inset: 0, zIndex: 70, pointerEvents: "none", overflow: "hidden" },
   eggFly: { position: "absolute", left: "calc(50% - 22px)", top: "42%", fontSize: 44, lineHeight: 1, filter: "drop-shadow(2px 3px 0 rgba(0,0,0,.25))" },
-  eggFly: { position: "absolute", left: "calc(50% - 24px)", top: "53%", width: 48, height: 64, filter: "drop-shadow(2px 2px 0 var(--pix-shadow))" },
-  eggSplat: { position: "absolute", left: "calc(50% - 33px)", top: "54%", width: 66, height: 54, filter: "drop-shadow(2px 2px 0 var(--pix-shadow))" },
-  eggStain: { position: "absolute", left: "calc(50% - 40px)", top: "52%", width: 81, height: 63 },
+  eggFly: { position: "absolute", left: "calc(50% - 32px)", top: "51%", width: 63, height: 63, filter: "drop-shadow(2px 2px 0 var(--pix-shadow))" },
+  eggSplat: { position: "absolute", left: "calc(50% - 35px)", top: "55%", width: 70, height: 49, filter: "drop-shadow(2px 2px 0 var(--pix-shadow))" },
+  eggStain: { position: "absolute", left: "calc(50% - 45px)", top: "52%", width: 90, height: 63 },
   churuFly: { position: "absolute", left: "calc(50% - 41px)", top: "44%", width: 82, height: 64, filter: "drop-shadow(2px 3px 0 var(--pix-shadow))" },
   churuSpark: { position: "absolute", top: "40%", fontSize: 22 },
   catWear: { position: "absolute", top: -6, left: "50%", transform: "translateX(-50%)", fontSize: 30, zIndex: 3, filter: "drop-shadow(1px 2px 0 rgba(0,0,0,.22))", pointerEvents: "none" },
