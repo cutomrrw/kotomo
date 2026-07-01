@@ -79,18 +79,18 @@ function PixelSprite({ rows, cell = 13 }) {
   for (let y = 0; y < h; y++) { const row = rows[y]; for (let x = 0; x < row.length; x++) { const c = row[x]; if (c !== "." && c !== " ") rects.push(<rect key={x + "_" + y} x={x * cell} y={y * cell} width={cell + 0.6} height={cell + 0.6} fill={PIX_COLORS[c] || "#000"} />); } }
   return (<svg viewBox={"0 0 " + (w * cell) + " " + (h * cell)} width="100%" height="100%" shapeRendering="crispEdges" style={{ overflow: "visible" }}>{rects}</svg>);
 }
-// 煎蛋(答错)：大块像素
-const EGG_ROWS = ["...KKKK...", "..KWWWWK..", ".KWWWWWWK.", "KWWWYYWWK.", "KWWYYYYWK.", "KWWWYYWWWK", ".KWWWWWWK.", "..KWWWWK..", "...KKKK..."];
-// 银色带鱼(答对奖励)：长条银色，左头带眼、右尾尖
-const FISH_ROWS = ["..KKKKKKKKKKKKKK...", ".KLLLSSSSSSSSSSSK..", "KKESSSSDDSSSSSSSSKK", ".KLSSSSSSSSSSSSSSK..", "..KKKKKKKKKKKKKK..."];
+// 完整鸡蛋(答错扔出去)：大块像素
+const EGG_ROWS = ["...KKK...", "..KWWWK..", ".KWLWWWK.", ".KWWWWWK.", "KWWWWWWWK", "KWWWWWWWK", "KWWWWWWWK", ".KWWWWWK.", "..KWWWK..", "...KKK..."];
+// 银色小鱼(答对奖励)：银身、左头带眼、右叉尾
+const FISH_ROWS = ["...KKKK......", "..KLSSSSK.K..", ".KSSSSSSSKKK.", "KESSSSSSSSSSK", ".KSSSSSSSKKK.", "..KLSSSSK.K..", "...KKKK......"];
 // 扔东西覆盖层：egg 砸出快闪即消；带鱼 抛起冲出屏幕顶。原地更新避免 iOS 残影
 function PetThrow({ kind, n }) {
   const ref = useRef(null);
   useEffect(() => { const root = ref.current; if (!root) return; root.querySelectorAll("[data-a]").forEach((el) => { const a = el.getAttribute("data-a"); el.classList.remove(a); void el.offsetWidth; el.classList.add(a); }); }, [n, kind]);
   return (<div ref={ref} style={S.throwWrap}>
     {kind === "egg"
-      ? <div className="egg-splat" data-a="egg-splat" style={S.eggSplat}><PixelSprite rows={EGG_ROWS} cell={14} /></div>
-      : <><div className="churu-fly" data-a="churu-fly" style={S.churuFly}><PixelSprite rows={FISH_ROWS} cell={11} /></div>
+      ? <div className="egg-throw" data-a="egg-throw" style={S.eggThrow}><PixelSprite rows={EGG_ROWS} cell={13} /></div>
+      : <><div className="churu-fly" data-a="churu-fly" style={S.churuFly}><PixelSprite rows={FISH_ROWS} cell={13} /></div>
           <div className="churu-spark" data-a="churu-spark" style={{ ...S.churuSpark, left: "44%" }}>✨</div></>}
   </div>);
 }
@@ -712,12 +712,9 @@ export default function App() {
   // 计时器（刷新心情等）
   useEffect(() => { const t = setInterval(() => setTick((x) => x + 1), 30000); return () => clearInterval(t); }, []);
   // 陪伴模式：像素常驻 + 按你本地时间/季节自动切「昼夜 × 春夏秋冬」场景（每5分钟重算，自动跨昼夜）
-  const [amb, setAmb] = useState(ambient);
-  useEffect(() => {
-    const apply = () => { const a = ambient(); const r = document.documentElement; r.setAttribute("data-tod", a.tod); r.setAttribute("data-season", a.season); setAmb(a); };
-    apply();
-    const t = setInterval(apply, 5 * 60 * 1000); return () => clearInterval(t);
-  }, []);
+  // 暂时锁死「浅绿·白天」皮：昼夜/四季先关掉(ambient() 与相关 CSS 保留，以后想开回来只需还原此处)
+  const [amb] = useState({ tod: "day", season: "summer" });
+  useEffect(() => { const r = document.documentElement; r.setAttribute("data-tod", "day"); r.setAttribute("data-season", "summer"); }, []);
   // 进入即更新 lastSeenAt（轻量，标记"今天来过"，但延迟以便先算盲盒）
   useEffect(() => { if (loaded && st.onboarded) { const t = setTimeout(() => setSt((s) => ({ ...s, pet: { ...s.pet, lastSeenAt: now(), mood: Math.min(100, (s.pet.mood ?? 75)) } })), 1500); return () => clearTimeout(t); } }, [loaded, st.onboarded]);
 
@@ -905,10 +902,7 @@ function Home({ ctx }) {
 
     {/* 窝 + 猫 */}
     <div style={S.room}>
-      {/* 陪伴：随本地时间的天体（白天太阳/夜晚月亮）+ 夜晚星星 + 季节粒子 */}
-      <div style={{ position: "absolute", top: 12, right: 16, fontSize: 34, zIndex: 1, filter: "drop-shadow(2px 2px 0 rgba(0,0,0,.18))" }}>{amb && amb.tod === "night" ? "🌙" : "🌞"}</div>
-      {amb && amb.tod === "night" && [[16, 28], [38, 16], [68, 38], [86, 20], [28, 54], [54, 30]].map((p, i) => <span key={i} style={{ position: "absolute", left: p[0] + "%", top: p[1] + "px", color: "#fff", fontSize: 10, opacity: 0.85, zIndex: 1 }}>✦</span>)}
-      <AmbientParticles season={amb ? amb.season : "spring"} />
+      {/* 昼夜/四季暂时关闭：只保留干净的浅绿猫窝（天体/星星/季节粒子先撤，代码见 App 的 amb 处，以后可开回） */}
       {decor.includes("plant") && <div style={S.dPlant}>🪴</div>}
       {decor.includes("lamp") && <div style={S.dLamp}>🏮</div>}
       <div style={S.bubble} className="float-soft">{mood.word}</div>
@@ -2020,9 +2014,9 @@ const S = {
   petPopPraise: { background: "var(--ok-bg)", color: C.matchaDk }, petPopScorn: { background: "var(--danger-bg)", color: "var(--danger-fg)" },
   throwWrap: { position: "fixed", inset: 0, zIndex: 70, pointerEvents: "none", overflow: "hidden" },
   eggFly: { position: "absolute", left: "calc(50% - 22px)", top: "42%", fontSize: 44, lineHeight: 1, filter: "drop-shadow(2px 3px 0 rgba(0,0,0,.25))" },
-  eggSplat: { position: "absolute", left: "calc(50% - 70px)", top: "calc(44% - 56px)", width: 140, height: 126, filter: "drop-shadow(3px 4px 0 var(--pix-shadow))" },
-  churuFly: { position: "absolute", left: "calc(50% - 95px)", top: "40%", width: 190, height: 56, filter: "drop-shadow(3px 4px 0 var(--pix-shadow))" },
-  churuSpark: { position: "absolute", top: "34%", fontSize: 26 },
+  eggThrow: { position: "absolute", left: "calc(50% - 58px)", top: "60%", width: 116, height: 130, filter: "drop-shadow(3px 4px 0 var(--pix-shadow))" },
+  churuFly: { position: "absolute", left: "calc(50% - 84px)", top: "42%", width: 168, height: 90, filter: "drop-shadow(3px 4px 0 var(--pix-shadow))" },
+  churuSpark: { position: "absolute", top: "36%", fontSize: 26 },
   catWear: { position: "absolute", top: -6, left: "50%", transform: "translateX(-50%)", fontSize: 30, zIndex: 3, filter: "drop-shadow(1px 2px 0 rgba(0,0,0,.22))", pointerEvents: "none" },
   shopHead: { textAlign: "center", padding: "12px 14px", marginBottom: 10, background: "var(--surface)", border: "3px solid var(--pix-border)", boxShadow: "4px 4px 0 var(--pix-shadow)" },
   shopGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 11 },
@@ -2196,10 +2190,8 @@ button{ border:4px solid var(--pix-border) !important; box-shadow:5px 5px 0 var(
 @keyframes fall{ 0%{transform:translateY(-12px) rotate(0deg);opacity:.9} 100%{transform:translateY(260px) rotate(160deg);opacity:.35} }\
 @keyframes petpop{ 0%{transform:translateY(16px) scale(.7);opacity:0} 55%{transform:translateY(-3px) scale(1.06)} 100%{transform:translateY(0) scale(1);opacity:1} }\
 .pet-pop{ animation:petpop .28s cubic-bezier(.2,1.35,.5,1) both; }\
-@keyframes eggFly{ 0%{transform:translate(40vw,46vh) scale(.5) rotate(0deg);opacity:0} 14%{opacity:1} 88%{transform:translate(0,0) scale(1.05) rotate(500deg);opacity:1} 100%{transform:translate(-1vw,-1vh) scale(.35) rotate(560deg);opacity:0} }\
-.egg-fly{ animation:eggFly .42s cubic-bezier(.45,.05,.7,.6) forwards; }\
-@keyframes eggSplat{ 0%{transform:translateY(-26px) scale(.5);opacity:0} 26%{transform:translateY(0) scale(1.15);opacity:1} 46%{transform:scale(.98)} 60%{transform:scale(1);opacity:1} 100%{transform:scale(1);opacity:0} }\
-.egg-splat{ animation:eggSplat .5s ease-out both; transform-origin:center; }\
+@keyframes eggThrow{ 0%{transform:translate(30vw,12vh) scale(.5) rotate(0deg);opacity:0} 22%{opacity:1} 66%{transform:translate(0,0) scale(1) rotate(340deg);opacity:1} 100%{transform:translate(-6vw,-3vh) scale(.85) rotate(420deg);opacity:0} }\
+.egg-throw{ animation:eggThrow .5s cubic-bezier(.4,.1,.7,.75) forwards; }\
 @keyframes churuFly{ 0%{transform:translate(0,36vh) scale(.6);opacity:0} 22%{opacity:1} 46%{transform:translate(0,-3vh) scale(1.06);opacity:1} 100%{transform:translate(0,-44vh) scale(.82);opacity:0} }\
 .churu-fly{ animation:churuFly .7s cubic-bezier(.3,.8,.5,1) forwards; }\
 @keyframes churuSpark{ 0%{transform:scale(0);opacity:0} 40%{transform:scale(1.2);opacity:1} 100%{transform:scale(.6) translateY(-16px);opacity:0} }\
