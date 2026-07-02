@@ -1926,6 +1926,142 @@ function KanaDrill({ idx, play, throwReact }) {
     })}</div>
   </div>);
 }
+// 🥁 节奏跟读：像素鼓点(咚+嗒)起拍，跟着拍子把假名念出声——可以无意义(かかけき那样咏唱)。
+// 麦克风只测"拍点上有没有出声"(300-3400Hz 人声频段能量;echoCancellation 滤掉外放鼓点)，不识别内容也不录音——开口本身就是训练。
+// 拿不到麦克风时自动降级"点拍模式"(边念边点)。鼓点全部预排进 AudioContext 保证节拍精准。
+const CHANT_BPMS = [84, 92, 100, 108]; // 每小节 8 拍、逐小节提速
+const CHANT_BEATS = 8;
+function RhythmChant({ idx, play, ctx }) {
+  const [phase, setPhase] = useState("idle"); // idle | count | run | end
+  const [micOk, setMicOk] = useState(null);
+  const [seq, setSeq] = useState([]);
+  const [pos, setPos] = useState(-1);
+  const [count, setCount] = useState(4);
+  const [combo, setCombo] = useState(0); const [score, setScore] = useState(0);
+  const actxRef = useRef(null), streamRef = useRef(null), anaRef = useRef(null), dataRef = useRef(null);
+  const rafRef = useRef(null), itvRef = useRef(null), beatsRef = useRef([]), flagsRef = useRef([]), resolvedRef = useRef([]), baseRef = useRef(12);
+  const comboRef = useRef(0), maxComboRef = useRef(0);
+  const stopAll = () => { cancelAnimationFrame(rafRef.current); clearInterval(itvRef.current); try { if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop()); } catch {} streamRef.current = null; anaRef.current = null; };
+  useEffect(() => () => stopAll(), []);
+  const tick = (a, t, accent) => { try {
+    const o = a.createOscillator(), g = a.createGain(); o.type = "square"; o.frequency.value = accent ? 8600 : 7000; // 嗒:高频短脉冲,避开人声测量频段
+    g.gain.setValueAtTime(accent ? 0.15 : 0.09, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.045);
+    o.connect(g); g.connect(a.destination); o.start(t); o.stop(t + 0.05);
+    const s = a.createOscillator(), sg = a.createGain(); s.type = "sine"; s.frequency.setValueAtTime(110, t); s.frequency.exponentialRampToValueAtTime(50, t + 0.1); // 咚:低频下扫,同样在测量频段外
+    sg.gain.setValueAtTime(accent ? 0.5 : 0.3, t); sg.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+    s.connect(sg); sg.connect(a.destination); s.start(t); s.stop(t + 0.14);
+  } catch {} };
+  const makeSeq = () => { // 咏唱型序列:每小节挑 4 个假名,45% 概率重复上一拍 → かかけき那种口感
+    const pool = [].concat.apply([], KANA_GRID).filter(Boolean);
+    const items = [];
+    for (let b = 0; b < CHANT_BPMS.length; b++) { const set = shuffle(pool).slice(0, 4); let prev = null;
+      for (let i = 0; i < CHANT_BEATS; i++) { const c = (prev && Math.random() < 0.45) ? prev : set[Math.floor(Math.random() * set.length)]; items.push({ c, t: 0, state: "pending" }); prev = c; } }
+    return items;
+  };
+  const start = async () => {
+    play("tap");
+    const a = Sfx.getCtx(); if (!a) return;
+    try { await a.resume(); } catch {}
+    actxRef.current = a;
+    let mic = false;
+    try { const st = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+      streamRef.current = st; const src = a.createMediaStreamSource(st); const ana = a.createAnalyser(); ana.fftSize = 1024; ana.smoothingTimeConstant = 0.5;
+      src.connect(ana); anaRef.current = ana; dataRef.current = new Uint8Array(ana.frequencyBinCount); mic = true; } catch (e) { mic = false; }
+    setMicOk(mic);
+    const items = makeSeq();
+    const bd0 = 60 / CHANT_BPMS[0];
+    // 游戏时钟用 performance.now()(秒)——不依赖 AudioContext 状态,音频万一被挂起游戏也照跑;鼓点按偏移量映射到 ctx 时间轴
+    const perfNow = () => performance.now() / 1000;
+    const p0 = perfNow(), c0 = a.currentTime;
+    const toCtx = (tp) => c0 + (tp - p0);
+    let t = p0 + 0.4;
+    for (let i = 0; i < 4; i++) { tick(a, toCtx(t), i === 0); t += bd0; } // 倒数 4 拍
+    const beats = [];
+    for (let b = 0; b < CHANT_BPMS.length; b++) { const bd = 60 / CHANT_BPMS[b]; for (let i = 0; i < CHANT_BEATS; i++) { tick(a, toCtx(t), i % 4 === 0); beats.push(t); items[b * CHANT_BEATS + i].t = t; t += bd; } }
+    beatsRef.current = beats; flagsRef.current = beats.map(() => false); resolvedRef.current = beats.map(() => false);
+    comboRef.current = 0; maxComboRef.current = 0; baseRef.current = 12;
+    setSeq(items); setScore(0); setCombo(0); setPos(-1); setCount(4); setPhase("count");
+    let finished = false;
+    const finish = () => { if (finished) return; finished = true; stopAll(); setPhase("end");
+      const total = beatsRef.current.length, hits = flagsRef.current.filter(Boolean).length, r = hits / total;
+      if (r >= 0.85) { ctx.bonusFish(); ctx.bonusFish(); ctx.petReact("praise"); play("win"); }
+      else if (r >= 0.55) { ctx.bonusFish(); ctx.petReact("praise"); play("win"); }
+      else if (r < 0.35) { ctx.petReact("scorn"); ctx.throwReact("egg"); play("wrong"); } // 节奏太拉→哭哭💩伺候
+      else play("pop");
+    };
+    const step = () => {
+      if (finished) return;
+      const now = perfNow(), bs = beatsRef.current;
+      if (anaRef.current) { // 人声频段能量 → 拍点窗口内出声=命中
+        const ana = anaRef.current, data = dataRef.current; ana.getByteFrequencyData(data);
+        const binHz = a.sampleRate / 2 / data.length, lo = Math.max(1, Math.floor(300 / binHz)), hi = Math.min(data.length - 1, Math.ceil(3400 / binHz));
+        let sum = 0; for (let i = lo; i <= hi; i++) sum += data[i]; const e = sum / (hi - lo + 1);
+        if (e < baseRef.current * 1.5) baseRef.current = baseRef.current * 0.99 + e * 0.01; // 只在安静时更新噪声底
+        if (e > Math.max(baseRef.current * 1.9, baseRef.current + 16, 20)) { for (let i = 0; i < bs.length; i++) { if (!resolvedRef.current[i] && now > bs[i] - 0.27 && now < bs[i] + 0.35) flagsRef.current[i] = true; } }
+      }
+      for (let i = 0; i < bs.length; i++) { // 结算已过窗口的拍
+        if (!resolvedRef.current[i] && now > bs[i] + 0.36) { resolvedRef.current[i] = true; const hit = flagsRef.current[i];
+          if (hit) { comboRef.current += 1; maxComboRef.current = Math.max(maxComboRef.current, comboRef.current); setScore((s) => s + 1); vibrate(12); } else comboRef.current = 0;
+          setCombo(comboRef.current);
+          setSeq((sq) => sq.map((it, j) => j === i ? { ...it, state: hit ? "hit" : "miss" } : it)); }
+      }
+      let p = -1; for (let i = 0; i < bs.length; i++) { if (now >= bs[i] - 0.08) p = i; else break; }
+      setPos(p);
+      if (p < 0) setCount(Math.max(1, Math.ceil((bs[0] - now) / bd0)));
+      else setPhase((ph) => ph === "count" ? "run" : ph);
+      if (now > bs[bs.length - 1] + 0.6) finish();
+    };
+    // 双驱动：可见时 RAF 丝滑刷新；页面被挂起/切后台时 interval 兜底推进(否则游戏会僵死)
+    const loop = () => { if (finished) return; step(); if (!finished) rafRef.current = requestAnimationFrame(loop); };
+    rafRef.current = requestAnimationFrame(loop);
+    itvRef.current = setInterval(step, 120);
+  };
+  const tapBeat = () => { const now = performance.now() / 1000, bs = beatsRef.current;
+    for (let i = 0; i < bs.length; i++) { if (!resolvedRef.current[i] && now > bs[i] - 0.27 && now < bs[i] + 0.35) { flagsRef.current[i] = true; break; } } vibrate(8); };
+  const quit = () => { stopAll(); setPhase("idle"); play("tap"); };
+  if (phase === "idle" || phase === "end") {
+    const total = beatsRef.current.length || CHANT_BPMS.length * CHANT_BEATS, r = total ? score / total : 0;
+    return (<div className="fade-in"><div className="card pop-in" style={{ ...S.bigCard, padding: "24px 20px" }}>
+      {phase === "end" ? (<>
+        <div style={{ fontSize: 40 }}>{r >= 0.85 ? "🏆" : r >= 0.55 ? "🎉" : r < 0.35 ? "💩" : "🏁"}</div>
+        <div style={{ fontSize: 20, fontWeight: 800, marginTop: 4 }}>跟上 {score}/{total} 拍 · 最大连击 {maxComboRef.current}</div>
+        <div style={{ fontSize: 13, color: "var(--ink-mid)", fontWeight: 800, marginTop: 6 }}>{r >= 0.85 ? "S · 跟拍之神！+2🐟" : r >= 0.7 ? "A · 节奏不错 +1🐟" : r >= 0.55 ? "B · 再顺一点 +1🐟" : r >= 0.35 ? "C · 多练练" : "D · 拍子呢？被日狗嫌弃了"}</div>
+      </>) : (<>
+        <div style={{ fontSize: 40 }}>🥁</div>
+        <div style={{ fontSize: 15, fontWeight: 800, marginTop: 4 }}>节奏跟读 · 跟着鼓点念假名</div>
+        <div style={{ fontSize: 12.5, color: "var(--ink-soft)", marginTop: 8, lineHeight: 1.8, textAlign: "left" }}>屏幕跟着拍子亮假名(かかけき那样，无意义也行)，<b>出声念就得分</b>，拍速越来越快。<br />🎤 需要麦克风：只测"拍点上有没有出声"，不识别内容、不录音不上传。<br />🎧 外放也行，戴耳机更准；拿不到麦克风会自动变成"边念边点拍"。</div>
+      </>)}
+      <button className="pressable" style={{ ...S.bigBtn, maxWidth: 240, margin: "14px auto 0" }} onClick={start}>{phase === "end" ? "再来一轮 🔁" : "开始 ▶"}</button>
+    </div></div>);
+  }
+  const cur = pos >= 0 ? seq[pos] : null;
+  const barStart = pos >= 0 ? Math.floor(pos / CHANT_BEATS) * CHANT_BEATS : 0;
+  const barNo = Math.floor((pos < 0 ? 0 : pos) / CHANT_BEATS);
+  return (<div className="fade-in">
+    <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 14, marginBottom: 10, fontSize: 14, fontWeight: 800 }}>
+      <span style={{ color: C.matchaDk }}>✓ {score}</span><span style={{ color: C.honeyDk }}>连击 {combo} 🔥</span>
+      <span style={{ fontSize: 11, color: "var(--ink-soft)", fontWeight: 700 }}>{micOk ? "🎤 听你出声中" : "👆 点拍模式"}</span>
+      <button className="pressable no-pix" style={{ background: "none", border: "none", fontSize: 16, cursor: "pointer", color: "var(--ink-soft)", fontWeight: 800, fontFamily: "inherit" }} onClick={quit}>✕</button>
+    </div>
+    <div className="card" style={{ ...S.bigCard, padding: "22px 18px" }}>
+      {phase === "count"
+        ? (<><div style={{ fontSize: 60, fontWeight: 800 }}>{count}</div><div style={{ fontSize: 13, color: "var(--ink-soft)" }}>准备——跟着拍子念！</div></>)
+        : (<><div key={pos} className="pop-in" style={{ fontSize: 72, fontWeight: 800, lineHeight: 1.1 }}>{cur ? cur.c[idx] : ""}</div>
+            <div style={{ fontSize: 15, color: C.honeyDk, fontWeight: 800, marginTop: 2 }}>{cur ? cur.c[2] : ""}</div></>)}
+    </div>
+    <div style={{ display: "flex", gap: 5, justifyContent: "center", marginTop: 12 }}>
+      {seq.slice(barStart, barStart + CHANT_BEATS).map((it, i) => { const gi = barStart + i;
+        return (<span key={gi} style={{ width: 36, height: 40, display: "grid", placeItems: "center", fontSize: 17, fontWeight: 800,
+          background: it.state === "hit" ? "var(--ok-bg)" : it.state === "miss" ? "var(--danger-bg)" : "var(--surface)",
+          border: "3px solid " + (gi === pos ? C.honey : it.state === "hit" ? C.matchaDk : it.state === "miss" ? C.blush : "var(--pix-border)"),
+          color: it.state === "miss" ? C.blush : "var(--ink)" }}>{it.c[idx]}</span>); })}
+    </div>
+    <div style={{ fontSize: 11.5, color: "var(--ink-soft)", textAlign: "center", marginTop: 8, fontWeight: 700 }}>第 {barNo + 1}/{CHANT_BPMS.length} 小节 · {CHANT_BPMS[barNo]} BPM</div>
+    {micOk === false && <div style={{ display: "flex", justifyContent: "center", marginTop: 14 }}>
+      <button className="pressable" style={{ ...S.bigBtn, maxWidth: 260 }} onClick={tapBeat}>🥁 拍！(边念边点)</button>
+    </div>}
+  </div>);
+}
 function KanaChart({ ctx }) {
   const { play } = ctx;
   const [kind, setKind] = useState("hira");
@@ -1939,8 +2075,9 @@ function KanaChart({ ctx }) {
     <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
       <button className="pressable" style={{ ...S.seg, ...(mode === "chart" ? S.segOn : {}) }} onClick={() => { setMode("chart"); play("tap"); }}>📋 假名表</button>
       <button className="pressable" style={{ ...S.seg, ...(mode === "drill" ? S.segOn : {}) }} onClick={() => { setMode("drill"); play("tap"); }}>🎯 认读练习</button>
+      <button className="pressable" style={{ ...S.seg, ...(mode === "rhythm" ? S.segOn : {}) }} onClick={() => { setMode("rhythm"); play("tap"); }}>🥁 节奏跟读</button>
     </div>
-    {mode === "chart" ? <KanaTable idx={idx} onTap={(c) => { speakKana(c[idx]); }} /> : <KanaDrill idx={idx} play={play} throwReact={ctx.throwReact} />}
+    {mode === "chart" ? <KanaTable idx={idx} onTap={(c) => { speakKana(c[idx]); }} /> : mode === "drill" ? <KanaDrill idx={idx} play={play} throwReact={ctx.throwReact} /> : <RhythmChant idx={idx} play={play} ctx={ctx} />}
   </div>);
 }
 
