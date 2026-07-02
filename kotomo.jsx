@@ -302,6 +302,7 @@ function buildSeedWords(interestIds) {
   const words = [];
   const seedBase = (extra) => ({ id: uid(), mastered: false, source: "", expanded: null, cloze: null, kanjiTip: null, isSeed: true,
     verified: "verified", verifySrc: { reading: "seed", term: "seed", meaning: "seed" }, basicForm: "", contextSentence: "",
+    learned: true, // 种子词直接可复习；用户生活里加的词才走"先学后复习"
     seen: 0, wrong: 0, srs: { level: 0, dueAt: now(), lastReviewedAt: 0 }, ...extra });
   interestIds.forEach((id) => {
     const cat = SEED_BANK[id]; if (!cat) return;
@@ -336,7 +337,8 @@ const Store = (() => {
 })();
 async function loadState() { try { const v = await Store.get(SKEY); if (!v) return null; const s = JSON.parse(v);
   if (s && !Array.isArray(s.words)) s.words = []; // 形状兜底：words 不是数组直接置空，防白屏
-  if (s && Array.isArray(s.words)) s.words = s.words.filter(Boolean).map((w) => { try { const x = fixSeedWord(w); const t = s2j(stripRomajiParen(x.term)); const y = t !== x.term ? { ...x, term: t } : x; // 准确性迁移：旧词补 verified（种子词=已核实✅；其余=待核实⚠️，等离线核实/JMdict 升级）
+  if (s && Array.isArray(s.words)) s.words = s.words.filter(Boolean).map((w) => { try { const x = fixSeedWord(w); const t = s2j(stripRomajiParen(x.term)); let y = t !== x.term ? { ...x, term: t } : x; // 准确性迁移：旧词补 verified（种子词=已核实✅；其余=待核实⚠️，等离线核实/JMdict 升级）
+  if (y.learned === undefined) y = { ...y, learned: true }; // 待学门迁移：老词全部视为已学(保持原行为)，此后新加的词才走"先学后复习"
   return applyFalseFriend(y.verified ? y : { ...y, verified: y.isSeed ? "verified" : "unverified", verifySrc: y.verifySrc || (y.isSeed ? { reading: "seed", term: "seed", meaning: "seed" } : {}), basicForm: y.basicForm || "", contextSentence: y.contextSentence || "" }, false); } catch { return w; } }); return s; }
   catch (e) { console.error("[kotomo] loadState 失败", e); logEvent("error", "loadState 失败(已备份原始数据到 " + SKEY + ":bak)", (e && e.message) || e);
     try { const raw = await Store.get(SKEY); if (raw) await Store.set(SKEY + ":bak", raw); } catch {}
@@ -623,7 +625,10 @@ function applyAnswer(w, correct) {
 }
 // 掌握计数：用户手动标 mastered 也算掌握；或 SRS 到阈值
 const countMastered = (words) => words.filter((w) => w.mastered || (w.srs && w.srs.level >= MASTER_LEVEL)).length;
-const _due = (words) => { const t = now(); return words.filter((w) => !w.mastered && w.srs && w.srs.dueAt <= t); };
+// 待学门：learned===false 的词(生活里新加、还没首学)绝不进复习——先在「学新词」里认识它
+const isLearned = (w) => w.learned !== false;
+const unlearnedWords = (words) => words.filter((w) => w.learned === false && !w.mastered);
+const _due = (words) => { const t = now(); return words.filter((w) => !w.mastered && isLearned(w) && w.srs && w.srs.dueAt <= t); };
 function dueWords(words, mode) {
   let due = _due(words).sort((a, b) => (b.wrong || 0) - (a.wrong || 0) || (a.srs.level - b.srs.level));
   if (mode === "low") return due.slice(0, 5);
@@ -636,7 +641,7 @@ const wrongWords = (words) => words.filter((w) => (wrongDebt(w) > 0 || w.hesitan
 // 所以"开始复习"永远不止 1 个、且没到期也能"再复习/巩固"（无限复习）；最后打乱呈现顺序。
 function reviewPool(words, mode, wrongOnly) {
   const t = now();
-  const reviewable = words.filter((w) => !w.mastered);
+  const reviewable = words.filter((w) => !w.mastered && isLearned(w));
   const score = (w) => (w.hesitant ? 100 : 0) + wrongDebt(w) * 10 + (MASTER_LEVEL - ((w.srs && w.srs.level) || 0)) + ((w.srs && w.srs.dueAt <= t) ? 2 : 0);
   const byPrio = (arr) => [...arr].sort((a, b) => score(b) - score(a));
   if (wrongOnly) return shuffle(byPrio(reviewable.filter((w) => wrongDebt(w) > 0 || w.hesitant)).slice(0, mode === "low" ? 5 : 40));
@@ -699,6 +704,7 @@ function freshState() {
     settings: { sound: true, aiReal: false, energyMode: "normal" },
     fish: 0, fishProg: 0, owned: [], wearing: null, // 鱼干小铺：鱼积分 / 进度 / 已购物品 / 当前穿戴
     hgBest: 0, // 秒懂词 60秒冲刺 最高纪录
+    mode: "vocab", // 双模式：kana=五十音图模式(零基础) / vocab=词汇模式
   };
 }
 
@@ -788,6 +794,8 @@ export default function App() {
       id: r.id || uid(), type: r.type || "word", term: s2j(stripRomajiParen(r.term.trim())), reading: (r.reading || "").trim(), meaning: (r.meaning || "").trim(),
       pos: r.pos || "other", freq: !!r.freq, loan: r.loan || null, mastered: false, source: (r.source || "").trim(),
       expanded: r.expanded || null, cloze: r.cloze || null, kanjiTip: r.kanjiTip || null, isSeed: false, seen: 0, wrong: 0, srs: { level: 0, dueAt: now(), lastReviewedAt: 0 },
+      learned: r.learned ?? false, // 生活里加的词默认"待学"：先在「学新词」认识它，学过才进复习
+
       // 准确性核实（kuromoji/JMdict 核实=verified✅，AI 现编/低置信=unverified⚠️）
       verified: r.verified || "unverified", verifySrc: r.verifySrc || {}, basicForm: r.basicForm || "", contextSentence: r.contextSentence || "",
       jmId: r.jmId || null, glossEn: r.glossEn || null, candidates: r.candidates || null, origin: r.origin || null,
@@ -799,8 +807,8 @@ export default function App() {
   // 批量删除（多选）：一次性移入回收站
   const delWords = useCallback((ids) => patch((s) => { const set = new Set(ids); const removed = s.words.filter((x) => set.has(x.id)); return { ...s, words: s.words.filter((x) => !set.has(x.id)), trash: [...removed.map((w) => ({ word: w, deletedAt: now() })), ...(s.trash || [])].slice(0, 100) }; }), []);
   const restoreWord = useCallback((id) => patch((s) => { const e = (s.trash || []).find((t) => t.word.id === id); return e ? { ...s, words: [...s.words, e.word], trash: (s.trash || []).filter((t) => t.word.id !== id) } : s; }), []);
-  // 补充初始词库：把所选门类的种子词/句【追加】进现有库（不清空、不替换），调用方已去重
-  const appendWords = useCallback((rows, ids) => patch((s) => ({ ...s, words: [...s.words, ...rows], interests: Array.from(new Set([...(s.interests || []), ...(ids || [])])) })), []);
+  // 补充初始词库：把所选门类的种子词/句【追加】进现有库（不清空、不替换），调用方已去重；种子/词包直接可复习(learned:true)
+  const appendWords = useCallback((rows, ids) => patch((s) => ({ ...s, words: [...s.words, ...rows.map((r) => ({ ...r, learned: r.learned ?? true }))], interests: Array.from(new Set([...(s.interests || []), ...(ids || [])])) })), []);
   // 点猫"心情+1"：必须走 patch 才能持久化+重渲染（曾经就地 mutation 导致不生效）
   const petLove = useCallback(() => patch((s) => ({ ...s, pet: { ...s.pet, mood: Math.min(100, (s.pet.mood ?? 75) + 1) } })), []);
 
@@ -845,12 +853,13 @@ export default function App() {
       <button className="pressable" style={{ ...S.bigBtn, marginTop: 14 }} onClick={() => window.location.reload()}>重试</button>
     </div></div>);
   if (!loaded) return <Splash />;
-  if (!st.onboarded) return <Onboarding onDone={(interests) => { play("happy"); patch((s) => ({ ...s, onboarded: true, interests, words: buildSeedWords(interests) })); }} play={play} />;
+  if (!st.onboarded) return <Onboarding onDone={({ mode, interests }) => { play("happy"); patch((s) => ({ ...s, onboarded: true, mode, interests, words: mode === "kana" ? [] : buildSeedWords(interests) })); }} play={play} />;
 
   const nav = (v) => { play("tap"); setView(v); };
   const bonusFish = () => setSt((s) => ({ ...s, fish: (s.fish || 0) + 1 })); // 连对奖励:每5连对额外+1🐟
   const setHgBest = (n) => setSt((s) => (n > (s.hgBest || 0) ? { ...s, hgBest: n } : s)); // 冲刺最高纪录
-  const ctx = { st, play, petReact, throwReact, bonusFish, setHgBest, mastered, seg, decor, mood, nav, addWords, updateWord, delWord, delWords, restoreWord, appendWords, petLove, buyItem, setWearing, setSetting, finishReview, ownWordCount, reviewWrongOnly, setReviewWrongOnly, setView, expandTarget, setExpandTarget, amb };
+  const setMode = (m) => setSt((s) => ({ ...s, mode: m })); // 五十音图模式 ⇄ 词汇模式
+  const ctx = { st, play, petReact, throwReact, bonusFish, setHgBest, setMode, mastered, seg, decor, mood, nav, addWords, updateWord, delWord, delWords, restoreWord, appendWords, petLove, buyItem, setWearing, setSetting, finishReview, ownWordCount, reviewWrongOnly, setReviewWrongOnly, setView, expandTarget, setExpandTarget, amb };
 
   return (
     <div style={S.shell}>
@@ -862,7 +871,7 @@ export default function App() {
       {petThrow && <PetThrow n={petThrow.n} kind={petThrow.kind} />}
       {saveErr && <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 50, background: "var(--danger-fg)", color: "#fff", textAlign: "center", padding: "6px 10px", fontSize: 12, fontWeight: 700 }}>⚠️ 本地保存异常，这台设备可能无法保留数据</div>}
       {naughty && <NaughtyModal text={naughty} emoji={seg.emoji} onClose={() => { setNaughty(null); play("happy"); }} />}
-      <TopBar st={st} seg={seg} mastered={mastered} onSettings={() => nav("settings")} play={play} setSetting={setSetting} />
+      <TopBar st={st} seg={seg} mastered={mastered} onSettings={() => nav("settings")} onShop={() => nav("shop")} play={play} setSetting={setSetting} />
       <main style={S.main}>
         {view === "home" && <Home ctx={ctx} />}
         {view === "review" && <ReviewSession ctx={ctx} />}
@@ -871,6 +880,7 @@ export default function App() {
         {view === "center" && <ReviewCenter ctx={ctx} />}
         {view === "kana" && <KanaChart ctx={ctx} />}
         {view === "homograph" && <HomographChart ctx={ctx} />}
+        {view === "learn" && <LearnNew ctx={ctx} />}
         {view === "shop" && <Shop ctx={ctx} />}
         {view === "settings" && <Settings ctx={ctx} />}
       </main>
@@ -880,41 +890,155 @@ export default function App() {
 
 // ── 首次进入：兴趣多选（不限数量，至少 1 个）──────────────
 function Onboarding({ onDone, play }) {
+  const [step, setStep] = useState("mode"); // mode → (词汇模式)interests
   const [sel, setSel] = useState([]);
   const toggle = (id) => { play("tap"); setSel((s) => s.includes(id) ? s.filter((x) => x !== id) : [...s, id]); };
   return (<div style={S.shell}><style>{CSS}</style><Bg />
     <div style={S.onbWrap}>
       <div style={S.onbLogo}>ことも</div>
       <div style={S.onbSub}>词崽 · 你遇到的词，才是你该学的词</div>
-      <div className="fade-in card" style={S.onbCard}>
-        <div style={S.onbTitle}>你在日本，最常遇到哪些场景？</div>
-        <div style={S.onbHint}>想选几个选几个（每类各送 30 词 + 10 句，选越多开局词库越大；之后都能自己改）。</div>
-        <div style={S.intGrid}>{INTERESTS.map((it) => { const on = sel.includes(it.id); return (
-          <button key={it.id} className="pressable" style={{ ...S.intBtn, ...(on ? S.intOn : {}) }} onClick={() => toggle(it.id)}>
-            <span style={{ fontSize: 30 }}>{it.emoji}</span><span style={S.intLabel}>{it.label}</span>{on && <span style={S.intCheck}>✓</span>}</button>); })}</div>
-        <button className="pressable" disabled={sel.length < 1} style={{ ...S.bigBtn, opacity: sel.length >= 1 ? 1 : 0.45, marginTop: 16 }} onClick={() => onDone(sel)}>
-          {sel.length >= 1 ? "进入 ことも 🐱（已选 " + sel.length + " 类）" : "至少选 1 个"}</button>
-      </div>
+      {step === "mode" ? (
+        <div className="fade-in card" style={S.onbCard}>
+          <div style={S.onbTitle}>你现在在哪个阶段？</div>
+          <div style={S.onbHint}>之后随时可以在设置里切换，不用纠结。</div>
+          <button className="pressable card" style={{ display: "flex", alignItems: "center", gap: 14, width: "100%", padding: "16px 15px", marginTop: 12, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}
+            onClick={() => { play("happy"); onDone({ mode: "kana", interests: [] }); }}>
+            <span style={{ fontSize: 34 }}>🔤</span>
+            <div style={{ flex: 1 }}><div style={{ fontWeight: 800, fontSize: 16.5, color: C.ink }}>五十音图模式</div>
+              <div style={{ fontSize: 12.5, color: "var(--ink-soft)", marginTop: 3, lineHeight: 1.6 }}>零基础 / 假名还不熟 — 先集中把五十音拿下，生活里撞见的词先扔进「收词袋」</div></div>
+            <span style={{ fontSize: 20, color: "var(--ink-soft)" }}>›</span>
+          </button>
+          <button className="pressable card" style={{ display: "flex", alignItems: "center", gap: 14, width: "100%", padding: "16px 15px", marginTop: 12, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}
+            onClick={() => { play("tap"); setStep("interests"); }}>
+            <span style={{ fontSize: 34 }}>📗</span>
+            <div style={{ flex: 1 }}><div style={{ fontWeight: 800, fontSize: 16.5, color: C.ink }}>词汇模式</div>
+              <div style={{ fontSize: 12.5, color: "var(--ink-soft)", marginTop: 3, lineHeight: 1.6 }}>已会五十音 — 直接开始 加词 → 学新词 → 复习 的日常循环</div></div>
+            <span style={{ fontSize: 20, color: "var(--ink-soft)" }}>›</span>
+          </button>
+        </div>
+      ) : (
+        <div className="fade-in card" style={S.onbCard}>
+          <div style={S.onbTitle}>你在日本，最常遇到哪些场景？</div>
+          <div style={S.onbHint}>想选几个选几个（每类各送 30 词 + 10 句，选越多开局词库越大；之后都能自己改）。</div>
+          <div style={S.intGrid}>{INTERESTS.map((it) => { const on = sel.includes(it.id); return (
+            <button key={it.id} className="pressable" style={{ ...S.intBtn, ...(on ? S.intOn : {}) }} onClick={() => toggle(it.id)}>
+              <span style={{ fontSize: 30 }}>{it.emoji}</span><span style={S.intLabel}>{it.label}</span>{on && <span style={S.intCheck}>✓</span>}</button>); })}</div>
+          <button className="pressable" disabled={sel.length < 1} style={{ ...S.bigBtn, opacity: sel.length >= 1 ? 1 : 0.45, marginTop: 16 }} onClick={() => onDone({ mode: "vocab", interests: sel })}>
+            {sel.length >= 1 ? "进入 ことも 🐱（已选 " + sel.length + " 类）" : "至少选 1 个"}</button>
+          <button className="pressable no-pix" style={{ background: "none", border: "none", marginTop: 10, fontSize: 12.5, color: "var(--ink-soft)", cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }} onClick={() => { setStep("mode"); play("tap"); }}>← 返回选模式</button>
+        </div>
+      )}
     </div>
   </div>);
 }
 
-function TopBar({ st, seg, mastered, onSettings, play, setSetting }) {
-  const aiReal = st.settings.aiReal;
+function TopBar({ st, seg, mastered, onSettings, onShop, play, setSetting }) {
+  // 瘦身版：只留 品牌 + 🔥连胜 + 🐟鱼(点了直达小铺) + ⚙️。AI真/拟、静音都在设置里(设一次不常动,不占头部)
   return (<header style={S.top}>
     <div style={S.brand}><span style={S.brandMark}>こ</span>
       <div><div style={S.brandName}>ことも</div><div style={S.brandSub}>{seg.emoji} {seg.title}</div></div></div>
     <div style={S.stats}>
       <Stat icon="🔥" val={st.streak.totalDays} label="累计天" tone={C.honeyDk} />
-      <Stat icon="🐟" val={st.fish || 0} label="鱼" tone={C.grape} />
-      <Stat icon="🌸" val={mastered} label="已掌握" tone={C.matchaDk} />
-      <button style={{ ...S.aiToggle, background: aiReal ? C.matcha : "var(--ai-off)", color: aiReal ? "#fff" : C.inkSoft }} onClick={() => { setSetting("aiReal", !aiReal); play("pop"); }} title="AI：真Claude/模拟">{aiReal ? "AI真" : "AI拟"}</button>
-      <button style={S.iconBtn} onClick={() => { setSetting("sound", !st.settings.sound); if (!st.settings.sound) Sfx.pop(); }}>{st.settings.sound ? "🔔" : "🔕"}</button>
+      <button className="pressable no-pix" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit" }} onClick={onShop} title="鱼干小铺">
+        <Stat icon="🐟" val={st.fish || 0} label="鱼·小铺" tone={C.grape} /></button>
       <button style={S.iconBtn} onClick={onSettings}>⚙️</button>
     </div>
   </header>);
 }
 const Stat = ({ icon, val, label, tone }) => (<div style={S.stat}><span style={{ fontSize: 15 }}>{icon}</span><div><div style={{ ...S.statVal, color: tone }}>{val}</div><div style={S.statLabel}>{label}</div></div></div>);
+
+// ── 日狗小广播：假名学习 tips(形近辨析/浊音规则/发音诀窍),日狗嘴里说出来,点一下换一条 ──
+const KANA_TIPS = [
+  "ヒ 加两点变 ビ：hi → bi。浊点「゛」就是声带震动的开关",
+  "シ(shi) 和 ツ(tsu)：シ 的小点横着排、ツ 竖着排——记「シ横ツ竖」",
+  "ソ(so) 和 ン(n)：ソ 的小点竖直往下，ン 的往斜上挑",
+  "は行加小圆圈变半浊音：ハ(ha)→パ(pa)。圆圈「゜」只属于は行",
+  "小っ 不发音，是「顿一下」：きって = ki·(顿)·te，切手(邮票)",
+  "片假名的长音用「ー」：コーヒー 就是把前面的音拖长一拍",
+  "を 只用来当助词「把」，读音跟 お 一模一样",
+  "ん 是唯一不带元音的假名，而且永远不打头阵",
+  "平假名圆润(毛笔草书来的)，片假名方正(取汉字偏旁)：あ 来自「安」，ア 来自「阿」",
+  "小写的 ゃゅょ 贴在 i 段后面=拗音：き+ゃ=きゃ(kya)",
+  "ク(ku) 和 タ(ta)：タ 比 ク 多一横——「タ多一笔」",
+  "ね・れ・わ 长得像：左边都一样，认右边的尾巴",
+  "ば行和ぱ行只差一点：两点「゛」=浊音 ba，圆圈「゜」=半浊音 pa",
+  "う段的 u 不圆唇，比中文「乌」轻得多，嘴唇放松",
+  "ら行不是英语 R 也不是 L：舌尖在上颚轻弹一下，介于两者之间",
+  "め(me) 和 ぬ(nu)：ぬ 多一个小尾巴圈——「ぬ有尾巴」",
+  "ふ(fu) 的口型像吹蜡烛，介于 hu 和 fu 之间",
+  "こんにちは 的 は 读 wa：它当助词时就读 wa，历史遗留",
+  "ル(ru) 有两条腿，レ(re) 只有一笔",
+  "ぢ・づ 很少见，读音跟 じ・ず 一样，一般都写 じ・ず",
+];
+function PetTips({ play }) {
+  const [n, setN] = useState(() => Math.floor(Math.random() * KANA_TIPS.length));
+  return (<div className="pressable card" style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 13px", marginBottom: 12, cursor: "pointer" }}
+    onClick={() => { setN((x) => (x + 1) % KANA_TIPS.length); play("tap"); }}>
+    <div style={{ flexShrink: 0 }}><Cat size={42} bob={false} /></div>
+    <div style={{ flex: 1 }}>
+      <div style={{ fontSize: 10.5, color: C.honeyDk, fontWeight: 800 }}>📻 日狗小广播 · 假名冷知识</div>
+      <div key={n} className="fade-in" style={{ fontSize: 13, color: "var(--ink)", fontWeight: 700, lineHeight: 1.6, marginTop: 2 }}>{KANA_TIPS[n]}</div>
+    </div>
+    <span style={{ fontSize: 12, color: "var(--ink-soft)", flexShrink: 0 }}>换一条 ›</span>
+  </div>);
+}
+
+// ── 学新词：生活里加的词先在这里"认识"(资料给足、门槛极低)，学过才进复习 ──
+function LearnNew({ ctx }) {
+  const { st, play, updateWord } = ctx;
+  const [queue] = useState(() => unlearnedWords(ctx.st.words)); // 进场快照，学完标记不打乱本次顺序
+  const [i, setI] = useState(0);
+  const [quiz, setQuiz] = useState(null); // null=资料卡；{opts, picked}=小测中
+  const w = queue[i];
+  useEffect(() => { if (w) { warmJa(w.term); speakJa(w.term); } }, [w && w.id]); // 每张卡自动读一遍
+  if (!w) return (<div className="fade-in"><BackRow ctx={ctx} title="📥 学新词" />
+    <div className="card pop-in" style={{ ...S.bigCard, padding: "26px 20px" }}>
+      <div style={{ fontSize: 40 }}>🎉</div>
+      <div style={{ fontWeight: 800, fontSize: 17, marginTop: 6 }}>{queue.length ? "新词都认过脸了！" : "没有待学的新词"}</div>
+      <div style={{ fontSize: 13, color: "var(--ink-mid)", marginTop: 6, lineHeight: 1.7 }}>{queue.length ? "它们已经排进复习，之后会按记忆曲线回来考你。" : "生活里撞见新词就去「加词」，加完回这儿认识它。"}</div>
+      <button className="pressable" style={{ ...S.bigBtn, maxWidth: 240, margin: "14px auto 0" }} onClick={() => { play("tap"); ctx.setView("home"); }}>回首页</button>
+    </div></div>);
+  const markLearned = () => updateWord(w.id, (x) => ({ ...x, learned: true, srs: { ...(x.srs || {}), level: x.srs ? x.srs.level : 0, dueAt: now(), lastReviewedAt: x.srs ? x.srs.lastReviewedAt : 0 } }));
+  const next = () => { setQuiz(null); setI(i + 1); };
+  const gotIt = () => { markLearned(); play("pop"); next(); }; // 低门槛：一键"记住了"就算学过
+  const startQuiz = () => { const pool = st.words.filter((x) => x.id !== w.id && (x.type || "word") === (w.type || "word")); setQuiz({ opts: shuffle([w, ...shuffle(pool).slice(0, 3)]), picked: null }); play("tap"); };
+  const pickQuiz = (o) => { if (quiz.picked) return; const ok = o.id === w.id; setQuiz({ ...quiz, picked: o }); markLearned(); // 对错都算学过(门槛低)，但答对有夸有鱼、答错有💩
+    if (ok) play("correct"); else play("wrong");
+    setTimeout(next, ok ? 900 : 2200); };
+  const p = posInfo(w.pos);
+  return (<div className="fade-in"><BackRow ctx={ctx} title="📥 学新词" />
+    <div style={{ textAlign: "center", fontSize: 12.5, color: "var(--ink-mid)", fontWeight: 800, marginBottom: 10 }}>第 {i + 1}/{queue.length} 个 · 认识一下就行，不用背</div>
+    {!quiz ? (<>
+      <div className="card pop-in" key={w.id} style={{ ...S.bigCard, padding: "24px 20px", textAlign: "center" }}>
+        <div onClick={() => speakJa(w.term)} style={{ cursor: "pointer" }}><JaTerm w={w} size={30} align="center" /><span style={{ fontSize: 20 }}> 🔊</span></div>
+        <div style={{ fontSize: 17, fontWeight: 800, color: C.honeyDk, marginTop: 8 }}>{w.reading}</div>
+        <div style={{ fontSize: 18, fontWeight: 800, marginTop: 10 }}>{w.meaning || "(意思待补——去词库里点开它补全)"}</div>
+        <div style={{ marginTop: 10 }}>
+          <Tag bg="var(--pill-bg)" fg="var(--ink-mid)">{p.emoji}{p.label}</Tag>
+          {isTransparentKanji(w) && <Tag bg="var(--surface-sel)" fg={C.honeyDk}>👀秒懂·练读音</Tag>}
+          {w.kanjiTip && w.kanjiTip.kind === "trap" && <Tag bg="var(--danger-bg)" fg="var(--danger-fg)">⚠️汉字陷阱</Tag>}
+          {w.loan && <Tag bg="#dceaf5" fg="#3d6a8a">🔤 {LOAN_SRC[w.loan.from] || w.loan.from}: {w.loan.word}</Tag>}
+        </div>
+        {w.kanjiTip && w.kanjiTip.kind === "trap" && w.kanjiTip.note && <div style={{ fontSize: 12.5, color: "var(--danger-fg)", marginTop: 8, lineHeight: 1.6 }}>⚠️ {w.kanjiTip.note}</div>}
+        {w.contextSentence && <div style={{ fontSize: 13, color: "var(--ink-mid)", marginTop: 10, lineHeight: 1.7 }}>📍 你遇到它的地方：「{w.contextSentence}」</div>}
+        {w.expanded && w.expanded.examples && w.expanded.examples[0] && <div style={{ fontSize: 13, color: "var(--ink-mid)", marginTop: 10, lineHeight: 1.8, cursor: "pointer" }} onClick={() => speakJa(w.expanded.examples[0].jp)}>🔊 {w.expanded.examples[0].jp}<br /><span style={{ color: "var(--ink-soft)" }}>{w.expanded.examples[0].zh}</span></div>}
+        {w.origin && w.origin.note && <div style={{ fontSize: 12, color: C.wood, marginTop: 8, lineHeight: 1.6 }}>📜 {w.origin.note}</div>}
+      </div>
+      <button className="pressable" style={{ ...S.bigBtn, marginTop: 14 }} onClick={gotIt}>✓ 记住了，下一个</button>
+      <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+        <button className="pressable" style={{ ...S.ghostBtn, flex: 1 }} onClick={startQuiz}>🎯 考我一下（可跳）</button>
+        <button className="pressable" style={{ ...S.ghostBtn, flex: 1 }} onClick={() => { play("tap"); next(); }}>先跳过这个 →</button>
+      </div>
+    </>) : (<>
+      <div className="card pop-in" style={S.bigCard}><div style={{ fontSize: 24, fontWeight: 800 }} onClick={() => speakJa(w.term)}>{w.term} 🔊</div><div style={{ fontSize: 13, color: "var(--ink-soft)", marginTop: 4 }}>它是什么意思？</div></div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12 }}>{quiz.opts.map((o) => {
+        let s2 = { ...S.optWide };
+        if (quiz.picked) { if (o.id === w.id) s2 = { ...s2, outline: "3px solid " + C.matchaDk, outlineOffset: -4, background: "var(--ok-bg)" }; else if (quiz.picked.id === o.id) s2 = { ...s2, outline: "3px solid " + C.blush, outlineOffset: -4, background: "var(--danger-bg)" }; }
+        return <button key={o.id} className="pressable" style={s2} onClick={() => pickQuiz(o)}><span style={{ fontWeight: 800, fontSize: 15 }}>{o.meaning}</span></button>; })}</div>
+      {quiz.picked && quiz.picked.id !== w.id && <div className="slide-up" style={{ ...S.fb, marginTop: 10 }}>没关系，刚认识～ {w.term}（{w.reading}）= {w.meaning}</div>}
+    </>)}
+  </div>);
+}
 
 // ── 首页 ───────────────────────────────────────────────
 function Home({ ctx }) {
@@ -929,17 +1053,21 @@ function Home({ ctx }) {
   const dailyDone = todayLevel ? 1 : 0; // 简化：今天来过即视觉达成
   const catSize = catSizeOf(mastered);
 
+  const kanaMode = st.mode === "kana";
+  const unlearned = useMemo(() => unlearnedWords(st.words), [st.words]);
+
   const nudge = (() => {
     if (mood.awayDays >= 1.5) return { bg: "var(--danger-bg)", text: "好久不见～它刚跟你汇报完它的'丰功伟绩'😼 来记几个词吧" };
+    if (unlearned.length > 0) return { bg: "var(--warn-bg)", text: "有 " + unlearned.length + " 个新词还没认识，先去「学新词」见个面 📥" };
     if (due.length === 0) return { bg: "var(--ok-bg)", text: "今天没有到期要复习的词，遇到新词随手加进来就好 🌿" };
     if (todayLevel) return { bg: "var(--ok-bg)", text: "今天已经来过啦，状态在线 ✨ 想再练一点也可以" };
     return { bg: "var(--warn-bg)", text: "今天有 " + due.length + " 个词到期，消掉它们，喂饱小猫 🍙" };
   })();
 
   return (<div className="fade-in">
-    <div style={{ ...S.nudge, background: nudge.bg }}><span style={{ fontSize: 22 }}>{seg.emoji}</span><div style={{ flex: 1, fontWeight: 700, fontSize: 13.5, color: "var(--ink-mid)" }}>{nudge.text}</div></div>
+    {!kanaMode && <div style={{ ...S.nudge, background: nudge.bg }}><span style={{ fontSize: 22 }}>{seg.emoji}</span><div style={{ flex: 1, fontWeight: 700, fontSize: 13.5, color: "var(--ink-mid)" }}>{nudge.text}</div></div>}
 
-    {/* 窝 + 猫 */}
+    {/* 日狗区 —— 两种模式共同的绝对核心 */}
     <div style={S.room}>
       {/* 昼夜/四季暂时关闭：只保留干净的浅绿猫窝（天体/星星/季节粒子先撤，代码见 App 的 amb 处，以后可开回） */}
       {decor.includes("plant") && <div style={S.dPlant}>🪴</div>}
@@ -957,49 +1085,63 @@ function Home({ ctx }) {
       {ns && <div style={S.segHint}>再掌握 {ns.min - mastered} 个 → {ns.emoji} {ns.title}</div>}
     </div>
 
-    {/* 今日 */}
-    <div style={S.goalRow}>
-      <Ring pct={Math.min(100, Math.round((dailyDone ? 100 : (due.length ? 0 : 100))))} label={todayLevel ? "✓" : (due.length || "0")} />
-      <div style={{ flex: 1 }}>
+    {kanaMode ? (<>
+      {/* ── 五十音图模式：日狗小广播 + 五十音学习区 + 毕业 + 收词袋 ── */}
+      <PetTips play={play} />
+      <button className="pressable card" style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", padding: "16px 15px", marginBottom: 12, cursor: "pointer", fontFamily: "inherit" }} onClick={() => nav("kana")}>
+        <span style={{ fontSize: 26, width: 48, height: 48, background: "var(--window)", display: "grid", placeItems: "center", flexShrink: 0 }}>🔤</span>
+        <div style={{ flex: 1, textAlign: "left" }}><div style={{ fontWeight: 800, fontSize: 17, color: C.ink }}>五十音学习区</div><div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 2 }}>假名表 · 认读练习 · 🥁节奏跟读</div></div>
+        <span style={{ fontSize: 20, color: "var(--ink-soft)" }}>›</span>
+      </button>
+      <button className="pressable card" style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", padding: "13px 15px", marginBottom: 12, cursor: "pointer", fontFamily: "inherit" }} onClick={() => { play("tap"); nav("settings"); }}>
+        <span style={{ fontSize: 24, width: 44, height: 44, background: "var(--window)", display: "grid", placeItems: "center", flexShrink: 0 }}>🎓</span>
+        <div style={{ flex: 1, textAlign: "left" }}><div style={{ fontWeight: 800, fontSize: 15, color: C.ink }}>毕业考试 · 下一版开考</div><div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 2 }}>已经会五十音了？去设置里直接切到词汇模式 ›</div></div>
+      </button>
+      <div style={S.toolRow}>
+        <button className="pressable card" style={S.toolBtn} onClick={() => nav("add")}><span style={S.toolIcon}>👜</span><span>收词袋 · 收一个</span></button>
+        <button className="pressable card" style={S.toolBtn} onClick={() => nav("library")}><span style={S.toolIcon}>📚</span><span>袋里 {st.words.length} 词</span></button>
+      </div>
+      <div style={S.statLine}>路上撞见的词先收着，不用学 · 毕业时它们就是你词汇模式的第一批词 🎁</div>
+    </>) : (<>
+      {/* ── 词汇模式：三大核心动作(加词→学新词→复习) → 练习区 → 词库 ── */}
+      <div style={S.reviewRow}>
+        <button className="pressable" style={S.reviewBig} onClick={() => nav("add")}>
+          <span style={{ fontSize: 20 }}>➕</span><div style={{ textAlign: "left" }}><div style={{ fontWeight: 800 }}>加词</div><div style={S.reviewSub}>生活里随手收</div></div></button>
+        <button className="pressable" style={{ ...S.reviewBig, ...(unlearned.length ? { background: "var(--warn-bg)" } : {}) }} disabled={unlearned.length === 0} onClick={() => nav("learn")}>
+          <span style={{ fontSize: 20 }}>📥</span><div style={{ textAlign: "left" }}><div style={{ fontWeight: 800 }}>学新词</div><div style={S.reviewSub}>{unlearned.length ? unlearned.length + " 个待认识" : "0 个待学"}</div></div></button>
+      </div>
+
+      <div style={S.goalRow}>
+        <Ring pct={Math.min(100, Math.round((dailyDone ? 100 : (due.length ? 0 : 100))))} label={todayLevel ? "✓" : (due.length || "0")} />
+        <div style={{ flex: 1 }}>
         <div style={S.goalTitle}>{due.length > 0 ? ("今天 " + due.length + " 个词待复习") : "今天暂无到期复习"}</div>
         <div style={S.goalSub}>🔥 累计 {st.streak.totalDays} 天 · 本月 {st.streak.monthDays} 天 · 只涨不减</div>
+        </div>
+        <EnergyPicker mode={st.settings.energyMode} onPick={(m) => { ctx.setSetting("energyMode", m); play("tap"); }} />
       </div>
-      <EnergyPicker mode={st.settings.energyMode} onPick={(m) => { ctx.setSetting("energyMode", m); play("tap"); }} />
-    </div>
 
-    <button style={{ ...S.bigBtn, marginBottom: 11 }} className="pressable" disabled={!canReview} onClick={() => { ctx.setReviewWrongOnly(false); nav("review"); }}>
-      {!canReview ? "🌸 词都掌握啦，加点新词吧" : due.length > 0 ? "📖 开始复习 · 消除 " + due.length + " 个词" : "🔄 再复习一组 · 巩固"}</button>
+      <button style={{ ...S.bigBtn, marginBottom: 11 }} className="pressable" disabled={!canReview} onClick={() => { ctx.setReviewWrongOnly(false); nav("review"); }}>
+        {!canReview ? "🌸 词都掌握啦，加点新词吧" : due.length > 0 ? "📖 开始复习 · 消除 " + due.length + " 个词" : "🔄 再复习一组 · 巩固"}</button>
 
-    <div style={S.reviewRow}>
-      <button className="pressable" style={S.reviewBig} onClick={() => nav("center")}>
-        <span style={{ fontSize: 20 }}>🌟</span><div style={{ textAlign: "left" }}><div style={{ fontWeight: 800 }}>复习中心</div><div style={S.reviewSub}>统计 · 排序 · 强化</div></div></button>
-      <button className="pressable" style={{ ...S.reviewBig, background: "var(--danger-bg)", borderColor: C.blush, boxShadow: "0 5px 0 var(--danger-bevel)" }} disabled={wrongs.length === 0} onClick={() => { ctx.setReviewWrongOnly(true); nav("review"); }}>
-        <span style={{ fontSize: 20 }}>❗</span><div style={{ textAlign: "left" }}><div style={{ fontWeight: 800 }}>错题强化</div><div style={S.reviewSub}>{wrongs.length} 个易错/犹豫</div></div></button>
-    </div>
+      <div style={S.reviewRow}>
+        <button className="pressable" style={{ ...S.reviewBig, background: "var(--danger-bg)", borderColor: C.blush, boxShadow: "0 5px 0 var(--danger-bevel)" }} disabled={wrongs.length === 0} onClick={() => { ctx.setReviewWrongOnly(true); nav("review"); }}>
+          <span style={{ fontSize: 20 }}>❗</span><div style={{ textAlign: "left" }}><div style={{ fontWeight: 800 }}>错题强化</div><div style={S.reviewSub}>{wrongs.length} 个易错/犹豫</div></div></button>
+        <button className="pressable" style={S.reviewBig} onClick={() => nav("center")}>
+          <span style={{ fontSize: 20 }}>📊</span><div style={{ textAlign: "left" }}><div style={{ fontWeight: 800 }}>统计</div><div style={S.reviewSub}>月历 · 错题榜</div></div></button>
+      </div>
 
-    <button className="pressable card" style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", padding: "13px 15px", marginBottom: 12, cursor: "pointer", fontFamily: "inherit" }} onClick={() => nav("kana")}>
-      <span style={{ fontSize: 24, width: 44, height: 44, borderRadius: 12, background: "var(--window)", display: "grid", placeItems: "center", flexShrink: 0 }}>🔤</span>
-      <div style={{ flex: 1, textAlign: "left" }}><div style={{ fontWeight: 800, fontSize: 16, color: C.ink }}>五十音图</div><div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 2 }}>假名表 · 认读练习 — 零基础先练这个</div></div>
-      <span style={{ fontSize: 20, color: "var(--ink-soft)" }}>›</span>
-    </button>
+      {hgCount >= 4 && <button className="pressable card" style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", padding: "13px 15px", marginBottom: 12, cursor: "pointer", fontFamily: "inherit" }} onClick={() => nav("homograph")}>
+        <span style={{ fontSize: 24, width: 44, height: 44, borderRadius: 12, background: "var(--window)", display: "grid", placeItems: "center", flexShrink: 0 }}>👂</span>
+        <div style={{ flex: 1, textAlign: "left" }}><div style={{ fontWeight: 800, fontSize: 16, color: C.ink }}>秒懂词·读音特训</div><div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 2 }}>看字秒懂却读不出的 <b style={{ color: C.honeyDk }}>{hgCount}</b> 个汉字词 — 练听力和开口</div></div>
+        <span style={{ fontSize: 20, color: "var(--ink-soft)" }}>›</span>
+      </button>}
 
-    {hgCount >= 4 && <button className="pressable card" style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", padding: "13px 15px", marginBottom: 12, cursor: "pointer", fontFamily: "inherit" }} onClick={() => nav("homograph")}>
-      <span style={{ fontSize: 24, width: 44, height: 44, borderRadius: 12, background: "var(--window)", display: "grid", placeItems: "center", flexShrink: 0 }}>👂</span>
-      <div style={{ flex: 1, textAlign: "left" }}><div style={{ fontWeight: 800, fontSize: 16, color: C.ink }}>秒懂词·读音特训</div><div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 2 }}>看字秒懂却读不出的 <b style={{ color: C.honeyDk }}>{hgCount}</b> 个汉字词 — 练听力和开口</div></div>
-      <span style={{ fontSize: 20, color: "var(--ink-soft)" }}>›</span>
-    </button>}
-
-    <button className="pressable card" style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", padding: "13px 15px", marginBottom: 12, cursor: "pointer", fontFamily: "inherit" }} onClick={() => nav("shop")}>
-      <span style={{ fontSize: 24, width: 44, height: 44, borderRadius: 12, background: "var(--window)", display: "grid", placeItems: "center", flexShrink: 0 }}>🐟</span>
-      <div style={{ flex: 1, textAlign: "left" }}><div style={{ fontWeight: 800, fontSize: 16, color: C.ink }}>鱼干小铺 · 给日狗换装</div><div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 2 }}>你有 <b style={{ color: C.grape }}>{st.fish || 0} 🐟</b> · 再答对 {FISH_PER - (st.fishProg || 0)} 题 +1🐟</div></div>
-      <span style={{ fontSize: 20, color: "var(--ink-soft)" }}>›</span>
-    </button>
-
-    <div style={S.toolRow}>
-      <button className="pressable card" style={S.toolBtn} onClick={() => nav("add")}><span style={S.toolIcon}>🎙️</span><span>加词</span></button>
-      <button className="pressable card" style={S.toolBtn} onClick={() => nav("library")}><span style={S.toolIcon}>📚</span><span>我的词库</span></button>
-    </div>
-    <div style={S.statLine}>词库共 <b style={{ color: C.honeyDk }}>{st.words.length}</b> 词 · 你自己加了 <b style={{ color: C.matchaDk }}>{ctx.ownWordCount}</b> 个</div>
+      <div style={S.toolRow}>
+        <button className="pressable card" style={S.toolBtn} onClick={() => nav("library")}><span style={S.toolIcon}>📚</span><span>我的词库</span></button>
+        <button className="pressable card" style={S.toolBtn} onClick={() => nav("shop")}><span style={S.toolIcon}>🐟</span><span>鱼干小铺</span></button>
+      </div>
+      <div style={S.statLine}>词库共 <b style={{ color: C.honeyDk }}>{st.words.length}</b> 词 · 你自己加了 <b style={{ color: C.matchaDk }}>{ctx.ownWordCount}</b> 个</div>
+    </>)}
   </div>);
 }
 // 点猫即时心情反馈在 Home 内联处理（轻量，不滥用互动）
@@ -1299,11 +1441,13 @@ function GrammarRound({ item, all, play, onResult, onNext, onWrong, onHesitate }
 }
 
 function EmptyReview({ ctx }) {
+  const pending = unlearnedWords(ctx.st.words).length;
   return (<div className="fade-in" style={{ textAlign: "center", paddingTop: 40 }}>
     <div style={{ fontSize: 60 }}>🌙</div>
     <h2 style={{ fontWeight: 800 }}>暂时没有要复习的词</h2>
-    <p style={{ color: C.inkSoft, fontSize: 14 }}>遇到新词随手加进来，系统会安排它科学地回来考你。</p>
-    <button className="pressable" style={{ ...S.bigBtn, maxWidth: 260, margin: "10px auto 0" }} onClick={() => { ctx.play("tap"); ctx.setView("home"); }}>回窝看看 🏡</button>
+    <p style={{ color: C.inkSoft, fontSize: 14 }}>{pending > 0 ? "有 " + pending + " 个新词还没认识——学过的词才会进复习。" : "遇到新词随手加进来，系统会安排它科学地回来考你。"}</p>
+    {pending > 0 && <button className="pressable" style={{ ...S.bigBtn, maxWidth: 260, margin: "10px auto 0" }} onClick={() => { ctx.play("tap"); ctx.setView("learn"); }}>📥 去学新词（{pending}）</button>}
+    <button className="pressable" style={{ ...S.ghostBtn, maxWidth: 260, margin: "10px auto 0" }} onClick={() => { ctx.play("tap"); ctx.setView("home"); }}>回窝看看 🏡</button>
   </div>);
 }
 function ReviewResult({ ctx, results, hearts, onDone }) {
@@ -1356,7 +1500,8 @@ function AddWords({ ctx }) {
   const pickCand = (i, j) => setDraft((d) => d.map((r, idx) => { if (idx !== i || !r.candidates || !r.candidates[j]) return r; const c = r.candidates[j]; return { ...r, term: c.term, reading: c.reading, meaning: c.meaning || r.meaning, jmId: c.jmId, glossEn: c.glossEn, verified: c.inDict ? "verified" : "unverified", verifySrc: c.inDict ? { reading: "jmdict", term: "jmdict", meaning: "ai" } : { reading: "ai", term: "ai", meaning: "ai" } }; }));
   // ✨展开：先把当前这批待确认词存进库（被点的那条带固定 id，其余正常入库），再进入"展开学习"对它深挖/推荐关联词，避免丢草稿
   const expandDraft = (i) => { const r = draft[i]; if (!r || !r.term || !r.term.trim()) return; const id = uid(); addWords([{ ...r, id }]); setDraft((d) => d.filter((_, idx) => idx !== i)); setExpandWord({ ...r, id }); setTab("expand"); play("tap"); }; // 只把被点的这条入库，其余待确认保留
-  const commit = () => { addWords(draft); setDraft([]); play("win"); ctx.setView("library"); };
+  // 入库后：词汇模式直达「学新词」承接"加后就学"(可跳过)；五十音模式(收词袋)只收不学,回袋子看一眼
+  const commit = () => { addWords(draft); setDraft([]); play("win"); ctx.setView(st.mode === "kana" ? "library" : "learn"); };
   return (<div className="fade-in"><BackRow ctx={ctx} title="🎙️ 加词" onBack={tab === "expand" ? () => { if (expandBackRef.current && expandBackRef.current()) return; setExpandWord(null); setTab("type"); } : undefined} />
     {!aiReal && <div style={{ background: "var(--warn-bg)", border: "3px solid var(--pix-border)", padding: "9px 12px", marginBottom: 10, fontSize: 12.5, lineHeight: 1.7, color: "var(--ink-mid)", fontWeight: 700 }}>
       🔕 当前是「AI拟」离线模式：只自动补<b>读音</b>，<b>不会自动补中文意思</b>。想恢复自动补全 → <span style={{ color: C.matchaDk, fontWeight: 800, cursor: "pointer", textDecoration: "underline" }} onClick={() => ctx.setView("settings")}>去设置贴 AI 密钥</span>（换设备/加到主屏幕后密钥要重新贴一次，两边存档是分开的）。</div>}
@@ -2423,6 +2568,9 @@ function Settings({ ctx }) {
   };
   return (<div className="fade-in"><BackRow ctx={ctx} title="⚙️ 设置" />
     <div className="card" style={S.setCard}>
+      <Row label="学习模式" hint={st.mode === "kana" ? "五十音图模式：专注假名，撞见的词先进收词袋" : "词汇模式：加词 → 学新词 → 复习 的日常循环"}>
+        <button className="pressable" style={{ ...S.addBtn, fontSize: 12 }} onClick={() => { const m = st.mode === "kana" ? "vocab" : "kana"; ctx.setMode(m); play("win"); }}>{st.mode === "kana" ? "🔤五十音 → 切词汇" : "📗词汇 → 切五十音"}</button>
+      </Row>
       <Row label="外观" hint="像素风 · 当前固定「浅绿·白天」皮（昼夜/四季同频先关着，以后再开）"><span style={{ fontSize: 13, color: "var(--ink-mid)", fontWeight: 800 }}>🍀 浅绿·白天</span></Row>
       <Row label="音效" hint="清脆解压的按键音"><Switch on={st.settings.sound} onClick={() => { setSetting("sound", !st.settings.sound); if (!st.settings.sound) Sfx.pop(); }} /></Row>
       <Row label="AI 模式" hint="真AI(需密钥+联网，补意思/关联词/展开) / 离线(kuromoji 只补读音和词性)"><Switch on={st.settings.aiReal} label={st.settings.aiReal ? "真" : "拟"} onClick={() => { setSetting("aiReal", !st.settings.aiReal); play("pop"); }} /></Row>
