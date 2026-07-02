@@ -44,6 +44,8 @@
     document.querySelector('#boot pre').textContent = msg;
   }
   try {
+    // 直接双击本地文件 / 内嵌预览面板打开时没有真实网址，fetch 相对路径必失败 → 给一句能看懂的话
+    if (location.protocol !== 'http:' && location.protocol !== 'https:') { fail('这个页面要通过网址访问：在浏览器地址栏输入 cutomrrw.github.io/kotomo 打开（直接双击文件或在预览面板里打开会看到本提示）。'); return; }
     if (!window.React || !window.ReactDOM) { fail('没连上 React CDN（unpkg）。换个网络或稍后再试一次。'); return; }
     if (!window.Babel) { fail('没连上 Babel CDN（unpkg）。换个网络或稍后再试一次。'); return; }
 
