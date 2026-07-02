@@ -1090,7 +1090,7 @@ function Home({ ctx }) {
       <PetTips play={play} />
       <button className="pressable card" style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", padding: "16px 15px", marginBottom: 12, cursor: "pointer", fontFamily: "inherit" }} onClick={() => nav("kana")}>
         <span style={{ fontSize: 26, width: 48, height: 48, background: "var(--window)", display: "grid", placeItems: "center", flexShrink: 0 }}>🔤</span>
-        <div style={{ flex: 1, textAlign: "left" }}><div style={{ fontWeight: 800, fontSize: 17, color: C.ink }}>五十音学习区</div><div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 2 }}>假名表 · 认读练习 · 🥁节奏跟读</div></div>
+        <div style={{ flex: 1, textAlign: "left" }}><div style={{ fontWeight: 800, fontSize: 17, color: C.ink }}>五十音学习区</div><div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 2 }}>假名表 · 认读 · 🥁节奏跟读 · 🀄成语认读</div></div>
         <span style={{ fontSize: 20, color: "var(--ink-soft)" }}>›</span>
       </button>
       <button className="pressable card" style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", padding: "13px 15px", marginBottom: 12, cursor: "pointer", fontFamily: "inherit" }} onClick={() => { play("tap"); nav("settings"); }}>
@@ -2071,6 +2071,81 @@ function KanaDrill({ idx, play, throwReact }) {
     })}</div>
   </div>);
 }
+// 🀄 成语认读：五十音读音嵌进中国成语(创始人词表)——用母语里刻死的语音锚点绑假名。[假名, 嵌入成语, 原成语, 被替换字]
+const KANA_IDIOMS = [
+  ["あ", "吴下あ蒙", "吴下阿蒙", "阿"], ["い", "掉い轻心", "掉以轻心", "以"], ["う", "う合之众", "乌合之众", "乌"], ["え", "え声叹气", "唉声叹气", "唉"], ["お", "おお待哺", "嗷嗷待哺", "嗷"],
+  ["か", "雀巢か啡", "雀巢咖啡", "咖"], ["き", "白手き家", "白手起家", "起"], ["く", "痛く流涕", "痛哭流涕", "哭"], ["け", "遍地け花", "遍地开花", "开"], ["こ", "病从こ入", "病从口入", "口"],
+  ["さ", "赶尽さ绝", "赶尽杀绝", "杀"], ["し", "一贫如し", "一贫如洗", "洗"], ["す", "一座す庙", "一座寺庙", "寺"], ["せ", "せ翁失马", "塞翁失马", "塞"], ["そ", "そ人墨客", "骚人墨客", "骚"],
+  ["た", "客死た乡", "客死他乡", "他"], ["ち", "出ち制胜", "出奇制胜", "奇"], ["つ", "理屈つ穷", "理屈词穷", "词"], ["て", "不识て举", "不识抬举", "抬"], ["と", "と塔天王", "托塔天王", "托"],
+  ["な", "摇旗な喊", "摇旗呐喊", "呐"], ["に", "我喜欢に", "我喜欢你", "你"], ["ぬ", "沦为ぬ隶", "沦为奴隶", "奴"], ["ね", "无可ね何", "无可奈何", "奈"], ["の", "一の千金", "一诺千金", "诺"],
+  ["は", "点头は腰", "点头哈腰", "哈"], ["ひ", "ひひ哈哈", "嘻嘻哈哈", "嘻"], ["ふ", "出水ふ蓉", "出水芙蓉", "芙"], ["へ", "人山人へ", "人山人海", "海"], ["ほ", "死去ほ来", "死去活来", "活"],
+  ["ま", "婆婆まま", "婆婆妈妈", "妈"], ["み", "神み莫测", "神秘莫测", "秘"], ["む", "衣食父む", "衣食父母", "母"], ["め", "爱情め卖", "爱情买卖", "买"], ["も", "不も之地", "不毛之地", "毛"],
+  ["や", "咿や学语", "咿呀学语", "呀"], ["ゆ", "尊老爱ゆ", "尊老爱幼", "幼"], ["よ", "无关紧よ", "无关紧要", "要"],
+  ["ら", "摧枯ら朽", "摧枯拉朽", "拉"], ["り", "见り忘义", "见利忘义", "利"], ["る", "看片る管", "看片撸管", "撸"], ["れ", "别れ无恙", "别来无恙", "来"], ["ろ", "滴水不ろ", "滴水不漏", "漏"],
+  ["わ", "开わ掘机", "开挖掘机", "挖"], ["を", "笑を江湖", "笑傲江湖", "傲"], ["ん", "ん重如山", "恩重如山", "恩"],
+  ["が", "尴が无比", "尴尬无比", "尬"], ["ぎ", "ぎ祀祖先", "祭祀祖先", "祭"], ["ぐ", "粉身碎ぐ", "粉身碎骨", "骨"], ["げ", "农田灌げ", "农田灌溉", "溉"], ["ご", "奔走相ご", "奔走相告", "告"],
+  ["ざ", "安营ざ寨", "安营扎寨", "扎"], ["じ", "劫富じ贫", "劫富济贫", "济"], ["ず", "汰ず洗衣", "汰渍洗衣", "渍"], ["ぜ", "天ぜ人祸", "天灾人祸", "灾"], ["ぞ", "自ぞ自受", "自作自受", "作"],
+  ["だ", "博だ精深", "博大精深", "大"], ["ぢ", "偷ぢ摸狗", "偷鸡摸狗", "鸡"], ["づ", "雄づ英发", "雄姿英发", "姿"], ["で", "で若木鸡", "呆若木鸡", "呆"], ["ど", "ど转星移", "斗转星移", "斗"],
+  ["ば", "ば格牙路", "八格牙路", "八"], ["び", "你妈び的", "你妈逼的", "逼"], ["ぶ", "真ぶ要脸", "真不要脸", "不"], ["べ", "青天べ日", "青天白日", "白"], ["ぼ", "厚积ぼ发", "厚积薄发", "薄"],
+  ["ぱ", "噼里ぱ啦", "噼里啪啦", "啪"], ["ぴ", "鸡毛蒜ぴ", "鸡毛蒜皮", "皮"], ["ぷ", "飞蛾ぷ火", "飞蛾扑火", "扑"], ["ぺ", "ぺ案而起", "拍案而起", "拍"], ["ぽ", "牢不可ぽ", "牢不可破", "破"],
+];
+const KANA_ROMA = (() => { const m = {}; KANA_ALL.forEach((c) => { m[c[0]] = c[2]; }); Object.assign(m, { "を": "wo", "ん": "n", "ぢ": "ji", "づ": "zu" }); return m; })();
+// 成语里高亮嵌入的假名
+const IdiomText = ({ display, kana, size }) => (<span style={{ fontSize: size || 17, fontWeight: 800, lineHeight: 1.5 }}>{display.split(kana).map((seg, i, arr) => (<React.Fragment key={i}>{seg}{i < arr.length - 1 && <span style={{ color: C.honeyDk, fontSize: (size || 17) + 4 }}>{kana}</span>}</React.Fragment>))}</span>);
+// 📖 成语跟读表：一页看全,点一条读一条(先跟读混脸熟,再去玩认读)
+function IdiomChart({ play }) {
+  return (<div className="fade-in">
+    <div style={{ fontSize: 12.5, color: "var(--ink-mid)", textAlign: "center", margin: "0 0 10px", lineHeight: 1.7 }}>假名藏在你从小背的成语里——<b>点一条,听它读</b>,跟着念出声。混熟了去「🎯 认读」检验。</div>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+      {KANA_IDIOMS.map((it) => (
+        <button key={it[0]} className="pressable card" style={{ padding: "10px 8px", cursor: "pointer", fontFamily: "inherit", textAlign: "center" }} onClick={() => { speakKana(it[0]); play("tap"); }}>
+          <div><IdiomText display={it[1]} kana={it[0]} /></div>
+          <div style={{ fontSize: 11, color: "var(--ink-soft)", marginTop: 4, fontWeight: 700 }}>{it[0]} <span style={{ color: C.honeyDk }}>{KANA_ROMA[it[0]] || ""}</span> ← {it[3]} · 🔊</div>
+        </button>))}
+    </div>
+  </div>);
+}
+// 🎯 成语认读(玩法A)：看嵌着假名的成语,选它的读音——成语本身就是提示
+function IdiomDrill({ play, throwReact, bonusFish }) {
+  const makeQ = () => { const it = KANA_IDIOMS[Math.floor(Math.random() * KANA_IDIOMS.length)]; const roma = KANA_ROMA[it[0]] || "?";
+    const opts = [roma]; let guard = 0;
+    while (opts.length < 4 && guard++ < 80) { const r = KANA_ROMA[KANA_IDIOMS[Math.floor(Math.random() * KANA_IDIOMS.length)][0]]; if (r && !opts.includes(r)) opts.push(r); }
+    return { it, roma, opts: shuffle(opts) }; };
+  const [q, setQ] = useState(makeQ);
+  const [picked, setPicked] = useState(null);
+  const [score, setScore] = useState(0), [total, setTotal] = useState(0), [streak, setStreak] = useState(0);
+  const nextT = useRef(null);
+  useEffect(() => () => clearTimeout(nextT.current), []);
+  const pick = (r) => {
+    if (picked) return; setPicked(r); setTotal((t) => t + 1);
+    const ok = r === q.roma;
+    speakKana(q.it[0]);
+    if (ok) { play("correct"); if (throwReact) throwReact("churu"); setScore((s) => s + 1); const ns = streak + 1; setStreak(ns); if (ns % 5 === 0 && bonusFish) bonusFish(); } else { play("wrong"); setStreak(0); }
+    nextT.current = setTimeout(() => { setPicked(null); setQ(makeQ()); }, ok ? 1100 : 2400);
+  };
+  return (<div className="fade-in">
+    <DrillScore score={score} total={total} streak={streak} />
+    <div className="card pop-in" style={{ ...S.bigCard, padding: "26px 20px" }}>
+      <IdiomText display={q.it[1]} kana={q.it[0]} size={26} />
+      <div style={{ fontSize: 13, color: "var(--ink-soft)", marginTop: 10 }}>{picked ? (<span>{q.it[2]} → {q.it[3]} = {q.it[0]}（{q.roma}）</span>) : (<span>「<b style={{ color: C.honeyDk }}>{q.it[0]}</b>」读什么？成语就是提示</span>)}</div>
+    </div>
+    <div style={{ ...S.optGrid, marginTop: 14 }}>{q.opts.map((r) => {
+      let s2 = { ...S.opt };
+      if (picked) { if (r === q.roma) s2 = { ...s2, outline: "3px solid " + C.matchaDk, outlineOffset: -4, background: "var(--ok-bg)" }; else if (picked === r) s2 = { ...s2, outline: "3px solid " + C.blush, outlineOffset: -4, background: "var(--danger-bg)" }; }
+      return <button key={r} className="pressable" style={s2} onClick={() => pick(r)}><span style={{ fontSize: 22, fontWeight: 800 }}>{r}</span></button>;
+    })}</div>
+  </div>);
+}
+function IdiomZone({ play, ctx }) {
+  const [tab, setTab] = useState("chart");
+  return (<div>
+    <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+      <button className="pressable" style={{ ...S.seg, ...(tab === "chart" ? S.segOn : {}) }} onClick={() => { setTab("chart"); play("tap"); }}>📖 跟读表</button>
+      <button className="pressable" style={{ ...S.seg, ...(tab === "drill" ? S.segOn : {}) }} onClick={() => { setTab("drill"); play("tap"); }}>🎯 认读</button>
+    </div>
+    {tab === "chart" ? <IdiomChart play={play} /> : <IdiomDrill play={play} throwReact={ctx.throwReact} bonusFish={ctx.bonusFish} />}
+  </div>);
+}
 // 🥁 节奏跟读：像素鼓点(咚+嗒)起拍，跟着拍子把假名念出声——可以无意义(かかけき那样咏唱)。
 // 麦克风只测"拍点上有没有出声"(300-3400Hz 人声频段能量;echoCancellation 滤掉外放鼓点)，不识别内容也不录音——开口本身就是训练。
 // 拿不到麦克风时自动降级"点拍模式"(边念边点)。鼓点全部预排进 AudioContext 保证节拍精准。
@@ -2226,16 +2301,17 @@ function KanaChart({ ctx }) {
   const [mode, setMode] = useState("chart");
   const idx = kind === "hira" ? 0 : 1;
   return (<div className="fade-in"><BackRow ctx={ctx} title="🔤 五十音图" />
-    <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+    {mode !== "idiom" && <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
       <button className="pressable" style={{ ...S.seg, ...(kind === "hira" ? S.segOn : {}) }} onClick={() => { setKind("hira"); play("tap"); }}>平假名 あ</button>
       <button className="pressable" style={{ ...S.seg, ...(kind === "kata" ? S.segOn : {}) }} onClick={() => { setKind("kata"); play("tap"); }}>片假名 ア</button>
+    </div>}
+    <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+      <button className="pressable" style={{ ...S.seg, minWidth: "45%", ...(mode === "chart" ? S.segOn : {}) }} onClick={() => { setMode("chart"); play("tap"); }}>📋 假名表</button>
+      <button className="pressable" style={{ ...S.seg, minWidth: "45%", ...(mode === "drill" ? S.segOn : {}) }} onClick={() => { setMode("drill"); play("tap"); }}>🎯 认读练习</button>
+      <button className="pressable" style={{ ...S.seg, minWidth: "45%", ...(mode === "rhythm" ? S.segOn : {}) }} onClick={() => { setMode("rhythm"); play("tap"); }}>🥁 节奏跟读</button>
+      <button className="pressable" style={{ ...S.seg, minWidth: "45%", ...(mode === "idiom" ? S.segOn : {}) }} onClick={() => { setMode("idiom"); play("tap"); }}>🀄 成语认读</button>
     </div>
-    <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-      <button className="pressable" style={{ ...S.seg, ...(mode === "chart" ? S.segOn : {}) }} onClick={() => { setMode("chart"); play("tap"); }}>📋 假名表</button>
-      <button className="pressable" style={{ ...S.seg, ...(mode === "drill" ? S.segOn : {}) }} onClick={() => { setMode("drill"); play("tap"); }}>🎯 认读练习</button>
-      <button className="pressable" style={{ ...S.seg, ...(mode === "rhythm" ? S.segOn : {}) }} onClick={() => { setMode("rhythm"); play("tap"); }}>🥁 节奏跟读</button>
-    </div>
-    {mode === "chart" ? <KanaTable idx={idx} onTap={(c) => { speakKana(c[idx]); }} /> : mode === "drill" ? <KanaDrill idx={idx} play={play} throwReact={ctx.throwReact} /> : <RhythmChant idx={idx} play={play} ctx={ctx} />}
+    {mode === "chart" ? <KanaTable idx={idx} onTap={(c) => { speakKana(c[idx]); }} /> : mode === "drill" ? <KanaDrill idx={idx} play={play} throwReact={ctx.throwReact} /> : mode === "rhythm" ? <RhythmChant idx={idx} play={play} ctx={ctx} /> : <IdiomZone play={play} ctx={ctx} />}
   </div>);
 }
 
