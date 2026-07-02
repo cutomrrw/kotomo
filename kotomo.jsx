@@ -698,6 +698,7 @@ function freshState() {
     streak: { totalDays: 0, monthDays: 0, lastStudyDay: null, calendar: {} },
     settings: { sound: true, aiReal: false, energyMode: "normal" },
     fish: 0, fishProg: 0, owned: [], wearing: null, // 鱼干小铺：鱼积分 / 进度 / 已购物品 / 当前穿戴
+    hgBest: 0, // 秒懂词 60秒冲刺 最高纪录
   };
 }
 
@@ -848,7 +849,8 @@ export default function App() {
 
   const nav = (v) => { play("tap"); setView(v); };
   const bonusFish = () => setSt((s) => ({ ...s, fish: (s.fish || 0) + 1 })); // 连对奖励:每5连对额外+1🐟
-  const ctx = { st, play, petReact, throwReact, bonusFish, mastered, seg, decor, mood, nav, addWords, updateWord, delWord, delWords, restoreWord, appendWords, petLove, buyItem, setWearing, setSetting, finishReview, ownWordCount, reviewWrongOnly, setReviewWrongOnly, setView, expandTarget, setExpandTarget, amb };
+  const setHgBest = (n) => setSt((s) => (n > (s.hgBest || 0) ? { ...s, hgBest: n } : s)); // 冲刺最高纪录
+  const ctx = { st, play, petReact, throwReact, bonusFish, setHgBest, mastered, seg, decor, mood, nav, addWords, updateWord, delWord, delWords, restoreWord, appendWords, petLove, buyItem, setWearing, setSetting, finishReview, ownWordCount, reviewWrongOnly, setReviewWrongOnly, setView, expandTarget, setExpandTarget, amb };
 
   return (
     <div style={S.shell}>
@@ -1943,7 +1945,19 @@ function KanaChart({ ctx }) {
 // ── 秒懂词·读音特训：中国人看字形秒懂意思、大脑跳过读音的汉字词(現金/店内/袋…)，专练"听得懂+说得出" ──
 // 创始人定义的"秒懂词"：日文写法为【纯汉字】，且与中文对应词【文字完全相同】或【大部分相同(如三字里两字)】，简体/繁体不计。
 const J2S = (() => { const m = {}; for (const k in S2J) m[S2J[k]] = k; // 反转简→日表得到 日→简
-  Object.assign(m, { "窓": "窗", "気": "气", "圧": "压", "歩": "步", "絵": "绘", "駅": "站", "払": "付", "頑": "顽", "鑑": "鉴", "隣": "邻", "浄": "净", "様": "样" }); return m; })();
+  Object.assign(m, { "窓": "窗", "気": "气", "圧": "压", "歩": "步", "絵": "绘", "駅": "站", "払": "付", "頑": "顽", "鑑": "鉴", "隣": "邻", "浄": "净", "様": "样",
+    "鉄": "铁", "駐": "驻", "営": "营", "業": "业", "準": "准", "備": "备", "線": "线", "幹": "干", "満": "满", "薬": "药", "計": "计", "誌": "志", "処": "处", "険": "险", "証": "证" }); return m; })();
+// 经典秒懂词包(创始人选定 20 个,可一键补充进词库,已核实读音)
+const HG_PACK = [
+  ["電話", "でんわ", "电话", 1], ["銀行", "ぎんこう", "银行", 1], ["病院", "びょういん", "医院(病院)", 1],
+  ["地下鉄", "ちかてつ", "地铁(地下铁)", 1], ["駐車場", "ちゅうしゃじょう", "停车场(驻车场)", 0],
+  ["営業中", "えいぎょうちゅう", "营业中(店门招牌)", 0], ["準備中", "じゅんびちゅう", "准备中(=歇业中,店门招牌)", 0],
+  ["温泉", "おんせん", "温泉", 1], ["空港", "くうこう", "机场(空港)", 1], ["公園", "こうえん", "公园", 1],
+  ["番号", "ばんごう", "号码(番号)", 1], ["信号", "しんごう", "红绿灯(信号灯)、信号", 1],
+  ["薬局", "やっきょく", "药店(药局)", 0], ["会計", "かいけい", "结账、买单(店里说 お会計)/会计", 1],
+  ["満席", "まんせき", "满席、客满", 0], ["禁止", "きんし", "禁止", 1], ["注意", "ちゅうい", "注意", 1],
+  ["安全", "あんぜん", "安全", 1], ["天気", "てんき", "天气", 1], ["新幹線", "しんかんせん", "新干线", 1],
+];
 const KANJI_CH_RE = /[一-鿿々]/;
 function isTransparentKanji(w) {
   if ((w.type || "word") !== "word" || !w.term || !w.reading || !w.meaning) return false;
@@ -2060,22 +2074,142 @@ function SpellDrill({ pool, play, throwReact, bonusFish }) {
     </div>
   </div>);
 }
+// 🎲 混合挑战：假名认字/听音辨字/拼读音 随机轮着出，不知道下一题考什么
+function MixDrill({ pool, play, throwReact, bonusFish }) {
+  const makeQ = () => {
+    const type = ["kana", "listen", "spell"][Math.floor(Math.random() * 3)];
+    if (type === "spell") { const w = pool[Math.floor(Math.random() * pool.length)]; const chars = Array.from(w.reading); const extra = []; let g = 0; while (extra.length < 3 && g++ < 40) { const k = HIRA_POOL[Math.floor(Math.random() * HIRA_POOL.length)]; if (!chars.includes(k) && !extra.includes(k)) extra.push(k); } return { type, w, tiles: shuffle(chars.concat(extra).map((ch, i) => ({ ch, i }))) }; }
+    return { type, ...pick4(pool) };
+  };
+  const [q, setQ] = useState(makeQ);
+  const [picked, setPicked] = useState(null); const [heard, setHeard] = useState(false);
+  const [picks, setPicks] = useState([]); const [reveal, setReveal] = useState(false);
+  const [score, setScore] = useState(0), [total, setTotal] = useState(0), [streak, setStreak] = useState(0);
+  const nextT = useRef(null);
+  useEffect(() => () => clearTimeout(nextT.current), []);
+  const settle = (ok, delay) => {
+    setTotal((t) => t + 1);
+    if (ok) { play("correct"); if (throwReact) throwReact("churu"); setScore((s) => s + 1); const ns = streak + 1; setStreak(ns); if (ns % 5 === 0 && bonusFish) bonusFish(); } else { play("wrong"); setStreak(0); }
+    nextT.current = setTimeout(() => { setPicked(null); setHeard(false); setPicks([]); setReveal(false); setQ(makeQ()); }, delay);
+  };
+  if (q.type === "spell") {
+    const target = Array.from(q.w.reading);
+    const tap = (t) => { if (reveal || picked || picks.some((p) => p.i === t.i)) return; const np = picks.concat(t); setPicks(np); play("tap");
+      if (np.length === target.length) { const ok = np.map((p) => p.ch).join("") === q.w.reading; setPicked(true); if (!ok) setReveal(true); speakJa(q.w.term); settle(ok, ok ? 1300 : 2400); } };
+    return (<div className="fade-in"><DrillScore score={score} total={total} streak={streak} />
+      <div className="card pop-in" style={{ ...S.bigCard, padding: "22px 20px" }}>
+        <div style={{ fontSize: 12, color: C.grape, fontWeight: 800 }}>🧩 拼读音</div>
+        <div style={{ fontSize: 30, fontWeight: 800, lineHeight: 1.2 }}>{q.w.term}</div>
+        <div style={{ fontSize: 13, color: "var(--ink-soft)", marginTop: 4 }}>{q.w.meaning}</div>
+        <div style={{ display: "flex", gap: 6, justifyContent: "center", flexWrap: "wrap", marginTop: 12, minHeight: 44 }}>
+          {target.map((_, i) => (<span key={i} style={{ width: 38, height: 42, display: "grid", placeItems: "center", fontSize: 20, fontWeight: 800, background: "var(--surface2)", border: "3px solid " + (reveal ? C.blush : picked ? C.matchaDk : "var(--pix-border)"), color: reveal ? C.blush : "var(--ink)" }}>{reveal ? target[i] : (picks[i] ? picks[i].ch : "")}</span>))}
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap", marginTop: 14 }}>
+        {q.tiles.map((t) => { const used = picks.some((p) => p.i === t.i); return (
+          <button key={t.i} className="pressable" disabled={used || !!picked} style={{ width: 52, height: 52, fontSize: 21, fontWeight: 800, fontFamily: "inherit", background: used ? "var(--surface2)" : "var(--surface)", opacity: used ? 0.45 : 1, cursor: "pointer" }} onClick={() => tap(t)}>{t.ch}</button>); })}
+      </div>
+      <div style={{ display: "flex", justifyContent: "center", marginTop: 12 }}><button className="pressable" style={{ ...S.ghostBtn }} onClick={() => { if (!picked && picks.length) { setPicks(picks.slice(0, -1)); play("tap"); } }}>⌫ 退一格</button></div>
+    </div>);
+  }
+  const isListen = q.type === "listen";
+  const pickOpt = (o) => { if (picked || (isListen && !heard)) return; setPicked(o); if (!isListen) speakJa(q.ans.term); settle(o.id === q.ans.id, o.id === q.ans.id ? 1000 : 2000); };
+  return (<div className="fade-in"><DrillScore score={score} total={total} streak={streak} />
+    <div className="card pop-in" style={{ ...S.bigCard, padding: "24px 20px" }}>
+      <div style={{ fontSize: 12, color: C.grape, fontWeight: 800 }}>{isListen ? "🎧 听音辨字" : "🈶 假名认字"}</div>
+      {isListen
+        ? <button className="pressable" style={{ ...S.bigBtn, maxWidth: 240, margin: "8px auto 0" }} onClick={() => { speakJa(q.ans.term); setHeard(true); play("tap"); }}>🔊 {heard ? "再听一次" : "点我听发音"}</button>
+        : <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: 2, marginTop: 4 }}>{q.ans.reading}</div>}
+      <div style={{ fontSize: 13, color: "var(--ink-soft)", marginTop: 8 }}>{picked ? (picked.id === q.ans.id ? "✓ " : "✗ 是「" + q.ans.term + "」 ") + q.ans.reading + " · " + q.ans.meaning : isListen && !heard ? "先听，再选" : "是下面哪个词？"}</div>
+    </div>
+    <div style={{ ...S.optGrid, marginTop: 14 }}>{q.opts.map((o) => {
+      let s2 = { ...S.opt, opacity: isListen && !heard ? 0.5 : 1 };
+      if (picked) { if (o.id === q.ans.id) s2 = { ...s2, outline: "3px solid " + C.matchaDk, outlineOffset: -4, background: "var(--ok-bg)" }; else if (picked.id === o.id) s2 = { ...s2, outline: "3px solid " + C.blush, outlineOffset: -4, background: "var(--danger-bg)" }; }
+      return <button key={o.id} className="pressable" style={s2} onClick={() => pickOpt(o)}><span style={{ fontSize: 20, fontWeight: 800 }}>{o.term}</span></button>;
+    })}</div>
+  </div>);
+}
+// ⏱️ 60秒冲刺：假名认字连发，答对+1分并加2秒，倒计时归零结算(破纪录存档)
+function SprintDrill({ pool, play, throwReact, bonusFish, best, onBest }) {
+  const [phase, setPhase] = useState("idle"); // idle | run | end
+  const [time, setTime] = useState(60); const [score, setScore] = useState(0);
+  const [q, setQ] = useState(null); const [flash, setFlash] = useState(null);
+  const tick = useRef(null), nextT = useRef(null);
+  useEffect(() => () => { clearInterval(tick.current); clearTimeout(nextT.current); }, []);
+  useEffect(() => {
+    if (phase !== "run") return;
+    tick.current = setInterval(() => setTime((t) => t - 1), 1000);
+    return () => clearInterval(tick.current);
+  }, [phase]);
+  useEffect(() => { if (phase === "run" && time <= 0) { setPhase("end"); clearInterval(tick.current); if (score > (best || 0) && onBest) onBest(score); if (score >= 10 && bonusFish) bonusFish(); play(score > (best || 0) ? "win" : "pop"); } }, [time, phase]);
+  const start = () => { setScore(0); setTime(60); setQ(pick4(pool)); setPhase("run"); play("tap"); };
+  const answer = (o) => {
+    if (phase !== "run" || flash) return;
+    const ok = o.id === q.ans.id;
+    setFlash({ id: o.id, ok });
+    if (ok) { play("correct"); setScore((s) => s + 1); setTime((t) => Math.min(60, t + 2)); } else play("wrong");
+    nextT.current = setTimeout(() => { setFlash(null); setQ(pick4(pool)); }, ok ? 220 : 650);
+  };
+  if (phase === "idle" || phase === "end") return (<div className="fade-in">
+    <div className="card pop-in" style={{ ...S.bigCard, padding: "26px 20px" }}>
+      {phase === "end" ? (<>
+        <div style={{ fontSize: 40 }}>{score > (best || 0) ? "🏆" : "🏁"}</div>
+        <div style={{ fontSize: 22, fontWeight: 800, marginTop: 4 }}>得分 {score}</div>
+        <div style={{ fontSize: 13, color: "var(--ink-soft)", marginTop: 4 }}>{score > (best || 0) ? "新纪录！" : "最高纪录 " + (best || 0)}{score >= 10 ? " · 破10分奖励 +1🐟" : ""}</div>
+      </>) : (<>
+        <div style={{ fontSize: 40 }}>⏱️</div>
+        <div style={{ fontSize: 15, fontWeight: 800, marginTop: 4 }}>60 秒冲刺</div>
+        <div style={{ fontSize: 13, color: "var(--ink-soft)", marginTop: 6, lineHeight: 1.7 }}>假名认字连发：答对 +1 分、加 2 秒。<br />最高纪录 <b style={{ color: C.honeyDk }}>{best || 0}</b> 分 · 破 10 分额外 +1🐟</div>
+      </>)}
+      <button className="pressable" style={{ ...S.bigBtn, maxWidth: 240, margin: "14px auto 0" }} onClick={start}>{phase === "end" ? "再来一轮 🔁" : "开始 ▶"}</button>
+    </div>
+  </div>);
+  return (<div className="fade-in">
+    <div style={{ display: "flex", justifyContent: "center", gap: 18, marginBottom: 12, fontSize: 15, fontWeight: 800 }}>
+      <span style={{ color: time <= 10 ? C.blush : "var(--ink)" }}>⏱ {time}s</span><span style={{ color: C.matchaDk }}>得分 {score}</span>
+    </div>
+    <div className="card" style={{ ...S.bigCard, padding: "20px 18px" }}>
+      <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: 2 }}>{q.ans.reading}</div>
+    </div>
+    <div style={{ ...S.optGrid, marginTop: 14 }}>{q.opts.map((o) => {
+      let s2 = { ...S.opt };
+      if (flash) { if (o.id === q.ans.id) s2 = { ...s2, outline: "3px solid " + C.matchaDk, outlineOffset: -4, background: "var(--ok-bg)" }; else if (flash.id === o.id) s2 = { ...s2, outline: "3px solid " + C.blush, outlineOffset: -4, background: "var(--danger-bg)" }; }
+      return <button key={o.id} className="pressable" style={s2} onClick={() => answer(o)}><span style={{ fontSize: 20, fontWeight: 800 }}>{o.term}</span></button>;
+    })}</div>
+  </div>);
+}
 function HomographChart({ ctx }) {
   const { st, play } = ctx;
   const pool = useMemo(() => st.words.filter(isTransparentKanji), [st.words]);
   const [mode, setMode] = useState("kana"); // 默认假名认字(不依赖声音,静音也能玩)
   const [showList, setShowList] = useState(false);
-  if (pool.length < 4) return (<div className="fade-in"><BackRow ctx={ctx} title="👂 秒懂词·读音特训" /><div style={S.empty}>词库里的"秒懂词"还不到 4 个，先去加点带汉字的词吧 🌱</div></div>);
+  const missing = useMemo(() => HG_PACK.filter((p) => !st.words.some((w) => w.term === p[0])), [st.words]);
+  const addPack = () => {
+    const rows = missing.map((p) => ({ id: uid(), type: "word", term: p[0], reading: p[1], meaning: p[2], pos: "noun", freq: !!p[3], loan: null,
+      mastered: false, source: "秒懂词包", expanded: null, cloze: null, kanjiTip: null, isSeed: true,
+      verified: "verified", verifySrc: { reading: "seed", term: "seed", meaning: "seed" }, basicForm: "", contextSentence: "",
+      seen: 0, wrong: 0, srs: { level: 0, dueAt: now(), lastReviewedAt: 0 } }));
+    if (rows.length) { ctx.appendWords(rows, []); play("win"); }
+  };
+  const packBtn = missing.length > 0 && <div style={{ textAlign: "center", marginBottom: 10 }}>
+    <button className="pressable" style={{ ...S.bigBtn, maxWidth: 320, margin: "0 auto", background: C.grape, boxShadow: "0 5px 0 var(--grape-dk)" }} onClick={addPack}>➕ 补充经典秒懂词包（{missing.length} 个：電話/銀行/病院…）</button>
+  </div>;
+  if (pool.length < 4) return (<div className="fade-in"><BackRow ctx={ctx} title="👂 秒懂词·读音特训" />{packBtn}<div style={S.empty}>词库里的"秒懂词"还不到 4 个，先补充词包或去加点带汉字的词吧 🌱</div></div>);
   return (<div className="fade-in"><BackRow ctx={ctx} title="👂 秒懂词·读音特训" />
     <div style={{ fontSize: 12.5, color: "var(--ink-mid)", textAlign: "center", margin: "0 0 10px", lineHeight: 1.7 }}>这些词你<b>看字就懂</b>，大脑会偷懒跳过读音——结果听不懂、说不出。这里把字形的"外挂"关掉，专练耳朵和嘴。</div>
-    <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-      <button className="pressable" style={{ ...S.seg, ...(mode === "kana" ? S.segOn : {}) }} onClick={() => { setMode("kana"); play("tap"); }}>🈶 假名认字</button>
-      <button className="pressable" style={{ ...S.seg, ...(mode === "listen" ? S.segOn : {}) }} onClick={() => { setMode("listen"); play("tap"); }}>🎧 听音辨字</button>
-      <button className="pressable" style={{ ...S.seg, ...(mode === "spell" ? S.segOn : {}) }} onClick={() => { setMode("spell"); play("tap"); }}>🧩 拼读音</button>
+    {packBtn}
+    <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+      <button className="pressable" style={{ ...S.seg, minWidth: "30%", ...(mode === "kana" ? S.segOn : {}) }} onClick={() => { setMode("kana"); play("tap"); }}>🈶 假名认字</button>
+      <button className="pressable" style={{ ...S.seg, minWidth: "30%", ...(mode === "listen" ? S.segOn : {}) }} onClick={() => { setMode("listen"); play("tap"); }}>🎧 听音辨字</button>
+      <button className="pressable" style={{ ...S.seg, minWidth: "30%", ...(mode === "spell" ? S.segOn : {}) }} onClick={() => { setMode("spell"); play("tap"); }}>🧩 拼读音</button>
+      <button className="pressable" style={{ ...S.seg, minWidth: "30%", ...(mode === "mix" ? S.segOn : {}) }} onClick={() => { setMode("mix"); play("tap"); }}>🎲 混合挑战</button>
+      <button className="pressable" style={{ ...S.seg, minWidth: "30%", ...(mode === "sprint" ? S.segOn : {}) }} onClick={() => { setMode("sprint"); play("tap"); }}>⏱️ 60秒冲刺</button>
     </div>
     {mode === "kana" ? <KanaPickDrill pool={pool} play={play} throwReact={ctx.throwReact} bonusFish={ctx.bonusFish} />
       : mode === "listen" ? <ListenDrill pool={pool} play={play} throwReact={ctx.throwReact} bonusFish={ctx.bonusFish} />
-      : <SpellDrill pool={pool} play={play} throwReact={ctx.throwReact} bonusFish={ctx.bonusFish} />}
+      : mode === "spell" ? <SpellDrill pool={pool} play={play} throwReact={ctx.throwReact} bonusFish={ctx.bonusFish} />
+      : mode === "mix" ? <MixDrill pool={pool} play={play} throwReact={ctx.throwReact} bonusFish={ctx.bonusFish} />
+      : <SprintDrill pool={pool} play={play} throwReact={ctx.throwReact} bonusFish={ctx.bonusFish} best={st.hgBest || 0} onBest={ctx.setHgBest} />}
     <div style={{ textAlign: "center", marginTop: 14 }}>
       <button className="pressable" style={{ ...S.ghostBtn }} onClick={() => { setShowList(!showList); play("tap"); }}>{showList ? "收起词单 ▴" : "查看词单(" + pool.length + " 个秒懂词) ▾"}</button>
     </div>
