@@ -18,3 +18,7 @@
 
 # GitHub Pages: 跳过 Jekyll 构建(纯静态直发,防构建抽风)
 !.nojekyll
+# Pages 发布走 Actions 渠道(老构建管道 2026-07 连续抽风)
+!.github/
+!.github/workflows/
+!.github/workflows/pages.yml
