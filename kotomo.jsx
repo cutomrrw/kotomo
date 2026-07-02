@@ -1358,6 +1358,8 @@ function AddWords({ ctx }) {
   const expandDraft = (i) => { const r = draft[i]; if (!r || !r.term || !r.term.trim()) return; const id = uid(); addWords([{ ...r, id }]); setDraft((d) => d.filter((_, idx) => idx !== i)); setExpandWord({ ...r, id }); setTab("expand"); play("tap"); }; // 只把被点的这条入库，其余待确认保留
   const commit = () => { addWords(draft); setDraft([]); play("win"); ctx.setView("library"); };
   return (<div className="fade-in"><BackRow ctx={ctx} title="🎙️ 加词" onBack={tab === "expand" ? () => { if (expandBackRef.current && expandBackRef.current()) return; setExpandWord(null); setTab("type"); } : undefined} />
+    {!aiReal && <div style={{ background: "var(--warn-bg)", border: "3px solid var(--pix-border)", padding: "9px 12px", marginBottom: 10, fontSize: 12.5, lineHeight: 1.7, color: "var(--ink-mid)", fontWeight: 700 }}>
+      🔕 当前是「AI拟」离线模式：只自动补<b>读音</b>，<b>不会自动补中文意思</b>。想恢复自动补全 → <span style={{ color: C.matchaDk, fontWeight: 800, cursor: "pointer", textDecoration: "underline" }} onClick={() => ctx.setView("settings")}>去设置贴 AI 密钥</span>（换设备/加到主屏幕后密钥要重新贴一次，两边存档是分开的）。</div>}
     {tab !== "expand" && <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>{[["ja", "日 → 中（输入日语）"], ["zh", "中 → 日（输入中文）"]].map(([k, l]) => (
       <button key={k} className="pressable" style={{ ...S.seg, flex: 1, ...(dir === k ? S.segOn : {}) }} onClick={() => { setDir(k); play("tap"); }}>{l}</button>))}</div>}
     <div style={S.segRow}>{[["type", "⌨️ 打字"], ["voice", "🎙️ 语音"], ["expand", "✨ 展开学习"]].map(([k, l]) => (
