@@ -867,6 +867,7 @@ export default function App() {
         {view === "library" && <Library ctx={ctx} />}
         {view === "center" && <ReviewCenter ctx={ctx} />}
         {view === "kana" && <KanaChart ctx={ctx} />}
+        {view === "homograph" && <HomographChart ctx={ctx} />}
         {view === "shop" && <Shop ctx={ctx} />}
         {view === "settings" && <Settings ctx={ctx} />}
       </main>
@@ -917,6 +918,7 @@ function Home({ ctx }) {
   const { st, play, mastered, seg, decor, mood, nav, amb } = ctx;
   const due = useMemo(() => dueWords(st.words, st.settings.energyMode), [st.words, st.settings.energyMode]);
   const wrongs = useMemo(() => wrongWords(st.words), [st.words]);
+  const hgCount = useMemo(() => st.words.filter(isTransparentKanji).length, [st.words]); // 秒懂字数量
   const canReview = useMemo(() => st.words.some((w) => !w.mastered), [st.words]);
   const ns = nextSeg(mastered);
   const goalTotal = st.settings.energyMode === "low" ? 5 : st.settings.energyMode === "super" ? Math.max(due.length, 1) : 20;
@@ -977,6 +979,12 @@ function Home({ ctx }) {
       <div style={{ flex: 1, textAlign: "left" }}><div style={{ fontWeight: 800, fontSize: 16, color: C.ink }}>五十音图</div><div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 2 }}>假名表 · 认读练习 — 零基础先练这个</div></div>
       <span style={{ fontSize: 20, color: "var(--ink-soft)" }}>›</span>
     </button>
+
+    {hgCount >= 4 && <button className="pressable card" style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", padding: "13px 15px", marginBottom: 12, cursor: "pointer", fontFamily: "inherit" }} onClick={() => nav("homograph")}>
+      <span style={{ fontSize: 24, width: 44, height: 44, borderRadius: 12, background: "var(--window)", display: "grid", placeItems: "center", flexShrink: 0 }}>👂</span>
+      <div style={{ flex: 1, textAlign: "left" }}><div style={{ fontWeight: 800, fontSize: 16, color: C.ink }}>秒懂字·读音特训</div><div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 2 }}>看字秒懂却读不出的 <b style={{ color: C.honeyDk }}>{hgCount}</b> 个汉字词 — 练听力和开口</div></div>
+      <span style={{ fontSize: 20, color: "var(--ink-soft)" }}>›</span>
+    </button>}
 
     <button className="pressable card" style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", padding: "13px 15px", marginBottom: 12, cursor: "pointer", fontFamily: "inherit" }} onClick={() => nav("shop")}>
       <span style={{ fontSize: 24, width: 44, height: 44, borderRadius: 12, background: "var(--window)", display: "grid", placeItems: "center", flexShrink: 0 }}>🐟</span>
@@ -1926,6 +1934,113 @@ function KanaChart({ ctx }) {
       <button className="pressable" style={{ ...S.seg, ...(mode === "drill" ? S.segOn : {}) }} onClick={() => { setMode("drill"); play("tap"); }}>🎯 认读练习</button>
     </div>
     {mode === "chart" ? <KanaTable idx={idx} onTap={(c) => { speakKana(c[idx]); }} /> : <KanaDrill idx={idx} play={play} throwReact={ctx.throwReact} />}
+  </div>);
+}
+
+// ── 秒懂字·读音特训：中国人看字形秒懂意思、大脑跳过读音的汉字词(現金/店内/袋…)，专练"听得懂+说得出" ──
+// 检测：词的汉字转成简体后大都出现在中文释义里 = 字形≈字义 = 秒懂字。假朋友(手紙类)字面≠意思，不算。
+const J2S = (() => { const m = {}; for (const k in S2J) m[S2J[k]] = k; return m; })();
+const KANJI_CH_RE = /[一-鿿々]/;
+function isTransparentKanji(w) {
+  if ((w.type || "word") !== "word" || !w.term || !w.reading || !w.meaning) return false;
+  if (w.kanjiTip && w.kanjiTip.kind === "trap") return false;
+  if (isRomaji(w.reading) || w.reading === w.term) return false;
+  const kanji = Array.from(w.term).filter((c) => KANJI_CH_RE.test(c));
+  if (!kanji.length) return false;
+  const hit = kanji.filter((c) => w.meaning.includes(J2S[c] || c) || w.meaning.includes(c)).length;
+  return hit >= Math.max(1, Math.ceil(kanji.length * 0.6)) && (kanji.length >= 2 || Array.from(w.term).length <= 2);
+}
+const HIRA_POOL = KANA_ALL.map((c) => c[0]); // 拼读音干扰假名池(平假名)
+// 🎧 听音辨字：只放声音不给假名，四个汉字词里选出你听到的那个(字形帮不上忙，逼耳朵干活)
+function ListenDrill({ pool, play, throwReact }) {
+  const makeQ = () => { const ans = pool[Math.floor(Math.random() * pool.length)]; const opts = [ans]; let guard = 0; while (opts.length < Math.min(4, pool.length) && guard++ < 60) { const r = pool[Math.floor(Math.random() * pool.length)]; if (!opts.some((x) => x.id === r.id)) opts.push(r); } return { ans, opts: shuffle(opts) }; };
+  const [q, setQ] = useState(makeQ);
+  const [picked, setPicked] = useState(null); const [heard, setHeard] = useState(false);
+  const [score, setScore] = useState(0), [total, setTotal] = useState(0), [streak, setStreak] = useState(0);
+  const nextT = useRef(null);
+  useEffect(() => () => clearTimeout(nextT.current), []);
+  const pick = (o) => {
+    if (picked || !heard) return; setPicked(o); setTotal((t) => t + 1);
+    const ok = o.id === q.ans.id;
+    if (ok) { play("correct"); if (throwReact) throwReact("churu"); setScore((s) => s + 1); setStreak((s) => s + 1); } else { play("wrong"); setStreak(0); }
+    nextT.current = setTimeout(() => { setPicked(null); setHeard(false); setQ(makeQ()); }, ok ? 1000 : 2000);
+  };
+  return (<div className="fade-in">
+    <div style={{ textAlign: "center", marginBottom: 12, fontSize: 13, color: "var(--ink-mid)", fontWeight: 800 }}>得分 {score}/{total} · 连对 {streak} 🔥</div>
+    <div className="card pop-in" style={{ ...S.bigCard, padding: "26px 20px" }}>
+      <button className="pressable" style={{ ...S.bigBtn, maxWidth: 240, margin: "0 auto" }} onClick={() => { speakJa(q.ans.term); setHeard(true); play("tap"); }}>🔊 {heard ? "再听一次" : "点我听发音"}</button>
+      <div style={{ fontSize: 13, color: "var(--ink-soft)", marginTop: 10 }}>{picked ? (picked.id === q.ans.id ? "✓ " : "✗ 是「" + q.ans.term + "」 ") + q.ans.reading + " · " + q.ans.meaning : heard ? "它是下面哪个词？" : "先听，再选(听不清可反复听)"}</div>
+    </div>
+    <div style={{ ...S.optGrid, marginTop: 14 }}>{q.opts.map((o) => {
+      let s2 = { ...S.opt, opacity: heard ? 1 : 0.5 };
+      if (picked) { if (o.id === q.ans.id) s2 = { ...s2, outline: "3px solid " + C.matchaDk, outlineOffset: -4, background: "var(--ok-bg)" }; else if (picked.id === o.id) s2 = { ...s2, outline: "3px solid " + C.blush, outlineOffset: -4, background: "var(--danger-bg)" }; }
+      return <button key={o.id} className="pressable" style={s2} onClick={() => pick(o)}><span style={{ fontSize: 20, fontWeight: 800 }}>{o.term}</span></button>;
+    })}</div>
+  </div>);
+}
+// 🧩 拼读音：给汉字词，从打乱的假名块里拼出读音(能拼出来=能读出来=能说出来)
+function SpellDrill({ pool, play, throwReact }) {
+  const makeQ = () => { const w = pool[Math.floor(Math.random() * pool.length)]; const chars = Array.from(w.reading); const extra = []; let guard = 0; while (extra.length < Math.min(3, 10 - chars.length > 0 ? 3 : 0) && guard++ < 40) { const k = HIRA_POOL[Math.floor(Math.random() * HIRA_POOL.length)]; if (!chars.includes(k) && !extra.includes(k)) extra.push(k); } const tiles = shuffle(chars.concat(extra).map((ch, i) => ({ ch, i }))); return { w, tiles }; };
+  const [q, setQ] = useState(makeQ);
+  const [picks, setPicks] = useState([]); // [{ch,i}]
+  const [state, setState] = useState("doing"); // doing | right | wrong | reveal
+  const [fails, setFails] = useState(0);
+  const [score, setScore] = useState(0), [total, setTotal] = useState(0), [streak, setStreak] = useState(0);
+  const nextT = useRef(null);
+  useEffect(() => () => clearTimeout(nextT.current), []);
+  const target = Array.from(q.w.reading);
+  const advance = (delay) => { nextT.current = setTimeout(() => { setPicks([]); setFails(0); setState("doing"); setQ(makeQ()); }, delay); };
+  const tap = (t) => {
+    if (state !== "doing" || picks.some((p) => p.i === t.i)) return;
+    const np = picks.concat(t); setPicks(np); play("tap");
+    if (np.length === target.length) {
+      const ok = np.map((p) => p.ch).join("") === q.w.reading;
+      setTotal((x) => x + 1);
+      if (ok) { setState("right"); play("correct"); if (throwReact) throwReact("churu"); speakJa(q.w.term); setScore((s) => s + 1); setStreak((s) => s + 1); advance(1300); }
+      else if (fails >= 1) { setState("reveal"); play("wrong"); setStreak(0); speakJa(q.w.term); advance(2200); } // 错第二次→揭晓答案再走
+      else { setState("wrong"); play("wrong"); setStreak(0); setFails(1); nextT.current = setTimeout(() => { setPicks([]); setState("doing"); }, 800); }
+    }
+  };
+  const undo = () => { if (state === "doing" && picks.length) { setPicks(picks.slice(0, -1)); play("tap"); } };
+  return (<div className="fade-in">
+    <div style={{ textAlign: "center", marginBottom: 12, fontSize: 13, color: "var(--ink-mid)", fontWeight: 800 }}>得分 {score}/{total} · 连对 {streak} 🔥</div>
+    <div className="card pop-in" style={{ ...S.bigCard, padding: "22px 20px" }}>
+      <div style={{ fontSize: 30, fontWeight: 800, lineHeight: 1.2 }}>{q.w.term}</div>
+      <div style={{ fontSize: 13, color: "var(--ink-soft)", marginTop: 4 }}>{q.w.meaning} · 拼出它的读音</div>
+      <div style={{ display: "flex", gap: 6, justifyContent: "center", flexWrap: "wrap", marginTop: 14, minHeight: 44 }}>
+        {target.map((_, i) => (<span key={i} style={{ width: 38, height: 42, display: "grid", placeItems: "center", fontSize: 20, fontWeight: 800, background: "var(--surface2)", border: "3px solid " + (state === "right" ? C.matchaDk : state === "wrong" || state === "reveal" ? C.blush : "var(--pix-border)"), color: state === "reveal" ? C.blush : "var(--ink)" }}>{state === "reveal" ? target[i] : (picks[i] ? picks[i].ch : "")}</span>))}
+      </div>
+      {state === "reveal" && <div style={{ fontSize: 13, color: C.blush, fontWeight: 800, marginTop: 8 }}>读作「{q.w.reading}」，跟着读一遍吧 🔊</div>}
+    </div>
+    <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap", marginTop: 14 }}>
+      {q.tiles.map((t) => { const used = picks.some((p) => p.i === t.i); return (
+        <button key={t.i} className="pressable" disabled={used || state !== "doing"} style={{ width: 52, height: 52, fontSize: 21, fontWeight: 800, fontFamily: "inherit", background: used ? "var(--surface2)" : "var(--surface)", color: used ? "var(--ink-soft)" : "var(--ink)", cursor: "pointer", opacity: used ? 0.45 : 1 }} onClick={() => tap(t)}>{t.ch}</button>); })}
+    </div>
+    <div style={{ display: "flex", justifyContent: "center", marginTop: 12 }}>
+      <button className="pressable" style={{ ...S.ghostBtn }} onClick={undo}>⌫ 退一格</button>
+    </div>
+  </div>);
+}
+function HomographChart({ ctx }) {
+  const { st, play } = ctx;
+  const pool = useMemo(() => st.words.filter(isTransparentKanji), [st.words]);
+  const [mode, setMode] = useState("listen");
+  const [showList, setShowList] = useState(false);
+  if (pool.length < 4) return (<div className="fade-in"><BackRow ctx={ctx} title="👂 秒懂字·读音特训" /><div style={S.empty}>词库里的"秒懂字"还不到 4 个，先去加点带汉字的词吧 🌱</div></div>);
+  return (<div className="fade-in"><BackRow ctx={ctx} title="👂 秒懂字·读音特训" />
+    <div style={{ fontSize: 12.5, color: "var(--ink-mid)", textAlign: "center", margin: "0 0 10px", lineHeight: 1.7 }}>这些词你<b>看字就懂</b>，大脑会偷懒跳过读音——结果听不懂、说不出。这里把字形的"外挂"关掉，专练耳朵和嘴。</div>
+    <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+      <button className="pressable" style={{ ...S.seg, ...(mode === "listen" ? S.segOn : {}) }} onClick={() => { setMode("listen"); play("tap"); }}>🎧 听音辨字</button>
+      <button className="pressable" style={{ ...S.seg, ...(mode === "spell" ? S.segOn : {}) }} onClick={() => { setMode("spell"); play("tap"); }}>🧩 拼读音</button>
+    </div>
+    {mode === "listen" ? <ListenDrill pool={pool} play={play} throwReact={ctx.throwReact} /> : <SpellDrill pool={pool} play={play} throwReact={ctx.throwReact} />}
+    <div style={{ textAlign: "center", marginTop: 14 }}>
+      <button className="pressable" style={{ ...S.ghostBtn }} onClick={() => { setShowList(!showList); play("tap"); }}>{showList ? "收起词单 ▴" : "查看词单(" + pool.length + " 个秒懂字) ▾"}</button>
+    </div>
+    {showList && <div className="card" style={{ marginTop: 10, padding: "10px 12px" }}>{pool.map((w) => (
+      <div key={w.id} style={{ display: "flex", alignItems: "baseline", gap: 8, padding: "5px 2px", borderBottom: "1.5px dashed var(--surface2)", cursor: "pointer" }} onClick={() => speakJa(w.term)}>
+        <span style={{ fontWeight: 800, fontSize: 15 }}>{w.term}</span><span style={{ fontSize: 12.5, color: C.honeyDk, fontWeight: 700 }}>{w.reading}</span><span style={{ fontSize: 12, color: "var(--ink-soft)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{w.meaning}</span><span style={{ fontSize: 12 }}>🔊</span>
+      </div>))}</div>}
   </div>);
 }
 
