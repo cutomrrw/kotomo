@@ -847,7 +847,8 @@ export default function App() {
   if (!st.onboarded) return <Onboarding onDone={(interests) => { play("happy"); patch((s) => ({ ...s, onboarded: true, interests, words: buildSeedWords(interests) })); }} play={play} />;
 
   const nav = (v) => { play("tap"); setView(v); };
-  const ctx = { st, play, petReact, throwReact, mastered, seg, decor, mood, nav, addWords, updateWord, delWord, delWords, restoreWord, appendWords, petLove, buyItem, setWearing, setSetting, finishReview, ownWordCount, reviewWrongOnly, setReviewWrongOnly, setView, expandTarget, setExpandTarget, amb };
+  const bonusFish = () => setSt((s) => ({ ...s, fish: (s.fish || 0) + 1 })); // 连对奖励:每5连对额外+1🐟
+  const ctx = { st, play, petReact, throwReact, bonusFish, mastered, seg, decor, mood, nav, addWords, updateWord, delWord, delWords, restoreWord, appendWords, petLove, buyItem, setWearing, setSetting, finishReview, ownWordCount, reviewWrongOnly, setReviewWrongOnly, setView, expandTarget, setExpandTarget, amb };
 
   return (
     <div style={S.shell}>
@@ -982,7 +983,7 @@ function Home({ ctx }) {
 
     {hgCount >= 4 && <button className="pressable card" style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", padding: "13px 15px", marginBottom: 12, cursor: "pointer", fontFamily: "inherit" }} onClick={() => nav("homograph")}>
       <span style={{ fontSize: 24, width: 44, height: 44, borderRadius: 12, background: "var(--window)", display: "grid", placeItems: "center", flexShrink: 0 }}>👂</span>
-      <div style={{ flex: 1, textAlign: "left" }}><div style={{ fontWeight: 800, fontSize: 16, color: C.ink }}>秒懂字·读音特训</div><div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 2 }}>看字秒懂却读不出的 <b style={{ color: C.honeyDk }}>{hgCount}</b> 个汉字词 — 练听力和开口</div></div>
+      <div style={{ flex: 1, textAlign: "left" }}><div style={{ fontWeight: 800, fontSize: 16, color: C.ink }}>秒懂词·读音特训</div><div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 2 }}>看字秒懂却读不出的 <b style={{ color: C.honeyDk }}>{hgCount}</b> 个汉字词 — 练听力和开口</div></div>
       <span style={{ fontSize: 20, color: "var(--ink-soft)" }}>›</span>
     </button>}
 
@@ -1371,6 +1372,7 @@ function AddWords({ ctx }) {
             {r.verified === "verified"
               ? <span style={{ ...S.draftBadge, background: "var(--ok-bg)", border: "2px solid var(--ok-bg)", color: C.matchaDk }}>✅已核</span>
               : <span style={{ ...S.draftBadge, background: "var(--warn-bg)", border: "2px solid var(--warn-bg)", color: "var(--ink-mid)" }}>⚠️待核</span>}
+            {isTransparentKanji(r) && <span style={{ ...S.draftBadge, background: "var(--surface-sel)", border: "2px solid var(--surface-sel)", color: C.honeyDk }}>👀秒懂</span>}
             <select value={r.pos} onChange={(e) => editD(i, "pos", e.target.value)} style={S.draftPos}>{POS.map((p) => <option key={p.key} value={p.key}>{p.emoji}{p.label}</option>)}</select>
             {r.type !== "sentence" && <button style={S.draftExpand} onClick={() => expandDraft(i)}>✨ 展开</button>}
             <button style={{ ...S.draftStar, ...(r.freq ? S.draftStarOn : {}) }} onClick={() => editD(i, "freq", !r.freq)}>⭐ 高频</button>
@@ -1715,6 +1717,7 @@ function Library({ ctx }) {
             <JaTerm w={w} size={18} />
             {w.verified === "verified" ? <Tag bg="var(--ok-bg)" fg={C.matchaDk}>✅已核</Tag> : <Tag bg="var(--warn-bg)" fg="var(--ink-mid)">⚠️待核</Tag>}
             {w.freq && <Tag bg="#ffe6a8" fg="#a8761e">高频</Tag>}{done && <Tag bg="var(--ok-bg)" fg={C.matchaDk}>已掌握</Tag>}
+            {isTransparentKanji(w) && <Tag bg="var(--surface-sel)" fg={C.honeyDk}>👀秒懂</Tag>}
             {w.kanjiTip && w.kanjiTip.kind === "trap" && <Tag bg="var(--danger-bg)" fg="var(--danger-fg)">⚠️汉字陷阱</Tag>}
             {w.kanjiTip && w.kanjiTip.kind === "same" && <Tag bg="var(--ok-bg)" fg={C.matchaDk}>✅你已会</Tag>}
             <div style={{ fontSize: 13, color: "var(--ink-mid)" }}>{w.meaning}{w.source ? " · 📍" + w.source : ""}</div>
@@ -1937,24 +1940,33 @@ function KanaChart({ ctx }) {
   </div>);
 }
 
-// ── 秒懂字·读音特训：中国人看字形秒懂意思、大脑跳过读音的汉字词(現金/店内/袋…)，专练"听得懂+说得出" ──
-// 检测：词的汉字转成简体后大都出现在中文释义里 = 字形≈字义 = 秒懂字。假朋友(手紙类)字面≠意思，不算。
-const J2S = (() => { const m = {}; for (const k in S2J) m[S2J[k]] = k; return m; })();
+// ── 秒懂词·读音特训：中国人看字形秒懂意思、大脑跳过读音的汉字词(現金/店内/袋…)，专练"听得懂+说得出" ──
+// 创始人定义的"秒懂词"：日文写法为【纯汉字】，且与中文对应词【文字完全相同】或【大部分相同(如三字里两字)】，简体/繁体不计。
+const J2S = (() => { const m = {}; for (const k in S2J) m[S2J[k]] = k; // 反转简→日表得到 日→简
+  Object.assign(m, { "窓": "窗", "気": "气", "圧": "压", "歩": "步", "絵": "绘", "駅": "站", "払": "付", "頑": "顽", "鑑": "鉴", "隣": "邻", "浄": "净", "様": "样" }); return m; })();
 const KANJI_CH_RE = /[一-鿿々]/;
 function isTransparentKanji(w) {
   if ((w.type || "word") !== "word" || !w.term || !w.reading || !w.meaning) return false;
-  if (w.kanjiTip && w.kanjiTip.kind === "trap") return false;
+  if (w.kanjiTip && w.kanjiTip.kind === "trap") return false; // 假朋友(手紙类)：字面≠意思，另有机制
   if (isRomaji(w.reading) || w.reading === w.term) return false;
-  const kanji = Array.from(w.term).filter((c) => KANJI_CH_RE.test(c));
-  if (!kanji.length) return false;
-  const hit = kanji.filter((c) => w.meaning.includes(J2S[c] || c) || w.meaning.includes(c)).length;
-  return hit >= Math.max(1, Math.ceil(kanji.length * 0.6)) && (kanji.length >= 2 || Array.from(w.term).length <= 2);
+  const t = Array.from(w.term);
+  if (!t.length || !t.every((c) => KANJI_CH_RE.test(c))) return false; // 必须纯汉字(带假名的不算"文字相同")
+  // 与释义的各词段逐一比对(释义常是"打针、注射"/"养老金/年金"，任一段满足即算)
+  const segs = w.meaning.split(/[、,，;；/／(（)）·・…\s]/).filter(Boolean);
+  return segs.some((seg) => {
+    const hit = t.filter((c) => seg.includes(J2S[c] || c) || seg.includes(c)).length;
+    if (t.length === 1) return hit === 1;               // 单字：袋 → "袋子" ✓
+    return hit === t.length || hit / t.length >= 2 / 3; // 文字完全相同 或 ≥2/3 相同(三字里两字)
+  });
 }
 const HIRA_POOL = KANA_ALL.map((c) => c[0]); // 拼读音干扰假名池(平假名)
+// 连对榜行：三个玩法共用(每 5 连对额外 +1🐟)
+const DrillScore = ({ score, total, streak }) => (<div style={{ textAlign: "center", marginBottom: 12, fontSize: 13, color: "var(--ink-mid)", fontWeight: 800 }}>得分 {score}/{total} · 连对 {streak} 🔥<span style={{ fontSize: 11, color: "var(--ink-soft)", fontWeight: 700 }}>（每5连对 +1🐟）</span></div>);
+// 抽 1 答案 + 3 干扰(同池)
+const pick4 = (pool) => { const ans = pool[Math.floor(Math.random() * pool.length)]; const opts = [ans]; let guard = 0; while (opts.length < Math.min(4, pool.length) && guard++ < 60) { const r = pool[Math.floor(Math.random() * pool.length)]; if (!opts.some((x) => x.id === r.id)) opts.push(r); } return { ans, opts: shuffle(opts) }; };
 // 🎧 听音辨字：只放声音不给假名，四个汉字词里选出你听到的那个(字形帮不上忙，逼耳朵干活)
-function ListenDrill({ pool, play, throwReact }) {
-  const makeQ = () => { const ans = pool[Math.floor(Math.random() * pool.length)]; const opts = [ans]; let guard = 0; while (opts.length < Math.min(4, pool.length) && guard++ < 60) { const r = pool[Math.floor(Math.random() * pool.length)]; if (!opts.some((x) => x.id === r.id)) opts.push(r); } return { ans, opts: shuffle(opts) }; };
-  const [q, setQ] = useState(makeQ);
+function ListenDrill({ pool, play, throwReact, bonusFish }) {
+  const [q, setQ] = useState(() => pick4(pool));
   const [picked, setPicked] = useState(null); const [heard, setHeard] = useState(false);
   const [score, setScore] = useState(0), [total, setTotal] = useState(0), [streak, setStreak] = useState(0);
   const nextT = useRef(null);
@@ -1962,11 +1974,11 @@ function ListenDrill({ pool, play, throwReact }) {
   const pick = (o) => {
     if (picked || !heard) return; setPicked(o); setTotal((t) => t + 1);
     const ok = o.id === q.ans.id;
-    if (ok) { play("correct"); if (throwReact) throwReact("churu"); setScore((s) => s + 1); setStreak((s) => s + 1); } else { play("wrong"); setStreak(0); }
-    nextT.current = setTimeout(() => { setPicked(null); setHeard(false); setQ(makeQ()); }, ok ? 1000 : 2000);
+    if (ok) { play("correct"); if (throwReact) throwReact("churu"); setScore((s) => s + 1); const ns = streak + 1; setStreak(ns); if (ns % 5 === 0 && bonusFish) bonusFish(); } else { play("wrong"); setStreak(0); }
+    nextT.current = setTimeout(() => { setPicked(null); setHeard(false); setQ(pick4(pool)); }, ok ? 1000 : 2000);
   };
   return (<div className="fade-in">
-    <div style={{ textAlign: "center", marginBottom: 12, fontSize: 13, color: "var(--ink-mid)", fontWeight: 800 }}>得分 {score}/{total} · 连对 {streak} 🔥</div>
+    <DrillScore score={score} total={total} streak={streak} />
     <div className="card pop-in" style={{ ...S.bigCard, padding: "26px 20px" }}>
       <button className="pressable" style={{ ...S.bigBtn, maxWidth: 240, margin: "0 auto" }} onClick={() => { speakJa(q.ans.term); setHeard(true); play("tap"); }}>🔊 {heard ? "再听一次" : "点我听发音"}</button>
       <div style={{ fontSize: 13, color: "var(--ink-soft)", marginTop: 10 }}>{picked ? (picked.id === q.ans.id ? "✓ " : "✗ 是「" + q.ans.term + "」 ") + q.ans.reading + " · " + q.ans.meaning : heard ? "它是下面哪个词？" : "先听，再选(听不清可反复听)"}</div>
@@ -1978,8 +1990,35 @@ function ListenDrill({ pool, play, throwReact }) {
     })}</div>
   </div>);
 }
+// 🈶 假名认字：给假名注音(げんきん)，选出对应的汉字词——把"读音→字"的连接练反向(创始人提议)
+function KanaPickDrill({ pool, play, throwReact, bonusFish }) {
+  const [q, setQ] = useState(() => pick4(pool));
+  const [picked, setPicked] = useState(null);
+  const [score, setScore] = useState(0), [total, setTotal] = useState(0), [streak, setStreak] = useState(0);
+  const nextT = useRef(null);
+  useEffect(() => () => clearTimeout(nextT.current), []);
+  const pick = (o) => {
+    if (picked) return; setPicked(o); setTotal((t) => t + 1);
+    const ok = o.id === q.ans.id;
+    speakJa(q.ans.term); // 答完顺带把音种进耳朵
+    if (ok) { play("correct"); if (throwReact) throwReact("churu"); setScore((s) => s + 1); const ns = streak + 1; setStreak(ns); if (ns % 5 === 0 && bonusFish) bonusFish(); } else { play("wrong"); setStreak(0); }
+    nextT.current = setTimeout(() => { setPicked(null); setQ(pick4(pool)); }, ok ? 900 : 2000);
+  };
+  return (<div className="fade-in">
+    <DrillScore score={score} total={total} streak={streak} />
+    <div className="card pop-in" style={{ ...S.bigCard, padding: "26px 20px" }}>
+      <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: 2 }}>{q.ans.reading}</div>
+      <div style={{ fontSize: 13, color: "var(--ink-soft)", marginTop: 8 }}>{picked ? (picked.id === q.ans.id ? "✓ " : "✗ 是「" + q.ans.term + "」 ") + q.ans.meaning : "这个读音是下面哪个词？"}</div>
+    </div>
+    <div style={{ ...S.optGrid, marginTop: 14 }}>{q.opts.map((o) => {
+      let s2 = { ...S.opt };
+      if (picked) { if (o.id === q.ans.id) s2 = { ...s2, outline: "3px solid " + C.matchaDk, outlineOffset: -4, background: "var(--ok-bg)" }; else if (picked.id === o.id) s2 = { ...s2, outline: "3px solid " + C.blush, outlineOffset: -4, background: "var(--danger-bg)" }; }
+      return <button key={o.id} className="pressable" style={s2} onClick={() => pick(o)}><span style={{ fontSize: 20, fontWeight: 800 }}>{o.term}</span></button>;
+    })}</div>
+  </div>);
+}
 // 🧩 拼读音：给汉字词，从打乱的假名块里拼出读音(能拼出来=能读出来=能说出来)
-function SpellDrill({ pool, play, throwReact }) {
+function SpellDrill({ pool, play, throwReact, bonusFish }) {
   const makeQ = () => { const w = pool[Math.floor(Math.random() * pool.length)]; const chars = Array.from(w.reading); const extra = []; let guard = 0; while (extra.length < Math.min(3, 10 - chars.length > 0 ? 3 : 0) && guard++ < 40) { const k = HIRA_POOL[Math.floor(Math.random() * HIRA_POOL.length)]; if (!chars.includes(k) && !extra.includes(k)) extra.push(k); } const tiles = shuffle(chars.concat(extra).map((ch, i) => ({ ch, i }))); return { w, tiles }; };
   const [q, setQ] = useState(makeQ);
   const [picks, setPicks] = useState([]); // [{ch,i}]
@@ -1996,14 +2035,14 @@ function SpellDrill({ pool, play, throwReact }) {
     if (np.length === target.length) {
       const ok = np.map((p) => p.ch).join("") === q.w.reading;
       setTotal((x) => x + 1);
-      if (ok) { setState("right"); play("correct"); if (throwReact) throwReact("churu"); speakJa(q.w.term); setScore((s) => s + 1); setStreak((s) => s + 1); advance(1300); }
+      if (ok) { setState("right"); play("correct"); if (throwReact) throwReact("churu"); speakJa(q.w.term); setScore((s) => s + 1); const ns = streak + 1; setStreak(ns); if (ns % 5 === 0 && bonusFish) bonusFish(); advance(1300); }
       else if (fails >= 1) { setState("reveal"); play("wrong"); setStreak(0); speakJa(q.w.term); advance(2200); } // 错第二次→揭晓答案再走
       else { setState("wrong"); play("wrong"); setStreak(0); setFails(1); nextT.current = setTimeout(() => { setPicks([]); setState("doing"); }, 800); }
     }
   };
   const undo = () => { if (state === "doing" && picks.length) { setPicks(picks.slice(0, -1)); play("tap"); } };
   return (<div className="fade-in">
-    <div style={{ textAlign: "center", marginBottom: 12, fontSize: 13, color: "var(--ink-mid)", fontWeight: 800 }}>得分 {score}/{total} · 连对 {streak} 🔥</div>
+    <DrillScore score={score} total={total} streak={streak} />
     <div className="card pop-in" style={{ ...S.bigCard, padding: "22px 20px" }}>
       <div style={{ fontSize: 30, fontWeight: 800, lineHeight: 1.2 }}>{q.w.term}</div>
       <div style={{ fontSize: 13, color: "var(--ink-soft)", marginTop: 4 }}>{q.w.meaning} · 拼出它的读音</div>
@@ -2024,18 +2063,21 @@ function SpellDrill({ pool, play, throwReact }) {
 function HomographChart({ ctx }) {
   const { st, play } = ctx;
   const pool = useMemo(() => st.words.filter(isTransparentKanji), [st.words]);
-  const [mode, setMode] = useState("listen");
+  const [mode, setMode] = useState("kana"); // 默认假名认字(不依赖声音,静音也能玩)
   const [showList, setShowList] = useState(false);
-  if (pool.length < 4) return (<div className="fade-in"><BackRow ctx={ctx} title="👂 秒懂字·读音特训" /><div style={S.empty}>词库里的"秒懂字"还不到 4 个，先去加点带汉字的词吧 🌱</div></div>);
-  return (<div className="fade-in"><BackRow ctx={ctx} title="👂 秒懂字·读音特训" />
+  if (pool.length < 4) return (<div className="fade-in"><BackRow ctx={ctx} title="👂 秒懂词·读音特训" /><div style={S.empty}>词库里的"秒懂词"还不到 4 个，先去加点带汉字的词吧 🌱</div></div>);
+  return (<div className="fade-in"><BackRow ctx={ctx} title="👂 秒懂词·读音特训" />
     <div style={{ fontSize: 12.5, color: "var(--ink-mid)", textAlign: "center", margin: "0 0 10px", lineHeight: 1.7 }}>这些词你<b>看字就懂</b>，大脑会偷懒跳过读音——结果听不懂、说不出。这里把字形的"外挂"关掉，专练耳朵和嘴。</div>
     <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+      <button className="pressable" style={{ ...S.seg, ...(mode === "kana" ? S.segOn : {}) }} onClick={() => { setMode("kana"); play("tap"); }}>🈶 假名认字</button>
       <button className="pressable" style={{ ...S.seg, ...(mode === "listen" ? S.segOn : {}) }} onClick={() => { setMode("listen"); play("tap"); }}>🎧 听音辨字</button>
       <button className="pressable" style={{ ...S.seg, ...(mode === "spell" ? S.segOn : {}) }} onClick={() => { setMode("spell"); play("tap"); }}>🧩 拼读音</button>
     </div>
-    {mode === "listen" ? <ListenDrill pool={pool} play={play} throwReact={ctx.throwReact} /> : <SpellDrill pool={pool} play={play} throwReact={ctx.throwReact} />}
+    {mode === "kana" ? <KanaPickDrill pool={pool} play={play} throwReact={ctx.throwReact} bonusFish={ctx.bonusFish} />
+      : mode === "listen" ? <ListenDrill pool={pool} play={play} throwReact={ctx.throwReact} bonusFish={ctx.bonusFish} />
+      : <SpellDrill pool={pool} play={play} throwReact={ctx.throwReact} bonusFish={ctx.bonusFish} />}
     <div style={{ textAlign: "center", marginTop: 14 }}>
-      <button className="pressable" style={{ ...S.ghostBtn }} onClick={() => { setShowList(!showList); play("tap"); }}>{showList ? "收起词单 ▴" : "查看词单(" + pool.length + " 个秒懂字) ▾"}</button>
+      <button className="pressable" style={{ ...S.ghostBtn }} onClick={() => { setShowList(!showList); play("tap"); }}>{showList ? "收起词单 ▴" : "查看词单(" + pool.length + " 个秒懂词) ▾"}</button>
     </div>
     {showList && <div className="card" style={{ marginTop: 10, padding: "10px 12px" }}>{pool.map((w) => (
       <div key={w.id} style={{ display: "flex", alignItems: "baseline", gap: 8, padding: "5px 2px", borderBottom: "1.5px dashed var(--surface2)", cursor: "pointer" }} onClick={() => speakJa(w.term)}>
