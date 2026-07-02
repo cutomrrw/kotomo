@@ -1939,8 +1939,8 @@ function RhythmChant({ idx, play, ctx }) {
   const [count, setCount] = useState(4);
   const [combo, setCombo] = useState(0); const [score, setScore] = useState(0);
   const actxRef = useRef(null), streamRef = useRef(null), anaRef = useRef(null), dataRef = useRef(null);
-  const rafRef = useRef(null), itvRef = useRef(null), beatsRef = useRef([]), flagsRef = useRef([]), resolvedRef = useRef([]), baseRef = useRef(12);
-  const comboRef = useRef(0), maxComboRef = useRef(0);
+  const rafRef = useRef(null), itvRef = useRef(null), beatsRef = useRef([]), flagsRef = useRef([]), resolvedRef = useRef([]), baseRef = useRef(8);
+  const comboRef = useRef(0), maxComboRef = useRef(0), vuRef = useRef(null), voicedFramesRef = useRef(0);
   const stopAll = () => { cancelAnimationFrame(rafRef.current); clearInterval(itvRef.current); try { if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop()); } catch {} streamRef.current = null; anaRef.current = null; };
   useEffect(() => () => stopAll(), []);
   const tick = (a, t, accent) => { try {
@@ -1964,9 +1964,12 @@ function RhythmChant({ idx, play, ctx }) {
     try { await a.resume(); } catch {}
     actxRef.current = a;
     let mic = false;
-    try { const st = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-      streamRef.current = st; const src = a.createMediaStreamSource(st); const ana = a.createAnalyser(); ana.fftSize = 1024; ana.smoothingTimeConstant = 0.5;
-      src.connect(ana); anaRef.current = ana; dataRef.current = new Uint8Array(ana.frequencyBinCount); mic = true; } catch (e) { mic = false; }
+    try { // 关掉回声消除/降噪:它们为通话设计,会把短促的念声当噪声吃掉;鼓点本来就排在人声测量频段外,不需要 AEC
+      const st = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+      streamRef.current = st; const src = a.createMediaStreamSource(st); const ana = a.createAnalyser(); ana.fftSize = 1024; ana.smoothingTimeConstant = 0.4;
+      const mute = a.createGain(); mute.gain.value = 0;
+      src.connect(ana); ana.connect(mute); mute.connect(a.destination); // iOS Safari:分析图不接 destination 就不拉麦克风数据(静音 gain 防回授)
+      anaRef.current = ana; dataRef.current = new Uint8Array(ana.frequencyBinCount); mic = true; } catch (e) { mic = false; }
     setMicOk(mic);
     const items = makeSeq();
     const bd0 = 60 / CHANT_BPMS[0];
@@ -1979,7 +1982,7 @@ function RhythmChant({ idx, play, ctx }) {
     const beats = [];
     for (let b = 0; b < CHANT_BPMS.length; b++) { const bd = 60 / CHANT_BPMS[b]; for (let i = 0; i < CHANT_BEATS; i++) { tick(a, toCtx(t), i % 4 === 0); beats.push(t); items[b * CHANT_BEATS + i].t = t; t += bd; } }
     beatsRef.current = beats; flagsRef.current = beats.map(() => false); resolvedRef.current = beats.map(() => false);
-    comboRef.current = 0; maxComboRef.current = 0; baseRef.current = 12;
+    comboRef.current = 0; maxComboRef.current = 0; baseRef.current = 8; voicedFramesRef.current = 0;
     setSeq(items); setScore(0); setCombo(0); setPos(-1); setCount(4); setPhase("count");
     let finished = false;
     const finish = () => { if (finished) return; finished = true; stopAll(); setPhase("end");
@@ -1996,8 +1999,12 @@ function RhythmChant({ idx, play, ctx }) {
         const ana = anaRef.current, data = dataRef.current; ana.getByteFrequencyData(data);
         const binHz = a.sampleRate / 2 / data.length, lo = Math.max(1, Math.floor(300 / binHz)), hi = Math.min(data.length - 1, Math.ceil(3400 / binHz));
         let sum = 0; for (let i = lo; i <= hi; i++) sum += data[i]; const e = sum / (hi - lo + 1);
-        if (e < baseRef.current * 1.5) baseRef.current = baseRef.current * 0.99 + e * 0.01; // 只在安静时更新噪声底
-        if (e > Math.max(baseRef.current * 1.9, baseRef.current + 16, 20)) { for (let i = 0; i < bs.length; i++) { if (!resolvedRef.current[i] && now > bs[i] - 0.27 && now < bs[i] + 0.35) flagsRef.current[i] = true; } }
+        const fl = baseRef.current; baseRef.current = fl + (e - fl) * (e < fl ? 0.25 : 0.02); // 噪声底:跌得快升得慢——短促念声顶不高它,环境噪声几秒内追上(倒数期间即完成校准)
+        const th = baseRef.current + Math.max(12, baseRef.current * 0.9); // 动态阈值
+        const voiced = e > th;
+        voicedFramesRef.current = voiced ? voicedFramesRef.current + 1 : 0;
+        if (vuRef.current) { vuRef.current.style.width = Math.min(100, e * 1.4) + "%"; vuRef.current.style.background = voiced ? "#7e9a4c" : "#9aa07c"; } // 实时声音条(直改 DOM,不走 React)
+        if (voicedFramesRef.current >= 2) { for (let i = 0; i < bs.length; i++) { if (!resolvedRef.current[i] && now > bs[i] - 0.3 && now < bs[i] + 0.4) flagsRef.current[i] = true; } } // 连续≥2帧出声才算(滤瞬时杂音)
       }
       for (let i = 0; i < bs.length; i++) { // 结算已过窗口的拍
         if (!resolvedRef.current[i] && now > bs[i] + 0.36) { resolvedRef.current[i] = true; const hit = flagsRef.current[i];
@@ -2017,7 +2024,7 @@ function RhythmChant({ idx, play, ctx }) {
     itvRef.current = setInterval(step, 120);
   };
   const tapBeat = () => { const now = performance.now() / 1000, bs = beatsRef.current;
-    for (let i = 0; i < bs.length; i++) { if (!resolvedRef.current[i] && now > bs[i] - 0.27 && now < bs[i] + 0.35) { flagsRef.current[i] = true; break; } } vibrate(8); };
+    for (let i = 0; i < bs.length; i++) { if (!resolvedRef.current[i] && now > bs[i] - 0.3 && now < bs[i] + 0.4) { flagsRef.current[i] = true; break; } } vibrate(8); };
   const quit = () => { stopAll(); setPhase("idle"); play("tap"); };
   if (phase === "idle" || phase === "end") {
     const total = beatsRef.current.length || CHANT_BPMS.length * CHANT_BEATS, r = total ? score / total : 0;
@@ -2029,7 +2036,7 @@ function RhythmChant({ idx, play, ctx }) {
       </>) : (<>
         <div style={{ fontSize: 40 }}>🥁</div>
         <div style={{ fontSize: 15, fontWeight: 800, marginTop: 4 }}>节奏跟读 · 跟着鼓点念假名</div>
-        <div style={{ fontSize: 12.5, color: "var(--ink-soft)", marginTop: 8, lineHeight: 1.8, textAlign: "left" }}>屏幕跟着拍子亮假名(かかけき那样，无意义也行)，<b>出声念就得分</b>，拍速越来越快。<br />🎤 需要麦克风：只测"拍点上有没有出声"，不识别内容、不录音不上传。<br />🎧 外放也行，戴耳机更准；拿不到麦克风会自动变成"边念边点拍"。</div>
+        <div style={{ fontSize: 12.5, color: "var(--ink-soft)", marginTop: 8, lineHeight: 1.8, textAlign: "left" }}>屏幕跟着拍子亮假名(かかけき那样，无意义也行)，<b>出声念就得分</b>，拍速越来越快。<br />🎤 需要麦克风：只测"拍点上有没有出声"，不识别内容、不录音不上传。<br />📊 游戏里有条<b>声音条</b>：你出声它变绿冲高——判定准不准一看便知。<br />🎧 外放也行，戴耳机更准；拿不到麦克风会自动变成"边念边点拍"。</div>
       </>)}
       <button className="pressable" style={{ ...S.bigBtn, maxWidth: 240, margin: "14px auto 0" }} onClick={start}>{phase === "end" ? "再来一轮 🔁" : "开始 ▶"}</button>
     </div></div>);
@@ -2057,6 +2064,12 @@ function RhythmChant({ idx, play, ctx }) {
           color: it.state === "miss" ? C.blush : "var(--ink)" }}>{it.c[idx]}</span>); })}
     </div>
     <div style={{ fontSize: 11.5, color: "var(--ink-soft)", textAlign: "center", marginTop: 8, fontWeight: 700 }}>第 {barNo + 1}/{CHANT_BPMS.length} 小节 · {CHANT_BPMS[barNo]} BPM</div>
+    {micOk && <div style={{ marginTop: 10 }}>
+      <div style={{ height: 12, background: "var(--track)", border: "3px solid var(--pix-border)", overflow: "hidden" }}>
+        <div ref={vuRef} style={{ height: "100%", width: "0%", background: "#9aa07c", transition: "width .06s linear" }} />
+      </div>
+      <div style={{ fontSize: 10.5, color: "var(--ink-soft)", textAlign: "center", marginTop: 3, fontWeight: 700 }}>🎤 声音条 — 你出声时它应该变绿冲高;不动=麦克风没听见你</div>
+    </div>}
     {micOk === false && <div style={{ display: "flex", justifyContent: "center", marginTop: 14 }}>
       <button className="pressable" style={{ ...S.bigBtn, maxWidth: 260 }} onClick={tapBeat}>🥁 拍！(边念边点)</button>
     </div>}
