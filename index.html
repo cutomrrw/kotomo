@@ -12,11 +12,12 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='88'%3E%F0%9F%90%B1%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700;900&display=swap" rel="stylesheet">
+<!-- 字体异步加载(media=print onload 切回)：fonts.googleapis 在部分网络(如国内)会挂起，绝不能阻塞首屏 -->
+<link href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <style>
-  html, body { margin: 0; padding: 0; background: #cfe0b3; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; background: #d3e1b9; -webkit-tap-highlight-color: transparent; }
   #root { min-height: 100vh; }
-  #boot { min-height: 100vh; display: grid; place-items: center; font-family: 'Zen Maru Gothic','PingFang SC','Microsoft YaHei',sans-serif; color: #9b8674; text-align: center; }
+  #boot { min-height: 100vh; display: grid; place-items: center; font-family: 'DotGothic16','PingFang SC','Microsoft YaHei',monospace; color: #3b4030; text-align: center; }
   #boot .cat { font-size: 64px; animation: bob 1.4s ease-in-out infinite; }
   #boot .msg { margin-top: 10px; font-size: 14px; }
   #boot .err { max-width: 300px; font-size: 13px; line-height: 1.8; padding: 0 24px; }
@@ -26,10 +27,10 @@
 <body>
 <div id="root"><div id="boot"><div><div class="cat">🐱</div><div class="msg">词崽加载中…</div></div></div></div>
 
-<!-- React / Babel 走 CDN（首次需联网；之后核心功能离线可用） -->
-<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
+<!-- React / Babel 走 CDN（需联网启动）。版本钉死到具体号：浮动 @18/@7 会在上游发新版时悄悄换代码，既可能一夜坏掉也有供应链风险 -->
+<script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
 <!-- 离线词典 kuromoji 在 Web Worker 内按需加载（见 kotomo.jsx），主线程不再引入，避免构建卡顿 -->
 
 <script>
@@ -37,8 +38,10 @@
 // 好处：源码只有 kotomo.jsx 一份，改它即生效，本文件不重复代码、不会分叉。
 (async function () {
   function fail(msg) {
+    // 用 textContent 放报错：Babel 的报错里常带 JSX 源码(<div ...>)，拼进 innerHTML 会被当 HTML 解析、把诊断信息吞掉
     document.getElementById('root').innerHTML =
-      '<div id="boot"><div class="err"><div class="cat">🙀</div><div class="msg">词崽没能启动</div><br>' + msg + '</div></div>';
+      '<div id="boot"><div class="err"><div class="cat">🙀</div><div class="msg">词崽没能启动</div><br><pre style="white-space:pre-wrap;text-align:left;font-size:11px;line-height:1.5;margin:0;overflow-x:auto"></pre></div></div>';
+    document.querySelector('#boot pre').textContent = msg;
   }
   try {
     if (!window.React || !window.ReactDOM) { fail('没连上 React CDN（unpkg）。换个网络或稍后再试一次。'); return; }

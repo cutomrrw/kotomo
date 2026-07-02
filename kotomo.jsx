@@ -72,24 +72,19 @@ const Cat = ({ size = 100, bob = true, exp = "idle" }) => (
     style={{ width: size, height: "auto", display: "inline-block", objectFit: "contain", animation: bob ? "bob 3.5s ease-in-out infinite" : "none", pointerEvents: "none" }} />
 );
 
-// ── 大块像素精灵：纯色方块网格 + crispEdges 硬边，画煎蛋 / 银色带鱼 ──
-const PIX_COLORS = { K: "#2b2b2b", W: "#ffffff", w: "#ece0c2", Y: "#f2a01c", y: "#ffca4a", S: "#c7cfd8", L: "#ffffff", D: "#9aa4af", E: "#1a1a1a",
-  B: "#8a5a2a", b: "#654019", H: "#a8763e", c: "#a9def5", C: "#6fb8de", p: "#ff8fa6", // 💩 棕 + 蓝眼泪 + 粉嘴
-  m: "rgba(95,62,26,0.52)", o: "rgba(60,38,15,0.66)", n: "rgba(120,80,34,0.56)" }; // 屎渍色(棕·半透明)
+// ── 大块像素精灵：纯色方块网格 + crispEdges 硬边，画 💩 / 银色小鱼 ──
+const PIX_COLORS = { K: "#2b2b2b", W: "#ffffff", S: "#c7cfd8", L: "#ffffff", E: "#1a1a1a",
+  B: "#8a5a2a", H: "#a8763e", c: "#a9def5", C: "#6fb8de", p: "#ff8fa6" }; // 💩 棕 + 蓝眼泪 + 粉嘴
 function PixelSprite({ rows, cell = 13 }) {
   const w = Math.max.apply(null, rows.map((r) => r.length)), h = rows.length, rects = [];
   for (let y = 0; y < h; y++) { const row = rows[y]; for (let x = 0; x < row.length; x++) { const c = row[x]; if (c !== "." && c !== " ") rects.push(<rect key={x + "_" + y} x={x * cell} y={y * cell} width={cell + 0.4} height={cell + 0.4} fill={PIX_COLORS[c] || "#000"} />); } }
   return (<svg viewBox={"0 0 " + (w * cell) + " " + (h * cell)} width="100%" height="100%" shapeRendering="crispEdges" style={{ overflow: "visible" }}>{rects}</svg>);
 }
-// 答错惩罚·哭哭💩(棕身+大眼+蓝眼泪+粉嘴)：从右下角旋转扔出
+// 答错惩罚·哭哭💩(棕身+大眼+蓝眼泪+粉嘴)
 const POOP_ROWS = ["......KK.....", ".....KHBK....", "....KHBBBK...", "..KKBBBBBBK..", ".KBBBBBBBBBK.", "KBWWBBBBWWBBK", "KWEEWBBWEEWBK", "KWEEWBBWEEWBK", "cKBBBpppBBBKc", "CcBBBpppBBBcC", ".KBBBBBBBBBK.", "..KKKKKKKKK.."];
-// 💩 砸开(棕色泼溅)
-const POOP_SPLAT_ROWS = ["..B..b.B..", ".BBB.BB.B.", "B.BBBBBB.B", ".BBBBBBBB.", "B.BBBBBB.B", ".BB.BBB.BB", "..B.b..B.."];
-// 最后星星点点屎渍(棕·半透明·过分一点)
-const POOP_STAIN_ROWS = ["m..n..m.n.", ".nm.o.mn..", "o.nmmno.m.", ".mno.nmm.n", "m.omnm.no.", ".n.mmo.m..", "o..n.m..n."];
 // 银色小鱼(答对奖励)：银身、左头带眼、右叉尾
 const FISH_ROWS = ["..KKKK...", ".KSSSSK.K", "KESSSSKKK", "KLSSSSSSK", "KSSSSSKKK", ".KSSSSK.K", "..KKKK..."];
-// 扔东西覆盖层：egg 砸出快闪即消；带鱼 抛起冲出屏幕顶。原地更新避免 iOS 残影
+// 扔东西覆盖层：💩(答错)/小鱼(答对) 都走 churu-fly 路径——从下方抛起冲出屏幕顶，干脆利落。原地更新避免 iOS 残影
 function PetThrow({ kind, n }) {
   const ref = useRef(null);
   useEffect(() => { const root = ref.current; if (!root) return; root.querySelectorAll("[data-a]").forEach((el) => { const a = el.getAttribute("data-a"); el.classList.remove(a); void el.offsetWidth; el.classList.add(a); }); }, [n, kind]);
@@ -198,11 +193,17 @@ function pickJaVoice() {
   } catch { return null; }
 }
 try { if (typeof speechSynthesis !== "undefined") { _jaVoice = pickJaVoice(); speechSynthesis.onvoiceschanged = () => { _jaVoice = pickJaVoice(); }; } } catch {}
-const systemSpeak = (t) => { try { const u = new SpeechSynthesisUtterance(t); u.lang = "ja-JP"; if (!_jaVoice) _jaVoice = pickJaVoice(); if (_jaVoice) u.voice = _jaVoice; u.rate = 0.95; u.pitch = 1.0; speechSynthesis.speak(u); } catch {} };
+// 静音：🔕 关声音时发音也一并静音(由 App 从 settings.sound 同步)
+let _voiceMuted = false;
+const setVoiceMuted = (m) => { _voiceMuted = m; };
+// 停掉一切正在播的声音(VOICEVOX buffer + 系统 TTS)，防止两个声音叠着响
+const stopVoice = () => { try { speechSynthesis.cancel(); } catch {} try { if (_voiceSrc) _voiceSrc.stop(); } catch {} _voiceSrc = null; };
+const systemSpeak = (t) => { try { stopVoice(); const u = new SpeechSynthesisUtterance(t); u.lang = "ja-JP"; if (!_jaVoice) _jaVoice = pickJaVoice(); if (_jaVoice) u.voice = _jaVoice; u.rate = 0.95; u.pitch = 1.0; speechSynthesis.speak(u); } catch {} };
 // 单个假名发音：用系统声(清晰、即时、离线)。VOICEVOX 角色声读单音节会很怪、且联网有延迟，故不走它
-const speakKana = (k) => { try { speechSynthesis.cancel(); } catch {} const u = (() => { try { const x = new SpeechSynthesisUtterance(k); x.lang = "ja-JP"; if (!_jaVoice) _jaVoice = pickJaVoice(); if (_jaVoice) x.voice = _jaVoice; x.rate = 0.8; x.pitch = 1.05; return x; } catch { return null; } })(); if (u) { try { speechSynthesis.speak(u); } catch {} } };
+const speakKana = (k) => { if (_voiceMuted) return; stopVoice(); const u = (() => { try { const x = new SpeechSynthesisUtterance(k); x.lang = "ja-JP"; if (!_jaVoice) _jaVoice = pickJaVoice(); if (_jaVoice) x.voice = _jaVoice; x.rate = 0.8; x.pitch = 1.05; return x; } catch { return null; } })(); if (u) { try { speechSynthesis.speak(u); } catch {} } };
 
 const _voiceCache = new Map(); // text -> AudioBuffer(已就绪) | Promise<AudioBuffer>(加载中)
+const VOICE_CACHE_MAX = 60; // 解码后的 PCM 很大(~200KB/秒)，FIFO 淘汰最旧，防止长会话吃掉几十 MB 内存
 let _voiceSrc = null;
 const _sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function fetchVoiceBuffer(t, ctx) {
@@ -215,24 +216,28 @@ async function fetchVoiceBuffer(t, ctx) {
   const ab = await (await fetch(d.mp3DownloadUrl)).arrayBuffer();
   return await ctx.decodeAudioData(ab);
 }
-function playVoiceBuffer(buf, ctx) { try { if (_voiceSrc) { try { _voiceSrc.stop(); } catch {} } const s = ctx.createBufferSource(); s.buffer = buf; s.connect(ctx.destination); s.start(); _voiceSrc = s; } catch {} }
-// 取(或复用在途的)解码音频；warm 与 speak 共用同一个 Promise，绝不重复请求
+function playVoiceBuffer(buf, ctx) { try { stopVoice(); const s = ctx.createBufferSource(); s.buffer = buf; s.connect(ctx.destination); s.start(); _voiceSrc = s; } catch {} }
+// 取(或复用在途的)解码音频；warm 与 speak 共用同一个 Promise，绝不重复请求；超上限 FIFO 淘汰旧条目(只淘汰已就绪的)
 function loadVoice(t, ctx) {
   const e = _voiceCache.get(t);
   if (e) return e.then ? e : Promise.resolve(e);
-  const p = fetchVoiceBuffer(t, ctx).then((buf) => { _voiceCache.set(t, buf); return buf; }).catch((err) => { _voiceCache.delete(t); throw err; });
+  const p = fetchVoiceBuffer(t, ctx).then((buf) => {
+    _voiceCache.set(t, buf);
+    if (_voiceCache.size > VOICE_CACHE_MAX) { for (const k of _voiceCache.keys()) { if (_voiceCache.size <= VOICE_CACHE_MAX) break; if (k === t) continue; const v = _voiceCache.get(k); if (v && !v.then) _voiceCache.delete(k); } }
+    return buf;
+  }).catch((err) => { _voiceCache.delete(t); throw err; });
   _voiceCache.set(t, p);
   return p;
 }
 // 预加载：趁用户读题时后台先合成好，等点 🔊 时秒播(失败静默，点的时候再兜底)
-const warmJa = (t) => { try { if (!t) return; const ctx = Sfx.getCtx && Sfx.getCtx(); if (ctx) loadVoice(t, ctx).catch(() => {}); } catch {} };
+const warmJa = (t) => { try { if (!t || _voiceMuted) return; const ctx = Sfx.getCtx && Sfx.getCtx(); if (ctx) loadVoice(t, ctx).catch(() => {}); } catch {} };
 const speakJa = (t) => {
-  if (!t) return;
+  if (!t || _voiceMuted) return; // 🔕 静音时不出声
   const ctx = Sfx.getCtx(); // 手势内 resume，保证之后能播
   if (!ctx) { systemSpeak(t); return; } // 没有 Web Audio 就直接系统声
   const e = _voiceCache.get(t);
   if (e && !e.then) { playVoiceBuffer(e, ctx); return; } // 已就绪 → 秒播
-  loadVoice(t, ctx).then((buf) => playVoiceBuffer(buf, ctx)).catch(() => systemSpeak(t)); // 在途则复用，失败回退系统声
+  loadVoice(t, ctx).then((buf) => playVoiceBuffer(buf, ctx)).catch(() => { if (!_voiceMuted) systemSpeak(t); }); // 在途则复用，失败回退系统声
 };
 // 陪伴模式：按设备本地时间/月份算「昼夜 × 春夏秋冬」
 function ambient() { const d = new Date(); const h = d.getHours(); const m = d.getMonth(); const tod = (h >= 6 && h < 18) ? "day" : "night"; const season = (m >= 2 && m <= 4) ? "spring" : (m >= 5 && m <= 7) ? "summer" : (m >= 8 && m <= 10) ? "autumn" : "winter"; return { tod, season }; }
@@ -329,8 +334,13 @@ const Store = (() => {
     },
   };
 })();
-async function loadState() { try { const v = await Store.get(SKEY); if (!v) return null; const s = JSON.parse(v); if (s && Array.isArray(s.words)) s.words = s.words.map((w) => { const x = fixSeedWord(w); const t = s2j(stripRomajiParen(x.term)); const y = t !== x.term ? { ...x, term: t } : x; // 准确性迁移：旧词补 verified（种子词=已核实✅；其余=待核实⚠️，等离线核实/JMdict 升级）
-  return applyFalseFriend(y.verified ? y : { ...y, verified: y.isSeed ? "verified" : "unverified", verifySrc: y.verifySrc || (y.isSeed ? { reading: "seed", term: "seed", meaning: "seed" } : {}), basicForm: y.basicForm || "", contextSentence: y.contextSentence || "" }, false); }); return s; } catch (e) { console.error("[kotomo] loadState 失败", e); return null; } }
+async function loadState() { try { const v = await Store.get(SKEY); if (!v) return null; const s = JSON.parse(v);
+  if (s && !Array.isArray(s.words)) s.words = []; // 形状兜底：words 不是数组直接置空，防白屏
+  if (s && Array.isArray(s.words)) s.words = s.words.filter(Boolean).map((w) => { try { const x = fixSeedWord(w); const t = s2j(stripRomajiParen(x.term)); const y = t !== x.term ? { ...x, term: t } : x; // 准确性迁移：旧词补 verified（种子词=已核实✅；其余=待核实⚠️，等离线核实/JMdict 升级）
+  return applyFalseFriend(y.verified ? y : { ...y, verified: y.isSeed ? "verified" : "unverified", verifySrc: y.verifySrc || (y.isSeed ? { reading: "seed", term: "seed", meaning: "seed" } : {}), basicForm: y.basicForm || "", contextSentence: y.contextSentence || "" }, false); } catch { return w; } }); return s; }
+  catch (e) { console.error("[kotomo] loadState 失败", e); logEvent("error", "loadState 失败(已备份原始数据到 " + SKEY + ":bak)", (e && e.message) || e);
+    try { const raw = await Store.get(SKEY); if (raw) await Store.set(SKEY + ":bak", raw); } catch {}
+    return "corrupt"; } }
 // 返回 true/false：失败不再静默吞，交给上层提示用户（避免数据无声丢失）
 async function saveState(s) { try { await Store.set(SKEY, JSON.stringify(s)); return true; } catch (e) { console.error("[kotomo] saveState 失败", e); return false; } }
 
@@ -607,7 +617,9 @@ function applyAnswer(w, correct) {
   else srs.level = Math.max(srs.level - 1, 0);
   srs.lastReviewedAt = now();
   srs.dueAt = nextDue(srs.level);
-  return { ...w, srs, seen: (w.seen || 0) + 1, wrong: (w.wrong || 0) + (correct ? 0 : 1) };
+  // wrong=累计错误(终身统计，用于错N/错误率)；wrongLeft=当前"错题债"，答对偿还、答错加深 → 错题强化答对才真的消灭
+  const debt = w.wrongLeft ?? w.wrong ?? 0; // ?? w.wrong：老存档首次复习时自动迁移
+  return { ...w, srs, seen: (w.seen || 0) + 1, wrong: (w.wrong || 0) + (correct ? 0 : 1), wrongLeft: correct ? Math.max(0, debt - 1) : debt + 1 };
 }
 // 掌握计数：用户手动标 mastered 也算掌握；或 SRS 到阈值
 const countMastered = (words) => words.filter((w) => w.mastered || (w.srs && w.srs.level >= MASTER_LEVEL)).length;
@@ -618,15 +630,16 @@ function dueWords(words, mode) {
   if (mode === "super") return due;
   return due.slice(0, 20);
 }
-const wrongWords = (words) => words.filter((w) => ((w.wrong || 0) > 0 || w.hesitant) && !w.mastered);
+const wrongDebt = (w) => (w.wrongLeft ?? w.wrong) || 0; // 当前错题债(老存档回退用 wrong)
+const wrongWords = (words) => words.filter((w) => (wrongDebt(w) > 0 || w.hesitant) && !w.mastered && !(w.srs && w.srs.level >= MASTER_LEVEL));
 // 复习选词：到期词优先（犹豫/错多/level低/到期久 在前），不够就用其余未掌握词凑够一组，
 // 所以"开始复习"永远不止 1 个、且没到期也能"再复习/巩固"（无限复习）；最后打乱呈现顺序。
 function reviewPool(words, mode, wrongOnly) {
   const t = now();
   const reviewable = words.filter((w) => !w.mastered);
-  const score = (w) => (w.hesitant ? 100 : 0) + (w.wrong || 0) * 10 + (MASTER_LEVEL - ((w.srs && w.srs.level) || 0)) + ((w.srs && w.srs.dueAt <= t) ? 2 : 0);
+  const score = (w) => (w.hesitant ? 100 : 0) + wrongDebt(w) * 10 + (MASTER_LEVEL - ((w.srs && w.srs.level) || 0)) + ((w.srs && w.srs.dueAt <= t) ? 2 : 0);
   const byPrio = (arr) => [...arr].sort((a, b) => score(b) - score(a));
-  if (wrongOnly) return shuffle(byPrio(reviewable.filter((w) => (w.wrong || 0) > 0 || w.hesitant)).slice(0, mode === "low" ? 5 : 40));
+  if (wrongOnly) return shuffle(byPrio(reviewable.filter((w) => wrongDebt(w) > 0 || w.hesitant)).slice(0, mode === "low" ? 5 : 40));
   const cap = mode === "low" ? 5 : mode === "super" ? reviewable.length : 20;
   let sel = byPrio(_due(words)).slice(0, cap);
   const target = Math.min(reviewable.length, mode === "low" ? 5 : 8);
@@ -697,13 +710,16 @@ export default function App() {
   const [tick, setTick] = useState(0);
   const [naughty, setNaughty] = useState(null); // 回归盲盒消息
   const [saveErr, setSaveErr] = useState(false); // 本地保存失败提示
+  const [loadErr, setLoadErr] = useState(false); // 存档损坏：绝不覆盖旧数据，展示错误页
 
   // 载入
   useEffect(() => { (async () => {
     const s = await loadState();
+    if (s === "corrupt") { setLoadErr(true); return; } // 存档读坏了：已备份到 :bak，不 setLoaded → 保存效果不会用空状态覆盖旧档
     if (s) {
       const merged = { ...freshState(), ...s, settings: { ...freshState().settings, ...(s.settings || {}) }, streak: { ...freshState().streak, ...(s.streak || {}) }, pet: { ...freshState().pet, ...(s.pet || {}) }, trash: ((s.trash) || []).filter((t) => t && t.deletedAt && (now() - t.deletedAt < 7 * DAY)) };
-      // 跨天重置月历日的能量标记不需要；只重置 energyMode 回 normal（每天重新选）
+      // 能量模式每天重置回 normal（低能/超人是"当天状态"，不该跨天粘住）
+      if (merged.streak.lastStudyDay !== todayStr() && merged.settings.energyMode !== "normal") merged.settings = { ...merged.settings, energyMode: "normal" };
       setSt(merged);
       // 计算回归盲盒
       if (merged.onboarded && merged.pet && merged.pet.lastSeenAt) {
@@ -713,8 +729,12 @@ export default function App() {
     }
     setLoaded(true);
   })(); }, []);
-  // 保存
-  useEffect(() => { if (loaded) saveState(st).then((ok) => setSaveErr(!ok)); }, [st, loaded]);
+  // 保存：防抖 800ms 合并连点写入(连连看每答一题就 setSt，不必每次全量序列化)；切后台/关页前强制落盘
+  const stRef = useRef(st); stRef.current = st;
+  const dirtyRef = useRef(false); const saveTimer = useRef(null);
+  const flushSave = useCallback(() => { if (!dirtyRef.current) return; dirtyRef.current = false; clearTimeout(saveTimer.current); saveState(stRef.current).then((ok) => setSaveErr(!ok)); }, []);
+  useEffect(() => { if (!loaded) return; dirtyRef.current = true; clearTimeout(saveTimer.current); saveTimer.current = setTimeout(flushSave, 800); return () => clearTimeout(saveTimer.current); }, [st, loaded, flushSave]);
+  useEffect(() => { const onHide = () => { if (document.visibilityState === "hidden") flushSave(); }; window.addEventListener("pagehide", flushSave); document.addEventListener("visibilitychange", onHide); return () => { window.removeEventListener("pagehide", flushSave); document.removeEventListener("visibilitychange", onHide); }; }, [flushSave]);
   // 计时器（刷新心情等）
   useEffect(() => { const t = setInterval(() => setTick((x) => x + 1), 30000); return () => clearInterval(t); }, []);
   // 陪伴模式：像素常驻 + 按你本地时间/季节自动切「昼夜 × 春夏秋冬」场景（每5分钟重算，自动跨昼夜）
@@ -748,6 +768,7 @@ export default function App() {
     throwTimer.current = setTimeout(() => setPetThrow(null), 800); // 💩 和鱼一模一样的路径/速度(churu-fly)：从下往上抛起冲出屏幕顶，干脆利落
   }, []);
 
+  useEffect(() => { setVoiceMuted(!st.settings.sound); }, [st.settings.sound]); // 🔕 静音时发音(VOICEVOX/系统声)一并静音
   const play = useCallback((n) => { if (st.settings.sound && Sfx[n]) Sfx[n](); haptic(n); if (n === "correct") petReact("praise"); else if (n === "wrong") { petReact("scorn"); throwReact("egg"); } if (n === "correct" || n === "match") setSt((s) => earnFish(s)); }, [st.settings.sound, petReact, throwReact]);
   // 鱼干小铺：买东西(扣鱼+入库，服装首件自动穿)/ 穿脱
   const buyItem = (item) => setSt((s) => ((s.fish || 0) >= item.price && !(s.owned || []).includes(item.id)) ? { ...s, fish: s.fish - item.price, owned: [...(s.owned || []), item.id], wearing: s.wearing || item.id } : s);
@@ -786,7 +807,7 @@ export default function App() {
   const ownWordCount = useMemo(() => st.words.filter((w) => !w.isSeed).length, [st.words]);
 
   // 完成一轮复习：写回 SRS、月历、连胜、心情
-  const finishReview = useCallback((results, hesitantIds, energyUsed) => {
+  const finishReview = useCallback((results, hesitantIds, energyUsed, quit = false) => {
     patch((s) => {
       const map = {}; results.forEach((r) => { map[r.id] = r.correct; });
       const hes = new Set(hesitantIds || []);
@@ -812,9 +833,16 @@ export default function App() {
       return { ...s, words, streak: { totalDays, monthDays, lastStudyDay, calendar },
         pet: { ...s.pet, lastSeenAt: now(), mood: Math.min(100, (s.pet.mood ?? 75) + 10) } };
     });
-    play("win"); setView("home");
+    play(quit ? "tap" : "win"); setView("home"); // 中途退出只存进度不放庆祝音
   }, [play]);
 
+  if (loadErr) return (<div style={{ ...S.shell, display: "grid", placeItems: "center", padding: 24 }}><style>{CSS}</style>
+    <div className="card" style={{ maxWidth: 340, padding: "22px 18px", textAlign: "center" }}>
+      <div style={{ fontSize: 46 }}>🙀</div>
+      <div style={{ fontWeight: 800, fontSize: 16, margin: "8px 0" }}>存档读取失败</div>
+      <div style={{ fontSize: 13, color: "var(--ink-mid)", lineHeight: 1.7 }}>你的数据没有被删除，原始存档已备份到本机（kotomo:v3:bak）。可以先「重试」；如果反复失败，把「设置 → 开发者日志」发给开发者。</div>
+      <button className="pressable" style={{ ...S.bigBtn, marginTop: 14 }} onClick={() => window.location.reload()}>重试</button>
+    </div></div>);
   if (!loaded) return <Splash />;
   if (!st.onboarded) return <Onboarding onDone={(interests) => { play("happy"); patch((s) => ({ ...s, onboarded: true, interests, words: buildSeedWords(interests) })); }} play={play} />;
 
@@ -1038,7 +1066,7 @@ function ReviewRun({ ctx, mode }) {
 
   return (<div className="fade-in" style={S.quizWrap}>
     <div style={S.quizHead}>
-      <button style={S.quitX} onClick={() => { play("tap"); const rs = Object.entries(resultsRef.current).map(([id, correct]) => ({ id, correct })); if (rs.length) finishReview(rs, Object.keys(hesitantRef.current), st.settings.energyMode); else ctx.setView("home"); }}>✕</button>
+      <button className="no-pix" style={S.quitX} onClick={() => { play("tap"); const rs = Object.entries(resultsRef.current).map(([id, correct]) => ({ id, correct })); if (rs.length) finishReview(rs, Object.keys(hesitantRef.current), st.settings.energyMode, true); else ctx.setView("home"); }}>✕</button>
       <div style={S.progOuter}><div style={{ ...S.progInner, width: ((qi / queue.length) * 100) + "%" }} /></div>
       <div style={S.hearts}>{"❤️".repeat(Math.max(0, hearts))}<span style={{ opacity: .25 }}>{"🤍".repeat(Math.max(0, 5 - hearts))}</span></div>
     </div>
@@ -1079,19 +1107,21 @@ function MatchRound({ items, all, play, petReact, throwReact, onResult, onDone, 
   const markHes = (id) => { if (onHesitate) onHesitate(id); setHes((h) => ({ ...h, [id]: true })); };
   const lpStart = (id) => { lpFired.current = false; lpTimer.current = setTimeout(() => { lpFired.current = true; markHes(id); }, 450); };
   const lpCancel = () => { if (lpTimer.current) { clearTimeout(lpTimer.current); lpTimer.current = null; } };
+  const wrongT = useRef(null);
   useEffect(() => { if (selL && selR) {
     if (selL === selR) { play("match"); onResult(selL, true); setMatched((m) => [...m, selL]); setSelL(null); setSelR(null); }
-    else { play("wrong"); onResult(selL, false); onResult(selR, false); onWrong(); setWrongPair({ l: selL, r: selR }); setTimeout(() => { setWrongPair(null); setSelL(null); setSelR(null); }, 550); }
+    else { play("wrong"); onResult(selL, false); onResult(selR, false); onWrong(); setWrongPair({ l: selL, r: selR }); wrongT.current = setTimeout(() => { setWrongPair(null); setSelL(null); setSelR(null); }, 550); }
   } }, [selL, selR]);
+  useEffect(() => () => clearTimeout(wrongT.current), []);
   useEffect(() => { if (matched.length === items.length) { if (petReact) petReact("praise"); if (throwReact) throwReact("churu"); const t = setTimeout(onDone, 350); return () => clearTimeout(t); } }, [matched]);
   const tile = (w, side) => {
     const isM = matched.includes(w.id); const sel = side === "L" ? selL : selR; const isSel = sel === w.id;
     const isWrong = wrongPair && ((side === "L" && wrongPair.l === w.id) || (side === "R" && wrongPair.r === w.id));
     const label = side === "L" ? termWithLoan(w) : w.meaning; const sub = side === "L" ? w.reading : "";
-    return (<button key={w.id + side} disabled={isM} className={"pressable " + (isWrong ? "shake" : "")} style={{ ...S.tile, ...(isM ? S.tileDone : {}), ...(isSel ? S.tileSel : {}), ...(hes[w.id] ? { borderColor: C.grape, borderWidth: 2 } : {}) }}
+    return (<button key={w.id + side} disabled={isM || !!wrongPair} className={"pressable " + (isWrong ? "shake" : "")} style={{ ...S.tile, ...(isM ? S.tileDone : {}), ...(isSel ? S.tileSel : {}), ...(hes[w.id] ? { outline: "3px solid " + C.grape, outlineOffset: -4 } : {}) }}
       onTouchStart={() => lpStart(w.id)} onTouchEnd={lpCancel} onTouchMove={lpCancel}
       onContextMenu={(e) => { e.preventDefault(); markHes(w.id); }}
-      onClick={() => { if (lpFired.current) { lpFired.current = false; return; } if (isM) return; play("tap"); if (side === "L") { setSelL(w.id); speakJa(w.term); } else setSelR(w.id); }}>
+      onClick={() => { if (lpFired.current) { lpFired.current = false; return; } if (isM || wrongPair) return; play("tap"); if (side === "L") { setSelL(w.id); speakJa(w.term); } else setSelR(w.id); }}>
       {isM ? <div style={{ fontWeight: 800, fontSize: 20 }}>✓</div> : <>
         <div style={{ fontSize: 10, color: C.inkSoft, height: 12, lineHeight: "12px", overflow: "hidden", whiteSpace: "nowrap", width: "100%" }}>{side === "L" && hasKanji(w.term) && w.reading && !isRomaji(w.reading) && w.reading !== w.term ? w.reading : ""}</div>
         <div style={{ fontWeight: 800, fontSize: label.length > 12 ? 11 : label.length > 8 ? 13 : label.length > 5 ? 15 : 17, lineHeight: 1.12, width: "100%", overflow: "hidden", wordBreak: "break-word", display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: 2 }}>{hes[w.id] ? "🤔 " : ""}{label}</div>
@@ -1110,8 +1140,9 @@ function MatchRound({ items, all, play, petReact, throwReact, onResult, onDone, 
 function CardRound({ item, all, play, onResult, onNext, onWrong, onHesitate }) {
   const askForeign = useMemo(() => Math.random() < 0.5, [item]);
   const opts = useMemo(() => {
-    const others = shuffle((all || []).filter((x) => x.id !== item.id))
-      .sort((a, b) => sim(b, item) - sim(a, item)).slice(0, 3); // 干扰项从整个词库取（形近/义近优先）
+    const pool = (all || []).filter((x) => x.id !== item.id && (x.type || "word") === "word"); // 干扰项只取"词"，别混进整句/语法(一眼排除法)
+    const others = shuffle(pool.length >= 3 ? pool : (all || []).filter((x) => x.id !== item.id))
+      .sort((a, b) => sim(b, item) - sim(a, item)).slice(0, 3); // 形近/义近优先
     return shuffle([item, ...others]);
   }, [item, all]);
   const [picked, setPicked] = useState(null), [checked, setChecked] = useState(false), [shk, setShk] = useState(0), [hesMarked, setHesMarked] = useState(false);
@@ -1135,7 +1166,7 @@ function CardRound({ item, all, play, onResult, onNext, onWrong, onHesitate }) {
     <div style={S.optGrid}>{opts.map((o) => {
       const label = askForeign ? o.meaning : termWithLoan(o); const osub = askForeign ? "" : o.reading;
       let stt = "idle"; if (checked) { if (o.id === item.id) stt = "right"; else if (picked && picked.id === o.id) stt = "wrong"; }
-      const mp = { idle: { borderColor: picked && picked.id === o.id ? C.honey : "var(--line)", background: picked && picked.id === o.id ? "var(--surface-sel)" : "var(--surface)" }, right: { borderColor: C.matchaDk, background: "var(--ok-bg)" }, wrong: { borderColor: C.blush, background: "var(--danger-bg)" } };
+      const mp = { idle: picked && picked.id === o.id ? { outline: "3px solid " + C.honey, outlineOffset: -4, background: "var(--surface-sel)" } : { background: "var(--surface)" }, right: { outline: "3px solid " + C.matchaDk, outlineOffset: -4, background: "var(--ok-bg)" }, wrong: { outline: "3px solid " + C.blush, outlineOffset: -4, background: "var(--danger-bg)" } }; // outline 不会被全局 button 边框 !important 盖掉
       return (<button key={o.id} className="pressable" style={{ ...S.opt, ...mp[stt] }}
         onTouchStart={lpStart} onTouchEnd={lpCancel} onTouchMove={lpCancel}
         onContextMenu={(e) => { e.preventDefault(); markHes(); }}
@@ -1157,9 +1188,9 @@ async function genCloze(item) {
   const d = JSON.parse(stripFence(await callAI(sys, usr)));
   if (!d || !d.masked || !d.answer || !Array.isArray(d.options)) throw new Error("挖空返回格式不对");
   const ans = String(d.answer).trim();
-  let opts = d.options.map((x) => String(x).trim()).filter(Boolean);
-  if (!opts.includes(ans)) opts.unshift(ans);
-  opts = Array.from(new Set(opts)).slice(0, 4);
+  // 先取干扰项(排除答案)再把答案放回，保证答案永远在选项里(否则这道题会被缓存成"永远答不对")
+  let opts = Array.from(new Set(d.options.map((x) => String(x).trim()).filter((x) => x && x !== ans))).slice(0, 3);
+  opts.unshift(ans); // FillRound 展示前会 shuffle，不泄露位置
   if (opts.length < 2) throw new Error("选项不足");
   let masked = String(d.masked);
   if (!/＿|_{2,}|（\s*[?？]\s*）/.test(masked)) masked = masked + "（＿＿）"; // 兜底：模型没标空就补一个
@@ -1189,7 +1220,7 @@ function FillRound({ item, all, play, onResult, onNext, onWrong, onHesitate, upd
 
   // —— 选词填空模式（AI 智能挖空）——
   if (cloze) {
-    const segs = cloze.masked.replace(/＿+|_{2,}|（\s*[?？]\s*）|\(\s*[?？]\s*\)/g, " ").split(" ");
+    const segs = cloze.masked.replace(/＿+|_{2,}|（\s*[?？]\s*）|\(\s*[?？]\s*\)/g, "\u0000").split("\u0000");
     const blankStyle = { display: "inline-block", minWidth: 44, textAlign: "center", padding: "0 6px", margin: "0 2px", fontWeight: 800, borderBottom: "3px solid " + (checked ? (picked === cloze.answer ? C.matchaDk : C.blush) : C.honey), color: checked ? (picked === cloze.answer ? C.matchaDk : C.blush) : C.honeyDk };
     const check = () => { if (picked == null) return; const ok = picked === cloze.answer; setChecked(true); onResult(item.id, ok); if (ok) play("correct"); else { play("wrong"); onWrong(); } };
     return (<div className="fade-in">
@@ -1200,7 +1231,7 @@ function FillRound({ item, all, play, onResult, onNext, onWrong, onHesitate, upd
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{clozeOpts.map((o, i) => {
         let stt = "idle"; if (checked) { if (o === cloze.answer) stt = "right"; else if (picked === o) stt = "wrong"; }
-        const mp = { idle: { borderColor: picked === o ? C.honey : "var(--line)", background: picked === o ? "var(--surface-sel)" : "var(--surface)", opacity: checked ? 0.45 : 1 }, right: { border: "3px solid " + C.matchaDk, background: "var(--ok-bg)" }, wrong: { border: "3px solid " + C.blush, background: "var(--danger-bg)" } };
+        const mp = { idle: { ...(picked === o ? { outline: "3px solid " + C.honey, outlineOffset: -4, background: "var(--surface-sel)" } : { background: "var(--surface)" }), opacity: checked ? 0.45 : 1 }, right: { outline: "3px solid " + C.matchaDk, outlineOffset: -4, background: "var(--ok-bg)" }, wrong: { outline: "3px solid " + C.blush, outlineOffset: -4, background: "var(--danger-bg)" } };
         return (<button key={i} className="pressable" style={{ ...S.optWide, display: "flex", alignItems: "center", ...mp[stt] }} onClick={() => { if (!checked) { setPicked(o); play("tap"); } }}>
           <span style={{ fontWeight: 800, color: stt === "right" ? C.matchaDk : stt === "wrong" ? C.blush : C.honeyDk, marginRight: 10 }}>{"ABCD"[i]}</span><span style={{ fontWeight: 800, fontSize: 17, flex: 1 }}>{o}</span>{stt === "right" && <span style={{ color: C.matchaDk, fontWeight: 900, fontSize: 20 }}>✓</span>}{stt === "wrong" && <span style={{ color: C.blush, fontWeight: 900, fontSize: 20 }}>✗</span>}</button>); })}</div>
       {checked && <div className="slide-up" style={S.fb}>正确：{cloze.answer}{cloze.point ? "　·　" + cloze.point : ""}<div style={{ fontSize: 13, marginTop: 4, color: C.inkSoft, cursor: "pointer" }} onClick={() => speakJa(item.term)}>🔊 {item.term}</div></div>}
@@ -1220,7 +1251,7 @@ function FillRound({ item, all, play, onResult, onNext, onWrong, onHesitate, upd
     <div className="card pop-in" style={S.bigCard}><div style={{ fontSize: 22, fontWeight: 800 }}>{item.meaning}</div></div>
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{fallbackOpts.map((o) => {
       let stt = "idle"; if (checked) { if (o.id === item.id) stt = "right"; else if (picked && picked.id === o.id) stt = "wrong"; }
-      const mp = { idle: { borderColor: picked && picked.id === o.id ? C.honey : "var(--line)", background: picked && picked.id === o.id ? "var(--surface-sel)" : "var(--surface)", opacity: checked ? 0.45 : 1 }, right: { border: "3px solid " + C.matchaDk, background: "var(--ok-bg)" }, wrong: { border: "3px solid " + C.blush, background: "var(--danger-bg)" } };
+      const mp = { idle: { ...(picked && picked.id === o.id ? { outline: "3px solid " + C.honey, outlineOffset: -4, background: "var(--surface-sel)" } : { background: "var(--surface)" }), opacity: checked ? 0.45 : 1 }, right: { outline: "3px solid " + C.matchaDk, outlineOffset: -4, background: "var(--ok-bg)" }, wrong: { outline: "3px solid " + C.blush, outlineOffset: -4, background: "var(--danger-bg)" } };
       return (<button key={o.id} className="pressable" style={{ ...S.optWide, display: "flex", alignItems: "center", ...mp[stt] }} onClick={() => { if (!checked) { setPicked(o); play("tap"); } }} onDoubleClick={() => speakJa(o.term)}>
         <span style={{ fontWeight: 800, fontSize: 17 }}>{o.term}</span>{o.reading && <span style={{ fontSize: 12, color: C.inkSoft, marginLeft: 8 }}>{o.reading}</span>}<span style={{ flex: 1 }} />{stt === "right" && <span style={{ color: C.matchaDk, fontWeight: 900, fontSize: 20 }}>✓</span>}{stt === "wrong" && <span style={{ color: C.blush, fontWeight: 900, fontSize: 20 }}>✗</span>}</button>); })}</div>
     {checked && (!picked || picked.id !== item.id) && <div className="slide-up" style={S.fb}>正确：{item.term}</div>}
@@ -1243,7 +1274,7 @@ function GrammarRound({ item, all, play, onResult, onNext, onWrong, onHesitate }
     <div className="card pop-in" style={S.bigCard}><div style={{ fontSize: 18, fontWeight: 800 }}>{item.meaning}</div></div>
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{opts.map((o) => {
       let stt = "idle"; if (checked) { if (o.id === item.id) stt = "right"; else if (picked && picked.id === o.id) stt = "wrong"; }
-      const mp = { idle: { borderColor: picked && picked.id === o.id ? C.honey : "var(--line)", background: picked && picked.id === o.id ? "var(--surface-sel)" : "var(--surface)" }, right: { borderColor: C.matchaDk, background: "var(--ok-bg)" }, wrong: { borderColor: C.blush, background: "var(--danger-bg)" } };
+      const mp = { idle: picked && picked.id === o.id ? { outline: "3px solid " + C.honey, outlineOffset: -4, background: "var(--surface-sel)" } : { background: "var(--surface)" }, right: { outline: "3px solid " + C.matchaDk, outlineOffset: -4, background: "var(--ok-bg)" }, wrong: { outline: "3px solid " + C.blush, outlineOffset: -4, background: "var(--danger-bg)" } };
       return (<button key={o.id} className="pressable" style={{ ...S.optWide, ...mp[stt] }} onClick={() => { if (!checked) { setPicked(o); play("tap"); } }}>
         <span style={{ fontWeight: 800, fontSize: 16 }}>{o.term}</span></button>); })}</div>
     {checked && (!picked || picked.id !== item.id) && <div className="slide-up" style={S.fb}>正确：{item.term}</div>}
@@ -1644,7 +1675,7 @@ function Library({ ctx }) {
     {!origining && originMsg && <div style={{ ...S.setNote, marginBottom: 10, color: C.wood, fontWeight: 800 }}>{originMsg}</div>}
     <div style={{ position: "relative", marginBottom: 10 }}>
       <input style={{ ...S.field, paddingRight: 34 }} value={search} placeholder="🔍 搜日语 / 中文 / 读音…" onChange={(e) => setSearch(e.target.value)} />
-      {search && <button className="pressable" onClick={() => { setSearch(""); play("tap"); }} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", border: "none", background: "transparent", fontSize: 17, cursor: "pointer", color: "var(--ink-soft)", fontFamily: "inherit" }}>✕</button>}
+      {search && <button className="pressable no-pix" onClick={() => { setSearch(""); play("tap"); }} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", border: "none", background: "transparent", fontSize: 17, cursor: "pointer", color: "var(--ink-soft)", fontFamily: "inherit" }}>✕</button>}
     </div>
     <div style={{ ...S.filterRow, marginBottom: 8 }}>
       <span style={{ fontSize: 12.5, fontWeight: 800, color: "var(--ink-mid)", alignSelf: "center", marginRight: 2 }}>排序</span>
@@ -1746,7 +1777,7 @@ function ReviewCenter({ ctx }) {
       <div className="card" style={S.statCard}><div style={{ ...S.statBig, color: C.blush }}>{totalWrong}</div><div style={S.statSmall}>总错误次数</div></div>
     </div>
     <MiniCalendar calendar={st.streak.calendar} />
-    {wrongs.length > 0 && <button className="pressable" style={{ ...S.bigBtn, background: C.blush, boxShadow: "0 6px 0 var(--blush-dk)", marginTop: 14 }} onClick={() => { ctx.setReviewWrongOnly(true); play("tap"); ctx.setView("review"); }}>❗ 强化错题（{wrongs.length} 词）</button>}
+    {wrongWords(all).length > 0 && <button className="pressable" style={{ ...S.bigBtn, background: C.blush, boxShadow: "0 6px 0 var(--blush-dk)", marginTop: 14 }} onClick={() => { ctx.setReviewWrongOnly(true); play("tap"); ctx.setView("review"); }}>❗ 强化错题（{wrongWords(all).length} 词）</button>}
     <div style={{ ...S.sectTitle, marginTop: 16 }}>📊 单词统计</div>
     <div style={S.filterRow}>
       <Chip on={tab === "all"} onClick={() => { setTab("all"); play("tap"); }}>学过 {studied.length}</Chip>
@@ -1771,7 +1802,7 @@ function MiniCalendar({ calendar }) {
   return (<div className="card" style={S.calCard}>
     <div style={S.calTitle}>📅 {y}年{m + 1}月 · 努力浓淡图</div>
     <div style={S.calGrid}>{["日","一","二","三","四","五","六"].map((w) => <div key={w} style={S.calW}>{w}</div>)}
-      {days.map((dd, i) => <div key={i} style={{ ...S.calCell, background: colorOf(dd), color: dd && calendar[new Date(y, m, dd).toDateString()] ? "#fff" : C.inkSoft }}>{dd || ""}</div>)}</div>
+      {days.map((dd, i) => { const lv = dd ? calendar[new Date(y, m, dd).toDateString()] : null; return <div key={i} style={{ ...S.calCell, background: colorOf(dd), color: lv === "full" || lv === "super" ? "#fff" : C.inkSoft }}>{dd || ""}</div>; })}</div>
     <div style={S.calLegend}><span><i style={{ background: "#cdeccd" }} />低能</span><span><i style={{ background: C.matcha }} />正常</span><span><i style={{ background: C.grape }} />超人</span></div>
   </div>);
 }
@@ -1857,14 +1888,15 @@ function KanaDrill({ idx, play, throwReact }) {
   const [q, setQ] = useState(() => kanaQ(idx));
   const [picked, setPicked] = useState(null);
   const [score, setScore] = useState(0), [total, setTotal] = useState(0), [streak, setStreak] = useState(0);
-  useEffect(() => { setQ(kanaQ(idx)); setPicked(null); }, [idx]);
+  const nextT = useRef(null); // 出下一题的计时器：切平/片假名或卸载时清掉，防止陈旧计时器把新题替换掉
+  useEffect(() => { clearTimeout(nextT.current); setQ(kanaQ(idx)); setPicked(null); return () => clearTimeout(nextT.current); }, [idx]);
   const pick = (opt) => {
     if (picked) return; setPicked(opt); setTotal((t) => t + 1);
     const ok = opt === q.ans[2];
     speakKana(q.ans[idx]); // 答完读出这个假名，建立 符号↔读音 联系
     if (ok) { play("correct"); if (throwReact) throwReact("churu"); setScore((s) => s + 1); setStreak((s) => s + 1); } // 答对→猫夸+送猫条
     else { play("wrong"); setStreak(0); } // 答错→play("wrong") 自动触发 猫骂+扔鸡蛋
-    setTimeout(() => { setPicked(null); setQ(kanaQ(idx)); }, ok ? 750 : 1400);
+    nextT.current = setTimeout(() => { setPicked(null); setQ(kanaQ(idx)); }, ok ? 750 : 1400);
   };
   return (<div className="fade-in">
     <div style={{ textAlign: "center", marginBottom: 12, fontSize: 13, color: "var(--ink-mid)", fontWeight: 800 }}>得分 {score}/{total} · 连对 {streak} 🔥</div>
@@ -1874,7 +1906,7 @@ function KanaDrill({ idx, play, throwReact }) {
     </div>
     <div style={{ ...S.optGrid, marginTop: 14 }}>{q.options.map((opt, i) => {
       let s2 = { ...S.opt };
-      if (picked) { if (opt === q.ans[2]) s2 = { ...s2, borderColor: C.matchaDk, background: "var(--ok-bg)" }; else if (opt === picked) s2 = { ...s2, borderColor: C.blush, background: "var(--danger-bg)" }; }
+      if (picked) { if (opt === q.ans[2]) s2 = { ...s2, outline: "3px solid " + C.matchaDk, outlineOffset: -4, background: "var(--ok-bg)" }; else if (opt === picked) s2 = { ...s2, outline: "3px solid " + C.blush, outlineOffset: -4, background: "var(--danger-bg)" }; }
       return <button key={i} className="pressable" style={s2} onClick={() => pick(opt)}><span style={{ fontSize: 22, fontWeight: 800 }}>{opt}</span></button>;
     })}</div>
   </div>);
@@ -1926,10 +1958,13 @@ function Settings({ ctx }) {
   const [aiKey, setAiKey] = useState(""); const [keyMsg, setKeyMsg] = useState("");
   useEffect(() => { getApiKey().then((k) => setAiKey(k || "")); }, []);
   const saveKey = async () => {
-    await saveApiKey(aiKey); play("pop"); setKeyMsg("校验中…");
+    play("pop");
+    if (!(aiKey || "").trim()) { await saveApiKey(""); setSetting("aiReal", false); setKeyMsg("已清除密钥"); setTimeout(() => setKeyMsg(""), 5000); return; }
+    setKeyMsg("校验中…");
     const r = await validateKey(aiKey);
+    if (r.ok !== false) await saveApiKey(aiKey);     // 先验证再保存：明确无效(401/403)不覆盖原来能用的旧密钥；暂时验不了(离线)照存
     if (r.ok === true) setSetting("aiReal", true);   // 密钥有效就自动开「真AI」，省掉一步
-    setKeyMsg(r.msg + (r.ok === true ? "，已开启真 AI ✨" : ""));
+    setKeyMsg(r.msg + (r.ok === true ? "，已开启真 AI ✨" : r.ok === false ? "（旧密钥未被覆盖）" : ""));
     setTimeout(() => setKeyMsg(""), 5000);
   };
   // 安全版"补充初始词库"：只追加所选门类的种子词/句，不清空、不替换，已有 term 自动跳过
@@ -1945,7 +1980,7 @@ function Settings({ ctx }) {
   };
   return (<div className="fade-in"><BackRow ctx={ctx} title="⚙️ 设置" />
     <div className="card" style={S.setCard}>
-      <Row label="外观" hint="像素风 · 昼夜与四季跟你本地时间自动切换（陪伴模式）"><span style={{ fontSize: 13, color: "var(--ink-mid)", fontWeight: 800 }}>🕹️ 自动同频</span></Row>
+      <Row label="外观" hint="像素风 · 当前固定「浅绿·白天」皮（昼夜/四季同频先关着，以后再开）"><span style={{ fontSize: 13, color: "var(--ink-mid)", fontWeight: 800 }}>🍀 浅绿·白天</span></Row>
       <Row label="音效" hint="清脆解压的按键音"><Switch on={st.settings.sound} onClick={() => { setSetting("sound", !st.settings.sound); if (!st.settings.sound) Sfx.pop(); }} /></Row>
       <Row label="AI 模式" hint="真AI(需密钥+联网，补意思/关联词/展开) / 离线(kuromoji 只补读音和词性)"><Switch on={st.settings.aiReal} label={st.settings.aiReal ? "真" : "拟"} onClick={() => { setSetting("aiReal", !st.settings.aiReal); play("pop"); }} /></Row>
       <Row label="AI 密钥" hint="OpenAI(sk-…) 或 Claude(sk-ant-…)，贴哪家就用哪家，只存本机不上传">
@@ -1974,12 +2009,12 @@ function Settings({ ctx }) {
   </div>);
 }
 const Row = ({ label, hint, children }) => (<div style={S.setRow}><div><div style={{ fontWeight: 800 }}>{label}</div><div style={{ fontSize: 12, color: C.inkSoft }}>{hint}</div></div>{children}</div>);
-const Switch = ({ on, label, onClick }) => (<button className="pressable" style={{ ...S.switch, background: on ? C.matcha : "var(--switch-off)" }} onClick={onClick}><span style={{ ...S.switchKnob, transform: on ? "translateX(20px)" : "translateX(0)" }} />{label && <span style={S.switchLabel}>{label}</span>}</button>);
+const Switch = ({ on, label, onClick }) => (<button className="pressable no-pix" style={{ ...S.switch, background: on ? C.matcha : "var(--switch-off)" }} onClick={onClick}><span style={{ ...S.switchKnob, transform: on ? "translateX(20px)" : "translateX(0)" }} />{label && <span style={S.switchLabel}>{label}</span>}</button>);
 
 const BackRow = ({ ctx, title, onBack }) => (<div style={S.backRow}><button className="pressable" style={S.backBtn} onClick={() => { ctx.play("tap"); onBack ? onBack() : ctx.setView("home"); }}>← 返回</button><h2 style={S.pageTitle}>{title}</h2></div>);
 
 const S = {
-  shell: { minHeight: "100vh", background: "radial-gradient(var(--dot) 2.4px, transparent 2.4px), linear-gradient(180deg,var(--shell-top) 0%," + C.cream + " 45%)", backgroundSize: "16px 16px, 100% 100%", color: C.ink, fontFamily: "'Zen Maru Gothic','PingFang SC','Microsoft YaHei',sans-serif", position: "relative", overflow: "hidden" },
+  shell: { minHeight: "100vh", background: "radial-gradient(var(--dot) 2.4px, transparent 2.4px), linear-gradient(180deg,var(--shell-top) 0%," + C.cream + " 45%)", backgroundSize: "16px 16px, 100% 100%", color: C.ink, fontFamily: "'DotGothic16','PingFang SC','Microsoft YaHei',monospace", position: "relative", overflow: "hidden" },
   bg: { position: "fixed", inset: 0, zIndex: 0, overflow: "hidden", pointerEvents: "none" },
   main: { position: "relative", zIndex: 1, maxWidth: 600, margin: "0 auto", padding: "8px calc(16px + env(safe-area-inset-right)) calc(60px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left))" },
   top: { position: "relative", zIndex: 2, maxWidth: 600, margin: "0 auto", padding: "calc(14px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) 6px calc(16px + env(safe-area-inset-left))", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 },
@@ -1998,7 +2033,7 @@ const S = {
   onbTitle: { fontSize: 20, fontWeight: 800, marginBottom: 6 }, onbHint: { fontSize: 13, color: C.inkSoft, marginBottom: 16, lineHeight: 1.6 },
   intGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 },
   intBtn: { position: "relative", display: "flex", flexDirection: "column", alignItems: "center", gap: 5, border: "2.5px solid var(--line)", background: "var(--surface)", borderRadius: 16, padding: "16px 8px", cursor: "pointer", fontFamily: "inherit", boxShadow: "0 4px 0 var(--bevel)" },
-  intOn: { borderColor: C.honey, background: "var(--surface-sel)", boxShadow: "0 4px 0 " + C.honeyDk },
+  intOn: { outline: "3px solid " + C.honey, outlineOffset: -4, background: "var(--surface-sel)" },
   intLabel: { fontWeight: 800, fontSize: 14 }, intCheck: { position: "absolute", top: 6, right: 8, color: C.honeyDk, fontWeight: 800 },
 
   bigBtn: { width: "100%", background: C.matcha, color: "#fff", border: "none", borderRadius: 16, padding: "15px", fontWeight: 800, fontSize: 16, cursor: "pointer", boxShadow: "0 6px 0 " + C.matchaDk, fontFamily: "inherit" },
@@ -2007,20 +2042,18 @@ const S = {
   nudge: { display: "flex", alignItems: "center", gap: 10, borderRadius: 16, padding: "11px 14px", marginBottom: 12, border: "2px solid rgba(0,0,0,.04)" },
 
   room: { position: "relative", background: "linear-gradient(180deg,var(--room1),var(--room3))", borderRadius: 28, padding: "18px 16px 20px", border: "4px solid var(--card-edge)", boxShadow: "4px 4px 0 var(--pix-shadow)", overflow: "hidden", minHeight: 250, marginBottom: 14 },
-  window: { position: "absolute", top: 14, right: 16, width: 54, height: 54, background: "var(--window)", borderRadius: 14, border: "5px solid var(--card-edge)" }, sun: { position: "absolute", top: 4, left: 6, fontSize: 18 },
   dPlant: { position: "absolute", bottom: 12, left: 14, fontSize: 28 }, dLamp: { position: "absolute", top: 12, left: 18, fontSize: 22 },
   bubble: { margin: "0 auto 6px", maxWidth: 260, background: "var(--surface)", borderRadius: 16, padding: "9px 14px", fontSize: 13, fontWeight: 700, textAlign: "center", color: "var(--ink-mid)", boxShadow: "0 4px 0 var(--bevel)", position: "relative", zIndex: 2 },
   catWrap: { textAlign: "center", position: "relative", zIndex: 2, cursor: "pointer", marginTop: 4, minHeight: 110 },
   dCushion: { position: "absolute", bottom: 4, left: "50%", transform: "translateX(-50%)", fontSize: 38, opacity: .9 },
   matCushion: { width: 116, height: 22, background: "var(--cushion)", borderRadius: "50%", margin: "0 auto", position: "absolute", left: "50%", transform: "translateX(-50%)", bottom: 12, opacity: .45, filter: "blur(1px)" },
-  cat: { position: "relative", transition: "transform .5s", transformOrigin: "bottom center" }, catEmoji: { fontSize: 72, lineHeight: 1, display: "inline-block", animation: "bob 3.5s ease-in-out infinite" }, catFace: { fontSize: 13, fontWeight: 800, color: "var(--ink-mid)", marginTop: -6 },
+  cat: { position: "relative", transition: "transform .5s", transformOrigin: "bottom center" },
   petPop: { position: "fixed", right: 12, bottom: 100, display: "flex", flexDirection: "row-reverse", alignItems: "flex-end", gap: 6, zIndex: 60, pointerEvents: "none", maxWidth: "84%" },
   petPopCat: { flexShrink: 0, lineHeight: 0, filter: "drop-shadow(2px 2px 0 var(--pix-shadow))" },
   petPopBubble: { padding: "9px 13px", fontWeight: 800, fontSize: 13.5, lineHeight: 1.35, border: "3px solid var(--pix-border)", boxShadow: "4px 4px 0 var(--pix-shadow)" },
   petPopPraise: { background: "var(--ok-bg)", color: C.matchaDk }, petPopScorn: { background: "var(--danger-bg)", color: "var(--danger-fg)" },
   throwWrap: { position: "fixed", inset: 0, zIndex: 70, pointerEvents: "none", overflow: "hidden" },
   eggFly: { position: "absolute", left: "calc(50% - 39px)", top: "44%", width: 78, height: 72, filter: "drop-shadow(2px 3px 0 var(--pix-shadow))" },
-  eggStain: { position: "absolute", left: "calc(50% - 45px)", top: "52%", width: 90, height: 63 },
   churuFly: { position: "absolute", left: "calc(50% - 41px)", top: "44%", width: 82, height: 64, filter: "drop-shadow(2px 3px 0 var(--pix-shadow))" },
   churuSpark: { position: "absolute", top: "40%", fontSize: 22 },
   catWear: { position: "absolute", top: -6, left: "50%", transform: "translateX(-50%)", fontSize: 30, zIndex: 3, filter: "drop-shadow(1px 2px 0 rgba(0,0,0,.22))", pointerEvents: "none" },
@@ -2037,7 +2070,7 @@ const S = {
   goalTitle: { fontWeight: 800, fontSize: 14.5 }, goalSub: { fontSize: 11.5, color: C.inkSoft, marginTop: 3 },
   energyWrap: { display: "flex", gap: 4, flexShrink: 0 },
   energyBtn: { border: "2px solid var(--line)", background: "var(--surface)", borderRadius: 10, width: 34, height: 34, fontSize: 16, cursor: "pointer", fontFamily: "inherit" },
-  energyOn: { background: "var(--surface-sel)", borderColor: C.honey },
+  energyOn: { background: "var(--surface-sel)", outline: "3px solid " + C.honey, outlineOffset: -4 },
 
   reviewRow: { display: "flex", gap: 9, marginBottom: 11 },
   reviewBig: { flex: 1, display: "flex", alignItems: "center", gap: 9, background: "var(--surface)", border: "3px solid var(--line-soft)", borderRadius: 16, padding: "12px 13px", cursor: "pointer", fontFamily: "inherit", boxShadow: "0 5px 0 var(--bevel)", color: C.ink },
@@ -2067,8 +2100,8 @@ const S = {
   matchCard: { borderRadius: 22, padding: 16, overflow: "hidden" }, matchCols: { display: "flex", gap: 10 }, matchCol: { flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 8 },
   colHead: { textAlign: "center", fontWeight: 800, fontSize: 13, color: C.inkSoft, marginBottom: 2 },
   tile: { border: "2.5px solid var(--line)", borderRadius: 14, padding: "6px 6px", cursor: "pointer", textAlign: "center", background: "var(--surface)", boxShadow: "0 3px 0 var(--bevel)", fontFamily: "inherit", transition: "all .12s", height: 68, width: "100%", maxWidth: "100%", boxSizing: "border-box", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", overflow: "hidden" },
-  tileSel: { borderColor: C.honey, background: "var(--surface-sel)", transform: "scale(1.03)" },
-  tileDone: { borderColor: C.matcha, background: "var(--ok-bg)", color: C.matchaDk, cursor: "default", boxShadow: "none" },
+  tileSel: { outline: "3px solid " + C.honey, outlineOffset: -4, background: "var(--surface-sel)", transform: "scale(1.03)" },
+  tileDone: { outline: "3px solid " + C.matcha, outlineOffset: -4, background: "var(--ok-bg)", color: C.matchaDk, cursor: "default" },
   matchHint: { textAlign: "center", fontSize: 12, color: C.inkSoft, marginTop: 12 },
 
   results: { textAlign: "center", display: "flex", flexDirection: "column", gap: 14, alignItems: "center", paddingTop: 24 }, resTitle: { fontSize: 22, margin: 0, fontWeight: 800 },
@@ -2154,17 +2187,16 @@ const S = {
 };
 
 const CSS = "\
-@import url('https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&display=swap');\
 @import url('https://fonts.googleapis.com/css2?family=DotGothic16&display=swap');\
 :root{\
 /* 绿像素基底（常驻）·默认=白天 */\
 --shell-top:#c6d8a8;--surface:#f4f0df;--surface-sel:#e8eccb;--surface2:#e6e2cd;--card-edge:#5d6c3d;--knob:#f4f0df;\
 --honey:#e3a93e;--honey-dk:#9c6f1c;--matcha:#7e9a4c;--matcha-dk:#5f7536;--wood:#7a6a44;\
 --blush:#cf5b4b;--blush-dk:#9a3a2c;--sky:#5a8fb0;--grape:#9b7ab0;--grape-dk:#6f5288;\
---ink:#3b4030;--ink-soft:#767b5e;--ink-mid:#565b40;\
+--ink:#3b4030;--ink-soft:#565b40;--ink-mid:#565b40;\
 --line:#5d6c3d;--line-soft:#5d6c3d;--bevel:#5d6c3d;--track:#c2c8a6;--pill-bg:#e0e8c4;\
 --danger-bg:#f1d8cd;--danger-fg:#b5432f;--danger-line:#5d6c3d;--danger-bevel:#5d6c3d;--ok-bg:#e0e8c4;--warn-bg:#f2e9c2;\
---room-bevel:#5d6c3d;--window:#6f8a4e;--cushion:#7a6a44;--ai-off:#c2c8a6;--switch-off:#9aa07c;\
+--window:#6f8a4e;--cushion:#7a6a44;--ai-off:#c2c8a6;--switch-off:#9aa07c;\
 --pix-border:#5d6c3d;--pix-shadow:#5d6c3d;--dot:rgba(93,108,61,.13);\
 --cream:#d3e1b9;--room1:#cfe0b3;--room3:#bcd29c;\
 }\
@@ -2176,7 +2208,7 @@ const CSS = "\
 --ink:#eef0dc;--ink-soft:#b8bca0;--ink-mid:#d0d4b8;\
 --line:#6f7d52;--line-soft:#4f5a38;--bevel:rgba(0,0,0,.5);--track:#3a4430;--pill-bg:#2c3a26;\
 --danger-bg:#4a2c26;--danger-fg:#f0a090;--danger-line:#6f7d52;--danger-bevel:#000;--ok-bg:#2c3a26;--warn-bg:#3d3a20;\
---cushion:#3a4430;--ai-off:#3a4430;--switch-off:#5a6048;--window:#4a5a38;--room-bevel:#000;\
+--cushion:#3a4430;--ai-off:#3a4430;--switch-off:#5a6048;--window:#4a5a38;\
 --pix-border:#6f7d52;--pix-shadow:rgba(0,0,0,.6);--dot:rgba(255,255,255,.06);\
 }\
 /* 季节 × 昼夜：页面底 + 猫屋天空 */\
@@ -2192,23 +2224,19 @@ const CSS = "\
 body { margin: 0; background: var(--cream); transition: background .6s ease; }\
 .card { background:var(--surface); border:4px solid var(--pix-border); box-shadow:5px 5px 0 var(--pix-shadow); }\
 button{ border:4px solid var(--pix-border) !important; box-shadow:5px 5px 0 var(--pix-shadow) !important; }\
+button.no-pix{ border:none !important; box-shadow:none !important; }\
 .pressable:active{ transform:translate(2px,2px) !important; box-shadow:2px 2px 0 var(--pix-shadow) !important; }\
+.pressable.no-pix:active{ box-shadow:none !important; }\
 @keyframes fall{ 0%{transform:translateY(-12px) rotate(0deg);opacity:.9} 100%{transform:translateY(260px) rotate(160deg);opacity:.35} }\
 @keyframes petpop{ 0%{transform:translateY(16px) scale(.7);opacity:0} 55%{transform:translateY(-3px) scale(1.06)} 100%{transform:translateY(0) scale(1);opacity:1} }\
 .pet-pop{ animation:petpop .28s cubic-bezier(.2,1.35,.5,1) both; }\
-@keyframes eggFly{ 0%{transform:translate(36vw,34vh) scale(.3) rotate(0deg);opacity:0} 16%{opacity:1} 56%{transform:translate(0,0) scale(1.08) rotate(720deg)} 64%{transform:translate(0,0) scale(1) rotate(720deg);opacity:1} 86%{transform:translate(0,0) scale(1) rotate(720deg);opacity:1} 100%{transform:translate(0,-3vh) scale(.9) rotate(720deg);opacity:0} }\
-.egg-fly{ animation:eggFly .78s cubic-bezier(.3,.7,.5,1) forwards; }\
-@keyframes eggSplat{ 0%{transform:scale(.3) rotate(-8deg);opacity:0} 24%{transform:scale(1.14) rotate(2deg);opacity:1} 40%{transform:scale(.97)} 54%{transform:scale(1)} 72%{transform:scale(1);opacity:1} 100%{transform:scale(1);opacity:0} }\
-.egg-splat{ animation:eggSplat .66s ease-out .3s both; transform-origin:center; }\
-@keyframes eggStain{ 0%{transform:scale(.5);opacity:0} 34%{transform:scale(1.06);opacity:1} 62%{transform:scale(1);opacity:1} 100%{transform:scale(1.05);opacity:0} }\
-.egg-stain{ animation:eggStain .55s ease-out .68s both; transform-origin:center; }\
 @keyframes churuFly{ 0%{transform:translate(0,36vh) scale(.6);opacity:0} 22%{opacity:1} 46%{transform:translate(0,-3vh) scale(1.06);opacity:1} 100%{transform:translate(0,-44vh) scale(.82);opacity:0} }\
 .churu-fly{ animation:churuFly .7s cubic-bezier(.3,.8,.5,1) forwards; }\
 @keyframes churuSpark{ 0%{transform:scale(0);opacity:0} 40%{transform:scale(1.2);opacity:1} 100%{transform:scale(.6) translateY(-16px);opacity:0} }\
 .churu-spark{ animation:churuSpark .5s ease-out .1s both; }\
 .cloud { position:absolute; font-size:36px; opacity:.4; animation:floatX 30s linear infinite; }\
 .c1 { top:5%; left:-12%; } .c2 { top:15%; left:-32%; animation-delay:-15s; font-size:26px; }\
-.pressable { transition:transform .07s; } .pressable:active { transform:translateY(2px) scale(.98); } .pressable:disabled { cursor:not-allowed; opacity:.55; }\
+.pressable { transition:transform .07s; } .pressable:disabled { cursor:not-allowed; opacity:.55; }\
 .fade-in { animation:fade .35s ease both; }\
 .slide-up { animation:slideUp .3s ease both; } .pop-in { animation:pop .4s cubic-bezier(.2,1.4,.4,1) both; }\
 .shake { animation:shake .4s; } .float-soft { animation:floatSoft 3s ease-in-out infinite; }\
