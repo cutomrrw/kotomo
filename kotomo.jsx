@@ -667,6 +667,8 @@ const SEGMENTS = [
 ];
 const segOf = (n) => { let s = SEGMENTS[0]; for (const x of SEGMENTS) if (n >= x.min) s = x; return s; };
 const nextSeg = (n) => SEGMENTS.find((x) => x.min > n) || null;
+// 等级：每掌握 1 个词 = 100 经验，每 500 经验升 1 级(=每 5 个掌握词升级)。cur/need 供进度条
+const levelInfo = (mastered) => { const xp = (mastered || 0) * 100; const need = 500; return { lvl: Math.floor(xp / need) + 1, cur: xp % need, need, xp }; };
 const catSizeOf = (n) => Math.min(1 + n / 120, 2.0); // 体型随掌握词数变大
 // 窝装饰按掌握词数自动解锁
 const DECOR_UNLOCK = [{ at: 20, id: "cushion" }, { at: 50, id: "plant" }, { at: 100, id: "lamp" }];
@@ -705,6 +707,7 @@ function freshState() {
     fish: 0, fishProg: 0, owned: [], wearing: null, // 鱼干小铺：鱼积分 / 进度 / 已购物品 / 当前穿戴
     hgBest: 0, // 秒懂词 60秒冲刺 最高纪录
     mode: "vocab", // 双模式：kana=五十音图模式(零基础) / vocab=词汇模式
+    nickname: "", // 昵称(设置里可改)
   };
 }
 
@@ -859,7 +862,8 @@ export default function App() {
   const bonusFish = () => setSt((s) => ({ ...s, fish: (s.fish || 0) + 1 })); // 连对奖励:每5连对额外+1🐟
   const setHgBest = (n) => setSt((s) => (n > (s.hgBest || 0) ? { ...s, hgBest: n } : s)); // 冲刺最高纪录
   const setMode = (m) => setSt((s) => ({ ...s, mode: m })); // 五十音图模式 ⇄ 词汇模式
-  const ctx = { st, play, petReact, throwReact, bonusFish, setHgBest, setMode, mastered, seg, decor, mood, nav, addWords, updateWord, delWord, delWords, restoreWord, appendWords, petLove, buyItem, setWearing, setSetting, finishReview, ownWordCount, reviewWrongOnly, setReviewWrongOnly, setView, expandTarget, setExpandTarget, amb };
+  const setNickname = (n) => setSt((s) => ({ ...s, nickname: n })); // 昵称
+  const ctx = { st, play, petReact, throwReact, bonusFish, setHgBest, setMode, setNickname, mastered, seg, decor, mood, nav, addWords, updateWord, delWord, delWords, restoreWord, appendWords, petLove, buyItem, setWearing, setSetting, finishReview, ownWordCount, reviewWrongOnly, setReviewWrongOnly, setView, expandTarget, setExpandTarget, amb };
 
   return (
     <div style={S.shell}>
@@ -932,20 +936,25 @@ function Onboarding({ onDone, play }) {
   </div>);
 }
 
-function TopBar({ st, seg, mastered, onSettings, onShop, play, setSetting }) {
-  // 瘦身版：只留 品牌 + 🔥连胜 + 🐟鱼(点了直达小铺) + ⚙️。AI真/拟、静音都在设置里(设一次不常动,不占头部)
+function TopBar({ st, seg, mastered, onSettings }) {
+  // 头像 + 昵称 + 等级(经验条) + 设置。iPhone 状态栏区域由 safe-area-inset-top 让出
+  const lv = levelInfo(mastered);
+  const name = (st.nickname || "").trim() || "词崽训练员";
   return (<header style={S.top}>
-    <div style={S.brand}><span style={S.brandMark}>こ</span>
-      <div><div style={S.brandName}>ことも</div><div style={S.brandSub}>{seg.emoji} {seg.title}</div></div></div>
-    <div style={S.stats}>
-      <Stat icon="🔥" val={st.streak.totalDays} label="累计天" tone={C.honeyDk} />
-      <button className="pressable no-pix" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit" }} onClick={onShop} title="鱼干小铺">
-        <Stat icon="🐟" val={st.fish || 0} label="鱼·小铺" tone={C.grape} /></button>
-      <button style={S.iconBtn} onClick={onSettings}>⚙️</button>
+    <div style={S.profile} className="pressable no-pix" onClick={onSettings}>
+      <img src={CAT_DIR + "avatar.png"} alt="头像" draggable={false} style={S.avatar} />
+      <div style={{ minWidth: 0 }}>
+        <div style={S.pName}>{name}<span style={S.pSeg}>{seg.emoji}{seg.title}</span></div>
+        <div style={S.pLvRow}>
+          <span style={S.pLv}>Lv{lv.lvl}</span>
+          <div style={S.xpTrack}><div style={{ ...S.xpFill, width: Math.round(lv.cur / lv.need * 100) + "%" }} /></div>
+          <span style={S.pXp}>{lv.cur}/{lv.need}</span>
+        </div>
+      </div>
     </div>
+    <button style={S.iconBtn} onClick={onSettings} aria-label="设置">⚙️</button>
   </header>);
 }
-const Stat = ({ icon, val, label, tone }) => (<div style={S.stat}><span style={{ fontSize: 15 }}>{icon}</span><div><div style={{ ...S.statVal, color: tone }}>{val}</div><div style={S.statLabel}>{label}</div></div></div>);
 
 // ── 日狗小广播：假名学习 tips(形近辨析/浊音规则/发音诀窍),日狗嘴里说出来,点一下换一条 ──
 const KANA_TIPS = [
@@ -1055,6 +1064,7 @@ function Home({ ctx }) {
 
   const kanaMode = st.mode === "kana";
   const unlearned = useMemo(() => unlearnedWords(st.words), [st.words]);
+  const [monitor, setMonitor] = useState(false); // 📹 监控弹窗:看看日狗现在啥状态
 
   const nudge = (() => {
     if (mood.awayDays >= 1.5) return { bg: "var(--danger-bg)", text: "好久不见～它刚跟你汇报完它的'丰功伟绩'😼 来记几个词吧" };
@@ -1064,84 +1074,97 @@ function Home({ ctx }) {
     return { bg: "var(--warn-bg)", text: "今天有 " + due.length + " 个词到期，消掉它们，喂饱小猫 🍙" };
   })();
 
-  return (<div className="fade-in">
-    {!kanaMode && <div style={{ ...S.nudge, background: nudge.bg }}><span style={{ fontSize: 22 }}>{seg.emoji}</span><div style={{ flex: 1, fontWeight: 700, fontSize: 13.5, color: "var(--ink-mid)" }}>{nudge.text}</div></div>}
-
-    {/* 日狗区 —— 两种模式共同的绝对核心 */}
+  if (kanaMode) return (<div className="fade-in">
+    {/* 日狗区 */}
     <div style={S.room}>
-      {/* 昼夜/四季暂时关闭：只保留干净的浅绿猫窝（天体/星星/季节粒子先撤，代码见 App 的 amb 处，以后可开回） */}
       {decor.includes("plant") && <div style={S.dPlant}>🪴</div>}
       {decor.includes("lamp") && <div style={S.dLamp}>🏮</div>}
       <div style={S.bubble} className="float-soft">{mood.word}</div>
       <div style={S.catWrap} className="pressable" onClick={() => { play("happy"); ctx.petLove(); }}>
         {decor.includes("cushion") && <div style={S.dCushion}>🛋️</div>}
         <div style={S.matCushion} />
-        <div style={{ ...S.cat, transform: "scale(" + catSize + ")" }}>
-          <Cat size={100} />
-          {st.wearing && SHOP_BY_ID[st.wearing] && <span style={S.catWear}>{SHOP_BY_ID[st.wearing].icon}</span>}
-        </div>
+        <div style={{ ...S.cat, transform: "scale(" + catSize + ")" }}><Cat size={100} />{st.wearing && SHOP_BY_ID[st.wearing] && <span style={S.catWear}>{SHOP_BY_ID[st.wearing].icon}</span>}</div>
       </div>
       <div style={S.moodChip}>{seg.emoji} {seg.title} · 已掌握 {mastered} 词</div>
       {ns && <div style={S.segHint}>再掌握 {ns.min - mastered} 个 → {ns.emoji} {ns.title}</div>}
     </div>
+    <PetTips play={play} />
+    <button className="pressable card" style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", padding: "16px 15px", marginBottom: 12, cursor: "pointer", fontFamily: "inherit" }} onClick={() => nav("kana")}>
+      <span style={{ fontSize: 26, width: 48, height: 48, background: "var(--window)", display: "grid", placeItems: "center", flexShrink: 0 }}>🔤</span>
+      <div style={{ flex: 1, textAlign: "left" }}><div style={{ fontWeight: 800, fontSize: 17, color: C.ink }}>五十音学习区</div><div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 2 }}>假名表 · 认读 · 🥁节奏跟读 · 🀄成语认读</div></div>
+      <span style={{ fontSize: 20, color: "var(--ink-soft)" }}>›</span>
+    </button>
+    <button className="pressable card" style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", padding: "13px 15px", marginBottom: 12, cursor: "pointer", fontFamily: "inherit" }} onClick={() => { play("tap"); nav("settings"); }}>
+      <span style={{ fontSize: 24, width: 44, height: 44, background: "var(--window)", display: "grid", placeItems: "center", flexShrink: 0 }}>🎓</span>
+      <div style={{ flex: 1, textAlign: "left" }}><div style={{ fontWeight: 800, fontSize: 15, color: C.ink }}>毕业考试 · 下一版开考</div><div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 2 }}>已经会五十音了？去设置里直接切到词汇模式 ›</div></div>
+    </button>
+    <div style={S.toolRow}>
+      <button className="pressable card" style={S.toolBtn} onClick={() => nav("add")}><span style={S.toolIcon}>👜</span><span>收词袋 · 收一个</span></button>
+      <button className="pressable card" style={S.toolBtn} onClick={() => nav("library")}><span style={S.toolIcon}>📚</span><span>袋里 {st.words.length} 词</span></button>
+    </div>
+    <div style={S.statLine}>路上撞见的词先收着，不用学 · 毕业时它们就是你词汇模式的第一批词 🎁</div>
+  </div>);
 
-    {kanaMode ? (<>
-      {/* ── 五十音图模式：日狗小广播 + 五十音学习区 + 毕业 + 收词袋 ── */}
-      <PetTips play={play} />
-      <button className="pressable card" style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", padding: "16px 15px", marginBottom: 12, cursor: "pointer", fontFamily: "inherit" }} onClick={() => nav("kana")}>
-        <span style={{ fontSize: 26, width: 48, height: 48, background: "var(--window)", display: "grid", placeItems: "center", flexShrink: 0 }}>🔤</span>
-        <div style={{ flex: 1, textAlign: "left" }}><div style={{ fontWeight: 800, fontSize: 17, color: C.ink }}>五十音学习区</div><div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 2 }}>假名表 · 认读 · 🥁节奏跟读 · 🀄成语认读</div></div>
-        <span style={{ fontSize: 20, color: "var(--ink-soft)" }}>›</span>
-      </button>
-      <button className="pressable card" style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", padding: "13px 15px", marginBottom: 12, cursor: "pointer", fontFamily: "inherit" }} onClick={() => { play("tap"); nav("settings"); }}>
-        <span style={{ fontSize: 24, width: 44, height: 44, background: "var(--window)", display: "grid", placeItems: "center", flexShrink: 0 }}>🎓</span>
-        <div style={{ flex: 1, textAlign: "left" }}><div style={{ fontWeight: 800, fontSize: 15, color: C.ink }}>毕业考试 · 下一版开考</div><div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 2 }}>已经会五十音了？去设置里直接切到词汇模式 ›</div></div>
-      </button>
-      <div style={S.toolRow}>
-        <button className="pressable card" style={S.toolBtn} onClick={() => nav("add")}><span style={S.toolIcon}>👜</span><span>收词袋 · 收一个</span></button>
-        <button className="pressable card" style={S.toolBtn} onClick={() => nav("library")}><span style={S.toolIcon}>📚</span><span>袋里 {st.words.length} 词</span></button>
-      </div>
-      <div style={S.statLine}>路上撞见的词先收着，不用学 · 毕业时它们就是你词汇模式的第一批词 🎁</div>
-    </>) : (<>
-      {/* ── 词汇模式：三大核心动作(加词→学新词→复习) → 练习区 → 词库 ── */}
-      <div style={S.reviewRow}>
-        <button className="pressable" style={S.reviewBig} onClick={() => nav("add")}>
-          <span style={{ fontSize: 20 }}>➕</span><div style={{ textAlign: "left" }}><div style={{ fontWeight: 800 }}>加词</div><div style={S.reviewSub}>生活里随手收</div></div></button>
-        <button className="pressable" style={{ ...S.reviewBig, ...(unlearned.length ? { background: "var(--warn-bg)" } : {}) }} disabled={unlearned.length === 0} onClick={() => nav("learn")}>
-          <span style={{ fontSize: 20 }}>📥</span><div style={{ textAlign: "left" }}><div style={{ fontWeight: 800 }}>学新词</div><div style={S.reviewSub}>{unlearned.length ? unlearned.length + " 个待认识" : "0 个待学"}</div></div></button>
-      </div>
+  // ── 词汇模式首页(iPhone14 版式)：顶栏(全局) → 连续天数+三档 → 日狗大区(悬浮 商店/衣柜/监控) → 底部导航 ──
+  const roomAct = unlearned.length ? { label: "📥 " + unlearned.length + " 个新词待认识，点我去学", to: "learn" }
+    : due.length ? { label: "📖 " + due.length + " 个词待复习，点我消除", to: "review" }
+    : { label: "🌿 今天的都学完啦，摸摸它吧", to: null };
+  const bnav = [
+    { icon: "🎮", label: "消除", on: () => { if (!canReview) return; ctx.setReviewWrongOnly(false); nav("review"); }, dim: !canReview },
+    { icon: "👂", label: "特训", on: () => nav("homograph") },
+    { icon: "➕", label: "加词", on: () => nav("add"), center: true },
+    { icon: "📚", label: "词库", on: () => nav("library") },
+    { icon: "📊", label: "统计", on: () => nav("center") },
+  ];
+  return (<div className="fade-in" style={{ paddingBottom: 8 }}>
+    {/* 连续天数 + 三档能量 */}
+    <div style={S.streakRow}>
+      <div style={S.streakCard}><span style={{ fontSize: 20 }}>🔥</span><div><div style={S.streakBig}>{st.streak.totalDays}<span style={{ fontSize: 12 }}> 天</span></div><div style={S.streakSmall}>累计学习 · 只涨不减</div></div></div>
+      <div style={S.tri}>{[["low", "🌙", "躺平"], ["normal", "☀️", "正常"], ["super", "🔥", "超能"]].map(([m, e, l]) => (
+        <button key={m} className="pressable" style={{ ...S.triBtn, ...(st.settings.energyMode === m ? S.triOn : {}) }} onClick={() => { ctx.setSetting("energyMode", m); play("tap"); }}>
+          <span style={{ fontSize: 17 }}>{e}</span><span style={S.triLabel}>{l}</span></button>))}</div>
+    </div>
 
-      <div style={S.goalRow}>
-        <Ring pct={Math.min(100, Math.round((dailyDone ? 100 : (due.length ? 0 : 100))))} label={todayLevel ? "✓" : (due.length || "0")} />
-        <div style={{ flex: 1 }}>
-        <div style={S.goalTitle}>{due.length > 0 ? ("今天 " + due.length + " 个词待复习") : "今天暂无到期复习"}</div>
-        <div style={S.goalSub}>🔥 累计 {st.streak.totalDays} 天 · 本月 {st.streak.monthDays} 天 · 只涨不减</div>
+    {/* 日狗大区(绝对核心) */}
+    <div style={S.roomBig}>
+      {/* 悬浮 HUD：商店 / 衣柜 / 监控 */}
+      <div style={S.hud}>
+        <button className="pressable no-pix" style={S.hudBtn} onClick={() => nav("shop")} title="商店"><span style={{ fontSize: 19 }}>🛒</span><span style={S.hudTxt}>商店</span></button>
+        <button className="pressable no-pix" style={S.hudBtn} onClick={() => nav("shop")} title="衣柜"><span style={{ fontSize: 19 }}>👕</span><span style={S.hudTxt}>衣柜</span></button>
+        <button className="pressable no-pix" style={S.hudBtn} onClick={() => { setMonitor(true); play("tap"); }} title="监控"><span style={{ fontSize: 19 }}>📹</span><span style={S.hudTxt}>监控</span></button>
+      </div>
+      <div style={S.bubble} className="float-soft">{mood.word}</div>
+      <div style={S.catWrapBig} className="pressable" onClick={() => { play("happy"); ctx.petLove(); }}>
+        <div style={{ ...S.cat, transform: "scale(" + Math.min(catSize, 1.5) + ")" }}><Cat size={116} />{st.wearing && SHOP_BY_ID[st.wearing] && <span style={S.catWear}>{SHOP_BY_ID[st.wearing].icon}</span>}</div>
+      </div>
+      <div style={{ marginTop: "auto", width: "100%" }}>
+        <div style={S.moodChip}>{seg.emoji} {seg.title} · 已掌握 {mastered} 词{ns ? " · 再 " + (ns.min - mastered) + " 个升段" : ""}</div>
+        <button className="pressable no-pix" style={{ ...S.roomNudge, ...(roomAct.to ? {} : { cursor: "default" }) }} onClick={() => { if (roomAct.to) { if (roomAct.to === "review") ctx.setReviewWrongOnly(false); nav(roomAct.to); } }}>{roomAct.label}</button>
+      </div>
+    </div>
+
+    {wrongs.length > 0 && <button className="pressable" style={{ ...S.reviewBig, width: "100%", background: "var(--danger-bg)", borderColor: C.blush, boxShadow: "0 5px 0 var(--danger-bevel)", marginBottom: 4 }} onClick={() => { ctx.setReviewWrongOnly(true); nav("review"); }}>
+      <span style={{ fontSize: 20 }}>❗</span><div style={{ textAlign: "left" }}><div style={{ fontWeight: 800 }}>错题强化</div><div style={S.reviewSub}>{wrongs.length} 个易错/犹豫，答对才消灭</div></div></button>}
+
+    {/* 底部导航 */}
+    <nav style={S.bnav}>{bnav.map((b) => (
+      <button key={b.label} className="pressable no-pix" style={{ ...(b.center ? S.bnavCenter : S.bnavItem), ...(b.dim ? { opacity: .4 } : {}) }} onClick={b.on}>
+        <span style={{ fontSize: b.center ? 26 : 21 }}>{b.icon}</span><span style={b.center ? S.bnavCLabel : S.bnavLabel}>{b.label}</span></button>))}</nav>
+
+    {monitor && <div style={S.monOverlay} onClick={() => setMonitor(false)}>
+      <div className="pop-in" style={S.monCard} onClick={(e) => e.stopPropagation()}>
+        <div style={{ fontSize: 11, color: C.honeyDk, fontWeight: 800, letterSpacing: 1 }}>📹 日狗监控 · REC ●</div>
+        <div style={{ margin: "8px 0" }}><Cat size={96} exp={(st.pet.mood ?? 75) >= 80 ? "happy" : mood.awayDays >= 1.5 ? "sleepy" : "idle"} /></div>
+        <div style={{ fontWeight: 800, fontSize: 15 }}>{mood.word}</div>
+        <div style={{ display: "flex", gap: 6, alignItems: "center", justifyContent: "center", margin: "10px 0 4px" }}>
+          <span style={{ fontSize: 12, color: "var(--ink-soft)", fontWeight: 700 }}>心情</span>
+          <div style={{ width: 130, height: 12, background: "var(--track)", border: "2px solid var(--pix-border)", overflow: "hidden" }}><div style={{ height: "100%", width: Math.round((st.pet.mood ?? 75)) + "%", background: C.matcha }} /></div>
+          <span style={{ fontSize: 12, fontWeight: 800, color: C.matchaDk }}>{Math.round(st.pet.mood ?? 75)}</span>
         </div>
-        <EnergyPicker mode={st.settings.energyMode} onPick={(m) => { ctx.setSetting("energyMode", m); play("tap"); }} />
+        <div style={{ fontSize: 12, color: "var(--ink-mid)", lineHeight: 1.7, marginTop: 4 }}>陪伴 {st.streak.totalDays} 天 · 身上穿着 {st.wearing && SHOP_BY_ID[st.wearing] ? SHOP_BY_ID[st.wearing].icon + SHOP_BY_ID[st.wearing].name : "还没换装(去衣柜)"}</div>
+        <button className="pressable" style={{ ...S.bigBtn, marginTop: 12 }} onClick={() => { setMonitor(false); play("happy"); ctx.petLove(); }}>戳它一下 ❤️</button>
       </div>
-
-      <button style={{ ...S.bigBtn, marginBottom: 11 }} className="pressable" disabled={!canReview} onClick={() => { ctx.setReviewWrongOnly(false); nav("review"); }}>
-        {!canReview ? "🌸 词都掌握啦，加点新词吧" : due.length > 0 ? "📖 开始复习 · 消除 " + due.length + " 个词" : "🔄 再复习一组 · 巩固"}</button>
-
-      <div style={S.reviewRow}>
-        <button className="pressable" style={{ ...S.reviewBig, background: "var(--danger-bg)", borderColor: C.blush, boxShadow: "0 5px 0 var(--danger-bevel)" }} disabled={wrongs.length === 0} onClick={() => { ctx.setReviewWrongOnly(true); nav("review"); }}>
-          <span style={{ fontSize: 20 }}>❗</span><div style={{ textAlign: "left" }}><div style={{ fontWeight: 800 }}>错题强化</div><div style={S.reviewSub}>{wrongs.length} 个易错/犹豫</div></div></button>
-        <button className="pressable" style={S.reviewBig} onClick={() => nav("center")}>
-          <span style={{ fontSize: 20 }}>📊</span><div style={{ textAlign: "left" }}><div style={{ fontWeight: 800 }}>统计</div><div style={S.reviewSub}>月历 · 错题榜</div></div></button>
-      </div>
-
-      {hgCount >= 4 && <button className="pressable card" style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", padding: "13px 15px", marginBottom: 12, cursor: "pointer", fontFamily: "inherit" }} onClick={() => nav("homograph")}>
-        <span style={{ fontSize: 24, width: 44, height: 44, borderRadius: 12, background: "var(--window)", display: "grid", placeItems: "center", flexShrink: 0 }}>👂</span>
-        <div style={{ flex: 1, textAlign: "left" }}><div style={{ fontWeight: 800, fontSize: 16, color: C.ink }}>秒懂词·读音特训</div><div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 2 }}>看字秒懂却读不出的 <b style={{ color: C.honeyDk }}>{hgCount}</b> 个汉字词 — 练听力和开口</div></div>
-        <span style={{ fontSize: 20, color: "var(--ink-soft)" }}>›</span>
-      </button>}
-
-      <div style={S.toolRow}>
-        <button className="pressable card" style={S.toolBtn} onClick={() => nav("library")}><span style={S.toolIcon}>📚</span><span>我的词库</span></button>
-        <button className="pressable card" style={S.toolBtn} onClick={() => nav("shop")}><span style={S.toolIcon}>🐟</span><span>鱼干小铺</span></button>
-      </div>
-      <div style={S.statLine}>词库共 <b style={{ color: C.honeyDk }}>{st.words.length}</b> 词 · 你自己加了 <b style={{ color: C.matchaDk }}>{ctx.ownWordCount}</b> 个</div>
-    </>)}
+    </div>}
   </div>);
 }
 // 点猫即时心情反馈在 Home 内联处理（轻量，不滥用互动）
@@ -2619,6 +2642,7 @@ function Shop({ ctx }) {
 
 function Settings({ ctx }) {
   const { st, play, setSetting } = ctx;
+  const [nick, setNick] = useState(st.nickname || "");
   const [aiKey, setAiKey] = useState(""); const [keyMsg, setKeyMsg] = useState("");
   useEffect(() => { getApiKey().then((k) => setAiKey(k || "")); }, []);
   const saveKey = async () => {
@@ -2644,6 +2668,12 @@ function Settings({ ctx }) {
   };
   return (<div className="fade-in"><BackRow ctx={ctx} title="⚙️ 设置" />
     <div className="card" style={S.setCard}>
+      <Row label="昵称" hint="显示在首页头像旁">
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <input style={{ ...S.field, width: 120, fontSize: 13 }} value={nick} maxLength={12} placeholder="词崽训练员" onChange={(e) => setNick(e.target.value)} />
+          <button className="pressable" style={{ ...S.addBtn, fontSize: 12 }} onClick={() => { ctx.setNickname(nick.trim()); play("pop"); }}>存</button>
+        </div>
+      </Row>
       <Row label="学习模式" hint={st.mode === "kana" ? "五十音图模式：专注假名，撞见的词先进收词袋" : "词汇模式：加词 → 学新词 → 复习 的日常循环"}>
         <button className="pressable" style={{ ...S.addBtn, fontSize: 12 }} onClick={() => { const m = st.mode === "kana" ? "vocab" : "kana"; ctx.setMode(m); play("win"); }}>{st.mode === "kana" ? "🔤五十音 → 切词汇" : "📗词汇 → 切五十音"}</button>
       </Row>
@@ -2692,6 +2722,41 @@ const S = {
   statVal: { fontWeight: 800, fontSize: 15, lineHeight: 1 }, statLabel: { fontSize: 10, color: C.inkSoft },
   aiToggle: { border: "none", borderRadius: 10, padding: "6px 8px", fontWeight: 800, fontSize: 11, cursor: "pointer", fontFamily: "inherit" },
   iconBtn: { border: "none", background: "var(--surface)", borderRadius: 10, width: 32, height: 32, fontSize: 15, cursor: "pointer", boxShadow: "0 3px 0 var(--bevel)" },
+  // 顶栏头像+昵称+等级
+  profile: { display: "flex", alignItems: "center", gap: 10, cursor: "pointer", flex: 1, minWidth: 0, background: "none", border: "none", padding: 0, fontFamily: "inherit", textAlign: "left" },
+  avatar: { width: 42, height: 42, borderRadius: 12, objectFit: "cover", background: "var(--window)", border: "3px solid var(--pix-border)", flexShrink: 0 },
+  pName: { fontWeight: 800, fontSize: 14, color: C.ink, display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap", overflow: "hidden" },
+  pSeg: { fontSize: 10.5, color: C.inkSoft, fontWeight: 700, flexShrink: 0 },
+  pLvRow: { display: "flex", alignItems: "center", gap: 6, marginTop: 3 },
+  pLv: { fontSize: 11, fontWeight: 800, color: "#fff", background: C.honey, borderRadius: 6, padding: "1px 6px", flexShrink: 0 },
+  xpTrack: { width: 96, height: 9, background: "var(--track)", border: "2px solid var(--pix-border)", overflow: "hidden" },
+  xpFill: { height: "100%", background: C.matcha, transition: "width .4s" },
+  pXp: { fontSize: 10, color: C.inkSoft, fontWeight: 700 },
+  // 连续天数 + 三档
+  streakRow: { display: "flex", gap: 10, marginBottom: 12, alignItems: "stretch" },
+  streakCard: { flex: 1, display: "flex", alignItems: "center", gap: 9, background: "var(--surface)", border: "3px solid var(--pix-border)", boxShadow: "4px 4px 0 var(--pix-shadow)", padding: "10px 13px" },
+  streakBig: { fontWeight: 800, fontSize: 22, color: C.honeyDk, lineHeight: 1 },
+  streakSmall: { fontSize: 10.5, color: C.inkSoft, fontWeight: 700, marginTop: 3 },
+  tri: { display: "flex", gap: 6, alignItems: "center" },
+  triBtn: { width: 50, background: "var(--surface)", border: "3px solid var(--pix-border)", boxShadow: "4px 4px 0 var(--pix-shadow)", cursor: "pointer", fontFamily: "inherit", padding: "7px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 },
+  triOn: { background: "var(--surface-sel)", outline: "3px solid " + C.honey, outlineOffset: -3 },
+  triLabel: { fontSize: 10.5, fontWeight: 800, color: "var(--ink-mid)" },
+  // 日狗大区
+  roomBig: { position: "relative", background: "linear-gradient(180deg,var(--room1),var(--room3))", border: "4px solid var(--card-edge)", boxShadow: "4px 4px 0 var(--pix-shadow)", overflow: "hidden", minHeight: "clamp(360px, 54vh, 600px)", marginBottom: 12, padding: "16px 14px 14px", display: "flex", flexDirection: "column", alignItems: "center" },
+  catWrapBig: { textAlign: "center", position: "relative", zIndex: 2, cursor: "pointer", flex: 1, display: "flex", alignItems: "center", justifyContent: "center", width: "100%", minHeight: 150 },
+  hud: { position: "absolute", top: 12, right: 12, zIndex: 3, display: "flex", flexDirection: "column", gap: 8 },
+  hudBtn: { width: 50, height: 50, background: "var(--surface)", border: "3px solid var(--pix-border)", boxShadow: "3px 3px 0 var(--pix-shadow)", cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1 },
+  hudTxt: { fontSize: 9.5, fontWeight: 800, color: "var(--ink-mid)" },
+  roomNudge: { width: "100%", marginTop: 8, background: "var(--surface)", border: "3px solid var(--pix-border)", boxShadow: "0 4px 0 var(--pix-shadow)", padding: "11px 12px", fontWeight: 800, fontSize: 13.5, color: C.ink, cursor: "pointer", fontFamily: "inherit" },
+  // 底部导航
+  bnav: { display: "flex", alignItems: "flex-end", justifyContent: "space-around", gap: 4, background: "var(--surface)", border: "4px solid var(--pix-border)", boxShadow: "4px 4px 0 var(--pix-shadow)", padding: "8px 6px 10px", marginTop: 4 },
+  bnavItem: { flex: 1, background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 3, color: C.ink, padding: "4px 0" },
+  bnavLabel: { fontSize: 11, fontWeight: 800, color: "var(--ink-mid)" },
+  bnavCenter: { flex: 1, background: C.matcha, border: "3px solid var(--pix-border)", boxShadow: "0 4px 0 " + C.matchaDk, cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, color: "#fff", padding: "8px 0", margin: "0 2px -6px", transform: "translateY(-6px)" },
+  bnavCLabel: { fontSize: 11.5, fontWeight: 800, color: "#fff" },
+  // 监控弹窗
+  monOverlay: { position: "fixed", inset: 0, zIndex: 40, background: "rgba(40,44,30,.55)", display: "grid", placeItems: "center", padding: 24 },
+  monCard: { background: "var(--surface)", border: "4px solid var(--pix-border)", boxShadow: "6px 6px 0 var(--pix-shadow)", padding: "18px 20px", textAlign: "center", maxWidth: 300, width: "100%" },
 
   onbWrap: { position: "relative", zIndex: 1, maxWidth: 480, margin: "0 auto", padding: "44px 22px", textAlign: "center" },
   onbLogo: { fontSize: 46, fontWeight: 800, color: C.honeyDk, letterSpacing: 2 },
