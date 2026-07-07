@@ -2921,16 +2921,16 @@ const S = {
 const CSS = "\
 @import url('https://fonts.googleapis.com/css2?family=DotGothic16&display=swap');\
 :root{\
-/* 绿像素基底（常驻）·默认=白天 */\
---shell-top:#c6d8a8;--surface:#f4f0df;--surface-sel:#e8eccb;--surface2:#e6e2cd;--card-edge:#5d6c3d;--knob:#f4f0df;\
---honey:#e3a93e;--honey-dk:#9c6f1c;--matcha:#7e9a4c;--matcha-dk:#5f7536;--wood:#7a6a44;\
---blush:#cf5b4b;--blush-dk:#9a3a2c;--sky:#5a8fb0;--grape:#9b7ab0;--grape-dk:#6f5288;\
---ink:#3b4030;--ink-soft:#565b40;--ink-mid:#565b40;\
---line:#5d6c3d;--line-soft:#5d6c3d;--bevel:#5d6c3d;--track:#c2c8a6;--pill-bg:#e0e8c4;\
---danger-bg:#f1d8cd;--danger-fg:#b5432f;--danger-line:#5d6c3d;--danger-bevel:#5d6c3d;--ok-bg:#e0e8c4;--warn-bg:#f2e9c2;\
---window:#6f8a4e;--cushion:#7a6a44;--ai-off:#c2c8a6;--switch-off:#9aa07c;\
---pix-border:#5d6c3d;--pix-shadow:#5d6c3d;--dot:rgba(93,108,61,.13);\
---cream:#d3e1b9;--room1:#cfe0b3;--room3:#bcd29c;\
+/* 焦糖木质像素基底（常驻）·默认=白天。深木框 + 奶油卡片 + 绿/红答题反馈保留 */\
+--shell-top:#b98a52;--surface:#f4e8ca;--surface-sel:#ecdcb4;--surface2:#e0cda2;--card-edge:#33220e;--knob:#f4e8ca;\
+--honey:#d19a3e;--honey-dk:#8f6218;--matcha:#6f9a3c;--matcha-dk:#527a28;--wood:#8a5a2a;\
+--blush:#c14a2a;--blush-dk:#8a2e16;--sky:#5a8fb0;--grape:#9b7ab0;--grape-dk:#6f5288;\
+--ink:#33220e;--ink-soft:#5e4620;--ink-mid:#4e3212;\
+--line:#7a5230;--line-soft:#a67c46;--bevel:#4a3016;--track:#6e4a26;--pill-bg:#e0cda2;\
+--danger-bg:#f0d8c0;--danger-fg:#b03a1c;--danger-line:#33220e;--danger-bevel:#4a3016;--ok-bg:#dbe6bc;--warn-bg:#f5e6c0;\
+--window:#8a5a2a;--cushion:#8a6038;--ai-off:#c2b088;--switch-off:#a08850;\
+--pix-border:#33220e;--pix-shadow:#4a3016;--dot:rgba(51,34,14,.14);\
+--cream:#9a6e3e;--room1:#ecdcb2;--room3:#d8c08e;\
 }\
 /* 夜晚：暗像素（压暗、文字转亮、描边转亮） */\
 [data-tod=night]{\
@@ -2943,11 +2943,11 @@ const CSS = "\
 --cushion:#3a4430;--ai-off:#3a4430;--switch-off:#5a6048;--window:#4a5a38;\
 --pix-border:#6f7d52;--pix-shadow:rgba(0,0,0,.6);--dot:rgba(255,255,255,.06);\
 }\
-/* 季节 × 昼夜：页面底 + 猫屋天空 */\
-[data-tod=day][data-season=spring]{--cream:#dde6c2;--room1:#d6e6c2;--room3:#ecdcc8;}\
-[data-tod=day][data-season=summer]{--cream:#d3e1b9;--room1:#c8e0a8;--room3:#dceec0;}\
-[data-tod=day][data-season=autumn]{--cream:#e6dcb2;--room1:#e4d49c;--room3:#d8c68c;}\
-[data-tod=day][data-season=winter]{--cream:#dde4cd;--room1:#d2e0c8;--room3:#e2e6d6;}\
+/* 季节 × 昼夜：页面底 + 猫屋天空。焦糖皮当前锁 day/summer，此块必须与 :root 焦糖一致(否则覆盖回旧色) */\
+[data-tod=day][data-season=spring]{--cream:#9a6e3e;--room1:#ecdcb2;--room3:#d8c08e;}\
+[data-tod=day][data-season=summer]{--cream:#9a6e3e;--room1:#ecdcb2;--room3:#d8c08e;}\
+[data-tod=day][data-season=autumn]{--cream:#9a6e3e;--room1:#ecdcb2;--room3:#d8c08e;}\
+[data-tod=day][data-season=winter]{--cream:#9a6e3e;--room1:#ecdcb2;--room3:#d8c08e;}\
 [data-tod=night][data-season=spring]{--cream:#1f2718;--room1:#2a3420;--room3:#1c2416;}\
 [data-tod=night][data-season=summer]{--cream:#1a2414;--room1:#22301a;--room3:#142010;}\
 [data-tod=night][data-season=autumn]{--cream:#262414;--room1:#34301a;--room3:#221e10;}\
