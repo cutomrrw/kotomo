@@ -1442,7 +1442,7 @@ function FillRound({ item, all, play, onResult, onNext, onWrong, onHesitate, upd
 
 // 语法情境：给语法点，选正确用法（第0步与填空类似，用 meaning 作题干）
 function GrammarRound({ item, all, play, onResult, onNext, onWrong, onHesitate }) {
-  const opts = useMemo(() => { const others = shuffle((all || []).filter((x) => x.id !== item.id)).slice(0, 3); return shuffle([item, ...others]); }, [item, all]);
+  const opts = useMemo(() => { const g = (all || []).filter((x) => x.id !== item.id && x.type === "grammar"); const pool = g.length >= 3 ? g : (all || []).filter((x) => x.id !== item.id); const others = shuffle(pool).slice(0, 3); return shuffle([item, ...others]); }, [item, all]);
   const [picked, setPicked] = useState(null), [checked, setChecked] = useState(false);
   const check = () => { if (!picked) return; const correct = picked.id === item.id; setChecked(true); onResult(item.id, correct); if (correct) play("correct"); else { play("wrong"); onWrong(); } };
   return (<div className="fade-in">
@@ -1541,16 +1541,18 @@ function AddWords({ ctx }) {
         <div key={i} className="card" style={S.draftRow}>
           <div style={S.draftHead}>
             {r.type === "sentence" && <span style={S.draftBadge}>📝 整句</span>}
+            {r.type === "grammar" && <span style={{ ...S.draftBadge, background: "var(--surface-sel)", border: "2px solid var(--surface-sel)", color: C.grapeDk || "var(--grape-dk)" }}>📐 语法</span>}
             {r.verified === "verified"
               ? <span style={{ ...S.draftBadge, background: "var(--ok-bg)", border: "2px solid var(--ok-bg)", color: C.matchaDk }}>✅已核</span>
               : <span style={{ ...S.draftBadge, background: "var(--warn-bg)", border: "2px solid var(--warn-bg)", color: "var(--ink-mid)" }}>⚠️待核</span>}
             {isTransparentKanji(r) && <span style={{ ...S.draftBadge, background: "var(--surface-sel)", border: "2px solid var(--surface-sel)", color: C.honeyDk }}>👀秒懂</span>}
             <select value={r.pos} onChange={(e) => editD(i, "pos", e.target.value)} style={S.draftPos}>{POS.map((p) => <option key={p.key} value={p.key}>{p.emoji}{p.label}</option>)}</select>
-            {r.type !== "sentence" && <button style={S.draftExpand} onClick={() => expandDraft(i)}>✨ 展开</button>}
+            {r.type !== "sentence" && r.type !== "grammar" && <button style={S.draftExpand} onClick={() => expandDraft(i)}>✨ 展开</button>}
+            {r.type !== "sentence" && <button style={{ ...S.draftStar, ...(r.type === "grammar" ? S.draftStarOn : {}) }} onClick={() => editD(i, "type", r.type === "grammar" ? "word" : "grammar")}>📐 语法</button>}
             <button style={{ ...S.draftStar, ...(r.freq ? S.draftStarOn : {}) }} onClick={() => editD(i, "freq", !r.freq)}>⭐ 高频</button>
             <button style={S.draftDel} onClick={() => delD(i)}>✕ 删</button>
           </div>
-          <label style={S.draftField}><span style={S.draftLabel}>{r.type === "sentence" ? "句子" : "单词"}</span><input style={S.draftIn} value={r.term} placeholder={r.type === "sentence" ? "日语整句" : "日语"} onChange={(e) => editD(i, "term", e.target.value)} /></label>
+          <label style={S.draftField}><span style={S.draftLabel}>{r.type === "sentence" ? "句子" : r.type === "grammar" ? "句型" : "单词"}</span><input style={S.draftIn} value={r.term} placeholder={r.type === "sentence" ? "日语整句" : r.type === "grammar" ? "语法句型 如 ～たいです" : "日语"} onChange={(e) => editD(i, "term", e.target.value)} /></label>
           <label style={S.draftField}><span style={S.draftLabel}>读音</span><input style={S.draftIn} value={r.reading} placeholder="假名" onChange={(e) => editD(i, "reading", e.target.value)} /></label>
           <label style={S.draftField}><span style={S.draftLabel}>意思</span><input style={S.draftIn} value={r.meaning} placeholder="中文" onChange={(e) => editD(i, "meaning", e.target.value)} /></label>
           {r.candidates && r.candidates.length > 1 && (<div>
@@ -1837,8 +1839,17 @@ function Library({ ctx }) {
   const shown = filter === "all" ? words
     : filter === "freq" ? words.filter((w) => w.freq)
     : filter === "loan" ? words.filter((w) => w.loan)
+    : filter === "grammar" ? words.filter((w) => w.type === "grammar")
     : filter === "mastered" ? words.filter((w) => w.mastered || (w.srs && w.srs.level >= MASTER_LEVEL))
     : words.filter((w) => (w.pos || "other") === filter);
+  const grammarMissing = GRAMMAR_PACK.filter((g) => !words.some((w) => w.term === g[0]));
+  const addGrammarPack = () => {
+    const rows = grammarMissing.map((g) => ({ id: uid(), type: "grammar", term: g[0], reading: g[1], meaning: g[2], pos: "phrase", freq: false, loan: null,
+      mastered: false, source: "语法包", expanded: null, cloze: null, kanjiTip: null, isSeed: true, learned: true,
+      verified: "verified", verifySrc: { reading: "seed", term: "seed", meaning: "seed" }, basicForm: "", contextSentence: g[3],
+      seen: 0, wrong: 0, srs: { level: 0, dueAt: now(), lastReviewedAt: 0 } }));
+    if (rows.length) { ctx.appendWords(rows, []); play("win"); }
+  };
   // 检索：搜日语(写法/读音)或中文(意思)，含外来词原词
   const q = search.trim().toLowerCase();
   const searched = q ? shown.filter((w) => ((w.term || "") + " " + (w.reading || "") + " " + (w.meaning || "") + " " + ((w.loan && w.loan.word) || "")).toLowerCase().includes(q)) : shown;
@@ -1846,6 +1857,7 @@ function Library({ ctx }) {
   const ordered = order === "new" ? [...searched].reverse() : searched;
   return (<div className="fade-in"><BackRow ctx={ctx} title="📚 我的词库" />
     <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.matcha, boxShadow: "0 5px 0 " + C.matchaDk }} onClick={() => { play("tap"); ctx.setView("add"); }}>🎙️ 去加词（打字/语音/展开）</button>
+    {grammarMissing.length > 0 && <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.grape, boxShadow: "0 5px 0 var(--grape-dk)" }} onClick={addGrammarPack}>📐 补充常用语法包（{grammarMissing.length} 条：たいです/てください/…）</button>}
     {verifiable.length > 0 && <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.sky, boxShadow: "0 5px 0 var(--bevel)", opacity: verifying ? 0.75 : 1 }} disabled={verifying} onClick={runVerify}>{verifying ? (verifyMsg || "词典核实中…") : "🔍 用词典核实读音·写法 · " + verifiable.length + " 个待核实"}</button>}
     {!verifying && verifyMsg && <div style={{ ...S.setNote, marginBottom: 10, color: C.sky, fontWeight: 800 }}>{verifyMsg}</div>}
     {aiReal && fixable.length > 0 && <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.honey, boxShadow: "0 5px 0 " + C.honeyDk, opacity: fixing ? 0.75 : 1 }} disabled={fixing} onClick={runFix}>{fixing ? (fixMsg || "AI 补全中…") : "🈶 用 AI 补全 " + fixable.length + " 个词的汉字/读音"}</button>}
@@ -1874,6 +1886,7 @@ function Library({ ctx }) {
     </div>}
     <div style={S.filterRow}>
       <Chip on={filter === "all"} onClick={() => { setFilter("all"); play("tap"); }}>全部 {words.length}</Chip>
+      {words.some((w) => w.type === "grammar") && <Chip on={filter === "grammar"} onClick={() => { setFilter("grammar"); play("tap"); }}>📐语法 {words.filter((w) => w.type === "grammar").length}</Chip>}
       <Chip on={filter === "freq"} onClick={() => { setFilter("freq"); play("tap"); }}>⭐高频 {words.filter((w) => w.freq).length}</Chip>
       <Chip on={filter === "loan"} onClick={() => { setFilter("loan"); play("tap"); }}>🔤外来词 {words.filter((w) => w.loan).length}</Chip>
       <Chip on={filter === "mastered"} onClick={() => { setFilter("mastered"); play("tap"); }}>🌸已掌握 {countMastered(words)}</Chip>
@@ -1887,6 +1900,8 @@ function Library({ ctx }) {
             : <span style={{ ...S.dot, background: p.color + "33" }} onClick={() => speakJa(w.term)}>{p.emoji}</span>}
           <div style={{ flex: 1 }} onClick={() => { play("tap"); if (selectMode) toggleSel(w.id); else setEditing(open ? null : w.id); }}>
             <JaTerm w={w} size={18} />
+            {w.type === "grammar" && <Tag bg="var(--surface-sel)" fg={C.grapeDk || "var(--grape-dk)"}>📐语法</Tag>}
+            {w.type === "sentence" && <Tag bg="var(--surface-sel)" fg={C.inkSoft}>📝整句</Tag>}
             {w.verified === "verified" ? <Tag bg="var(--ok-bg)" fg={C.matchaDk}>✅已核</Tag> : <Tag bg="var(--warn-bg)" fg="var(--ink-mid)">⚠️待核</Tag>}
             {w.freq && <Tag bg="#ffe6a8" fg="#a8761e">高频</Tag>}{done && <Tag bg="var(--ok-bg)" fg={C.matchaDk}>已掌握</Tag>}
             {isTransparentKanji(w) && <Tag bg="var(--surface-sel)" fg={C.honeyDk}>👀秒懂</Tag>}
@@ -2353,6 +2368,31 @@ const HG_PACK = [
   ["薬局", "やっきょく", "药店(药局)", 0], ["会計", "かいけい", "结账、买单(店里说 お会計)/会计", 1],
   ["満席", "まんせき", "满席、客满", 0], ["禁止", "きんし", "禁止", 1], ["注意", "ちゅうい", "注意", 1],
   ["安全", "あんぜん", "安全", 1], ["天気", "てんき", "天气", 1], ["新幹線", "しんかんせん", "新干线", 1],
+];
+// 常用语法包(N5~N4 核心 22 条)。[句型, 读音, 含义(当题干), 例句]。type=grammar → 复习走 GrammarRound(看含义选句型)
+const GRAMMAR_PACK = [
+  ["～です", "です", "「是…」礼貌判断（学生です）", "私は学生です。（我是学生）"],
+  ["～ます", "ます", "动词礼貌体·现在/将来（做…）", "毎日日本語を勉強します。（每天学日语）"],
+  ["～ました", "ました", "礼貌·过去（做了…）", "昨日映画を見ました。（昨天看了电影）"],
+  ["～ません", "ません", "礼貌·否定（不做…）", "お酒を飲みません。（我不喝酒）"],
+  ["～たいです", "たいです", "愿望「想做…」", "寿司が食べたいです。（我想吃寿司）"],
+  ["～てください", "てください", "请求「请做…」", "ちょっと待ってください。（请等一下）"],
+  ["～ないでください", "ないでください", "请求否定「请别做…」", "写真を撮らないでください。（请别拍照）"],
+  ["～ています", "ています", "进行/状态「正在…／…着」", "今、雨が降っています。（现在正在下雨）"],
+  ["～てもいいですか", "てもいいですか", "许可「可以做…吗？」", "ここに座ってもいいですか。（可以坐这吗）"],
+  ["～てはいけません", "てはいけません", "禁止「不可以做…」", "ここでタバコを吸ってはいけません。（这里不能抽烟）"],
+  ["～なければなりません", "なければなりません", "义务「必须做…」", "薬を飲まなければなりません。（必须吃药）"],
+  ["～ことができます", "ことができます", "能力/可能「能够做…」", "日本語を話すことができます。（会说日语）"],
+  ["～たことがあります", "たことがあります", "经验「曾经做过…」", "日本へ行ったことがあります。（去过日本）"],
+  ["～ほうがいいです", "ほうがいいです", "建议「最好做…」", "早く寝たほうがいいです。（最好早点睡）"],
+  ["～すぎます", "すぎます", "过度「太…了」", "食べすぎました。（吃太多了）"],
+  ["～と思います", "とおもいます", "想法「我觉得／认为…」", "いいと思います。（我觉得不错）"],
+  ["～から", "から", "原因·口语「因为…」", "高いから買いません。（因为贵所以不买）"],
+  ["～ので", "ので", "原因·委婉「因为…（较客气）」", "用事があるので、先に失礼します。（有事先走了）"],
+  ["～たら", "たら", "假定「如果…就…」", "雨が降ったら、行きません。（如果下雨就不去）"],
+  ["～ながら", "ながら", "同时「一边…一边…」", "音楽を聞きながら勉強します。（边听音乐边学习）"],
+  ["～つもりです", "つもりです", "打算「打算做…」", "来年日本へ行くつもりです。（打算明年去日本）"],
+  ["～でしょう", "でしょう", "推测「…吧」", "明日は晴れるでしょう。（明天应该会晴吧）"],
 ];
 const KANJI_CH_RE = /[一-鿿々]/;
 function isTransparentKanji(w) {
