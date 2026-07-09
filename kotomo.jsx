@@ -2415,13 +2415,14 @@ function ListenDrill({ pool, play, throwReact, bonusFish, markHes }) {
   const [score, setScore] = useState(0), [total, setTotal] = useState(0), [streak, setStreak] = useState(0);
   const nextT = useRef(null);
   useEffect(() => () => clearTimeout(nextT.current), []);
+  const goNext = () => { clearTimeout(nextT.current); setPicked(null); setHeard(false); setQ(pick4(pool)); };
   const pick = (o) => {
     if (picked || !heard) return; setPicked(o); setTotal((t) => t + 1);
     const ok = o.id === q.ans.id;
-    if (ok) { play("correct"); if (throwReact) throwReact("churu"); setScore((s) => s + 1); const ns = streak + 1; setStreak(ns); if (ns % 5 === 0 && bonusFish) bonusFish(); } else { play("wrong"); setStreak(0); }
-    nextT.current = setTimeout(() => { setPicked(null); setHeard(false); setQ(pick4(pool)); }, ok ? 1000 : 2000);
+    if (ok) { play("correct"); if (throwReact) throwReact("churu"); setScore((s) => s + 1); const ns = streak + 1; setStreak(ns); if (ns % 5 === 0 && bonusFish) bonusFish(); nextT.current = setTimeout(goNext, 1000); } else { play("wrong"); setStreak(0); } // 答错→停住，手动点下一道
   };
-  const hes = () => { if (picked) return; if (markHes) markHes(q.ans.id); setStreak(0); setHeard(true); setPicked(HES_MARK); speakJa(q.ans.term); clearTimeout(nextT.current); nextT.current = setTimeout(() => { setPicked(null); setHeard(false); setQ(pick4(pool)); }, 2000); };
+  const hes = () => { if (picked) return; if (markHes) markHes(q.ans.id); setStreak(0); setHeard(true); setPicked(HES_MARK); speakJa(q.ans.term); }; // 揭晓后停住，手动点下一道
+  const revealed = !!picked && (picked === HES_MARK || picked.id !== q.ans.id);
   return (<div className="fade-in">
     <DrillScore score={score} total={total} streak={streak} />
     <div className="card pop-in" style={{ ...S.bigCard, padding: "26px 20px" }}>
@@ -2433,13 +2434,15 @@ function ListenDrill({ pool, play, throwReact, bonusFish, markHes }) {
       if (picked) { if (o.id === q.ans.id) s2 = { ...s2, outline: "3px solid " + C.matchaDk, outlineOffset: -4, background: "var(--ok-bg)" }; else if (picked.id === o.id) s2 = { ...s2, outline: "3px solid " + C.blush, outlineOffset: -4, background: "var(--danger-bg)" }; }
       return <button key={o.id} className="pressable" style={s2} onClick={() => pick(o)}><span style={{ fontSize: 20, fontWeight: 800 }}>{o.term}</span></button>;
     })}</div>
-    <HesBtn onClick={hes} disabled={!!picked} />
+    {revealed ? <NextBtn onClick={goNext} /> : <HesBtn onClick={hes} disabled={!!picked} />}
   </div>);
 }
-// 特训「拿不准」键：标进错题本，跳下一题
+// 特训「拿不准」键：标进错题本，揭晓答案后停住等手动
 const HES_MARK = { id: "__hes__" }; // 点「犹豫」后的占位选中：让正确项高亮、揭晓答案，但不算选错任何一项
 const HesBtn = ({ onClick, disabled }) => (<div style={{ display: "flex", justifyContent: "center", marginTop: 12 }}>
   <button className="pressable" disabled={disabled} style={{ ...S.ghostBtn, opacity: disabled ? 0.4 : 1 }} title="拿不准就点它：告诉你答案，并放入错题本回来考你" onClick={onClick}>🤔 犹豫 · 放入错题本</button></div>);
+const NextBtn = ({ onClick }) => (<div style={{ display: "flex", justifyContent: "center", marginTop: 12 }}>
+  <button className="pressable" style={{ ...S.bigBtn, maxWidth: 260 }} onClick={onClick}>下一道题 →</button></div>);
 // 🈶 假名认字：给假名注音(げんきん)，选出对应的汉字词——把"读音→字"的连接练反向(创始人提议)
 function KanaPickDrill({ pool, play, throwReact, bonusFish, markHes }) {
   const [q, setQ] = useState(() => pick4(pool));
@@ -2447,14 +2450,15 @@ function KanaPickDrill({ pool, play, throwReact, bonusFish, markHes }) {
   const [score, setScore] = useState(0), [total, setTotal] = useState(0), [streak, setStreak] = useState(0);
   const nextT = useRef(null);
   useEffect(() => () => clearTimeout(nextT.current), []);
+  const goNext = () => { clearTimeout(nextT.current); setPicked(null); setQ(pick4(pool)); };
   const pick = (o) => {
     if (picked) return; setPicked(o); setTotal((t) => t + 1);
     const ok = o.id === q.ans.id;
     speakJa(q.ans.term); // 答完顺带把音种进耳朵
-    if (ok) { play("correct"); if (throwReact) throwReact("churu"); setScore((s) => s + 1); const ns = streak + 1; setStreak(ns); if (ns % 5 === 0 && bonusFish) bonusFish(); } else { play("wrong"); setStreak(0); }
-    nextT.current = setTimeout(() => { setPicked(null); setQ(pick4(pool)); }, ok ? 900 : 2000);
+    if (ok) { play("correct"); if (throwReact) throwReact("churu"); setScore((s) => s + 1); const ns = streak + 1; setStreak(ns); if (ns % 5 === 0 && bonusFish) bonusFish(); nextT.current = setTimeout(goNext, 900); } else { play("wrong"); setStreak(0); } // 答错→停住，手动点下一道
   };
-  const hes = () => { if (picked) return; if (markHes) markHes(q.ans.id); setStreak(0); setPicked(HES_MARK); speakJa(q.ans.term); clearTimeout(nextT.current); nextT.current = setTimeout(() => { setPicked(null); setQ(pick4(pool)); }, 2000); };
+  const hes = () => { if (picked) return; if (markHes) markHes(q.ans.id); setStreak(0); setPicked(HES_MARK); speakJa(q.ans.term); }; // 揭晓后停住，手动点下一道
+  const revealed = !!picked && (picked === HES_MARK || picked.id !== q.ans.id);
   return (<div className="fade-in">
     <DrillScore score={score} total={total} streak={streak} />
     <div className="card pop-in" style={{ ...S.bigCard, padding: "26px 20px" }}>
@@ -2466,7 +2470,7 @@ function KanaPickDrill({ pool, play, throwReact, bonusFish, markHes }) {
       if (picked) { if (o.id === q.ans.id) s2 = { ...s2, outline: "3px solid " + C.matchaDk, outlineOffset: -4, background: "var(--ok-bg)" }; else if (picked.id === o.id) s2 = { ...s2, outline: "3px solid " + C.blush, outlineOffset: -4, background: "var(--danger-bg)" }; }
       return <button key={o.id} className="pressable" style={s2} onClick={() => pick(o)}><span style={{ fontSize: 20, fontWeight: 800 }}>{o.term}</span></button>;
     })}</div>
-    <HesBtn onClick={hes} disabled={!!picked} />
+    {revealed ? <NextBtn onClick={goNext} /> : <HesBtn onClick={hes} disabled={!!picked} />}
   </div>);
 }
 // 🧩 拼读音：给汉字词，从打乱的假名块里拼出读音(能拼出来=能读出来=能说出来)
@@ -2480,7 +2484,8 @@ function SpellDrill({ pool, play, throwReact, bonusFish, markHes }) {
   const nextT = useRef(null);
   useEffect(() => () => clearTimeout(nextT.current), []);
   const target = Array.from(q.w.reading);
-  const advance = (delay) => { nextT.current = setTimeout(() => { setPicks([]); setFails(0); setState("doing"); setQ(makeQ()); }, delay); };
+  const goNext = () => { clearTimeout(nextT.current); setPicks([]); setFails(0); setState("doing"); setQ(makeQ()); };
+  const advance = (delay) => { nextT.current = setTimeout(goNext, delay); };
   const tap = (t) => {
     if (state !== "doing" || picks.some((p) => p.i === t.i)) return;
     const np = picks.concat(t); setPicks(np); play("tap");
@@ -2488,12 +2493,12 @@ function SpellDrill({ pool, play, throwReact, bonusFish, markHes }) {
       const ok = np.map((p) => p.ch).join("") === q.w.reading;
       setTotal((x) => x + 1);
       if (ok) { setState("right"); play("correct"); if (throwReact) throwReact("churu"); speakJa(q.w.term); setScore((s) => s + 1); const ns = streak + 1; setStreak(ns); if (ns % 5 === 0 && bonusFish) bonusFish(); advance(1300); }
-      else if (fails >= 1) { setState("reveal"); play("wrong"); setStreak(0); speakJa(q.w.term); if (markHes) markHes(q.w.id); advance(2200); } // 错第二次→揭晓答案 + 放错题本
+      else if (fails >= 1) { setState("reveal"); play("wrong"); setStreak(0); speakJa(q.w.term); if (markHes) markHes(q.w.id); } // 错第二次→揭晓答案 + 放错题本 + 停住等手动
       else { setState("wrong"); play("wrong"); setStreak(0); setFails(1); nextT.current = setTimeout(() => { setPicks([]); setState("doing"); }, 800); }
     }
   };
   const undo = () => { if (state === "doing" && picks.length) { setPicks(picks.slice(0, -1)); play("tap"); } };
-  const hes = () => { if (state !== "doing") return; if (markHes) markHes(q.w.id); setStreak(0); setState("reveal"); speakJa(q.w.term); clearTimeout(nextT.current); advance(2400); };
+  const hes = () => { if (state !== "doing") return; if (markHes) markHes(q.w.id); setStreak(0); setState("reveal"); speakJa(q.w.term); clearTimeout(nextT.current); }; // 揭晓后停住等手动
   return (<div className="fade-in">
     <DrillScore score={score} total={total} streak={streak} />
     <div className="card pop-in" style={{ ...S.bigCard, padding: "22px 20px" }}>
@@ -2508,10 +2513,10 @@ function SpellDrill({ pool, play, throwReact, bonusFish, markHes }) {
       {q.tiles.map((t) => { const used = picks.some((p) => p.i === t.i); return (
         <button key={t.i} className="pressable" disabled={used || state !== "doing"} style={{ width: 52, height: 52, fontSize: 21, fontWeight: 800, fontFamily: "inherit", background: used ? "var(--surface2)" : "var(--surface)", color: used ? "var(--ink-soft)" : "var(--ink)", cursor: "pointer", opacity: used ? 0.45 : 1 }} onClick={() => tap(t)}>{t.ch}</button>); })}
     </div>
-    <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap", marginTop: 12 }}>
+    {state === "reveal" ? <NextBtn onClick={goNext} /> : <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap", marginTop: 12 }}>
       <button className="pressable" style={{ ...S.ghostBtn }} onClick={undo}>⌫ 退一格</button>
       <button className="pressable" disabled={state !== "doing"} style={{ ...S.ghostBtn, opacity: state !== "doing" ? 0.4 : 1 }} onClick={hes}>🤔 犹豫 · 放入错题本</button>
-    </div>
+    </div>}
   </div>);
 }
 // 🎲 混合挑战：假名认字/听音辨字/拼读音 随机轮着出，不知道下一题考什么
@@ -2527,18 +2532,18 @@ function MixDrill({ pool, play, throwReact, bonusFish, markHes }) {
   const [score, setScore] = useState(0), [total, setTotal] = useState(0), [streak, setStreak] = useState(0);
   const nextT = useRef(null);
   useEffect(() => () => clearTimeout(nextT.current), []);
-  const settle = (ok, delay) => {
+  const goNext = () => { clearTimeout(nextT.current); setPicked(null); setHeard(false); setPicks([]); setReveal(false); setQ(makeQ()); };
+  const settle = (ok) => {
     setTotal((t) => t + 1);
-    if (ok) { play("correct"); if (throwReact) throwReact("churu"); setScore((s) => s + 1); const ns = streak + 1; setStreak(ns); if (ns % 5 === 0 && bonusFish) bonusFish(); } else { play("wrong"); setStreak(0); }
-    nextT.current = setTimeout(() => { setPicked(null); setHeard(false); setPicks([]); setReveal(false); setQ(makeQ()); }, delay);
+    if (ok) { play("correct"); if (throwReact) throwReact("churu"); setScore((s) => s + 1); const ns = streak + 1; setStreak(ns); if (ns % 5 === 0 && bonusFish) bonusFish(); nextT.current = setTimeout(goNext, 1100); } else { play("wrong"); setStreak(0); } // 答错→停住手动
   };
   const hes = () => { if (picked || reveal) return; const isSpell = q.type === "spell"; if (markHes) markHes(isSpell ? q.w.id : q.ans.id); setStreak(0); speakJa(isSpell ? q.w.term : q.ans.term);
     if (isSpell) { setPicked(true); setReveal(true); } else { setHeard(true); setPicked(HES_MARK); }
-    clearTimeout(nextT.current); nextT.current = setTimeout(() => { setPicked(null); setHeard(false); setPicks([]); setReveal(false); setQ(makeQ()); }, 2400); };
+    clearTimeout(nextT.current); }; // 揭晓后停住手动
   if (q.type === "spell") {
     const target = Array.from(q.w.reading);
     const tap = (t) => { if (reveal || picked || picks.some((p) => p.i === t.i)) return; const np = picks.concat(t); setPicks(np); play("tap");
-      if (np.length === target.length) { const ok = np.map((p) => p.ch).join("") === q.w.reading; setPicked(true); if (!ok) setReveal(true); speakJa(q.w.term); settle(ok, ok ? 1300 : 2400); } };
+      if (np.length === target.length) { const ok = np.map((p) => p.ch).join("") === q.w.reading; setPicked(true); if (!ok) setReveal(true); speakJa(q.w.term); settle(ok); } };
     return (<div className="fade-in"><DrillScore score={score} total={total} streak={streak} />
       <div className="card pop-in" style={{ ...S.bigCard, padding: "22px 20px" }}>
         <div style={{ fontSize: 12, color: C.grape, fontWeight: 800 }}>🧩 拼读音</div>
@@ -2552,11 +2557,12 @@ function MixDrill({ pool, play, throwReact, bonusFish, markHes }) {
         {q.tiles.map((t) => { const used = picks.some((p) => p.i === t.i); return (
           <button key={t.i} className="pressable" disabled={used || !!picked} style={{ width: 52, height: 52, fontSize: 21, fontWeight: 800, fontFamily: "inherit", background: used ? "var(--surface2)" : "var(--surface)", opacity: used ? 0.45 : 1, cursor: "pointer" }} onClick={() => tap(t)}>{t.ch}</button>); })}
       </div>
-      <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 12, flexWrap: "wrap" }}><button className="pressable" style={{ ...S.ghostBtn }} onClick={() => { if (!picked && picks.length) { setPicks(picks.slice(0, -1)); play("tap"); } }}>⌫ 退一格</button><button className="pressable" disabled={!!picked} style={{ ...S.ghostBtn, opacity: picked ? 0.4 : 1 }} onClick={hes}>🤔 犹豫 · 放入错题本</button></div>
+      {reveal ? <NextBtn onClick={goNext} /> : <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 12, flexWrap: "wrap" }}><button className="pressable" style={{ ...S.ghostBtn }} onClick={() => { if (!picked && picks.length) { setPicks(picks.slice(0, -1)); play("tap"); } }}>⌫ 退一格</button><button className="pressable" disabled={!!picked} style={{ ...S.ghostBtn, opacity: picked ? 0.4 : 1 }} onClick={hes}>🤔 犹豫 · 放入错题本</button></div>}
     </div>);
   }
   const isListen = q.type === "listen";
-  const pickOpt = (o) => { if (picked || (isListen && !heard)) return; setPicked(o); if (!isListen) speakJa(q.ans.term); settle(o.id === q.ans.id, o.id === q.ans.id ? 1000 : 2000); };
+  const revealed = !!picked && (picked === HES_MARK || (picked.id && picked.id !== q.ans.id));
+  const pickOpt = (o) => { if (picked || (isListen && !heard)) return; setPicked(o); if (!isListen) speakJa(q.ans.term); settle(o.id === q.ans.id); };
   return (<div className="fade-in"><DrillScore score={score} total={total} streak={streak} />
     <div className="card pop-in" style={{ ...S.bigCard, padding: "24px 20px" }}>
       <div style={{ fontSize: 12, color: C.grape, fontWeight: 800 }}>{isListen ? "🎧 听音辨字" : "🈶 假名认字"}</div>
@@ -2570,7 +2576,7 @@ function MixDrill({ pool, play, throwReact, bonusFish, markHes }) {
       if (picked) { if (o.id === q.ans.id) s2 = { ...s2, outline: "3px solid " + C.matchaDk, outlineOffset: -4, background: "var(--ok-bg)" }; else if (picked.id === o.id) s2 = { ...s2, outline: "3px solid " + C.blush, outlineOffset: -4, background: "var(--danger-bg)" }; }
       return <button key={o.id} className="pressable" style={s2} onClick={() => pickOpt(o)}><span style={{ fontSize: 20, fontWeight: 800 }}>{o.term}</span></button>;
     })}</div>
-    <HesBtn onClick={hes} disabled={!!picked} />
+    {revealed ? <NextBtn onClick={goNext} /> : <HesBtn onClick={hes} disabled={!!picked} />}
   </div>);
 }
 // ⏱️ 60秒冲刺：假名认字连发，答对+1分并加2秒，倒计时归零结算(破纪录存档)
