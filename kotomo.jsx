@@ -266,13 +266,27 @@ const SEED_FIX = (() => {
   return m;
 })();
 const fixSeedWord = (w) => { if (!w || !w.isSeed) return w; const f = SEED_FIX[(w.term || "") + "|" + (w.meaning || "")]; return f ? { ...w, term: f.term, reading: f.reading } : w; };
-// 振假名显示：正体(含外来词括号)为主，含汉字时把平假名读音以小字标在正上方；纯假名词不再标读音
+// 送假名剥离：把词首/词尾与读音相同的假名去掉，注音只标汉字核心(お釣り→つ 只在釣上；萌え→も 只在萌上)
+const isKanaCh = (c) => /[぀-ヿ]/.test(c || ""); // 平/片假名(含长音ー)
+function furiCore(term, reading) {
+  const t = Array.from(term || ""), r = Array.from(reading || "");
+  let s = 0; while (s < t.length && s < r.length && isKanaCh(t[s]) && t[s] === r[s]) s++;
+  let e = 0; while (e < t.length - s && e < r.length - s && isKanaCh(t[t.length - 1 - e]) && t[t.length - 1 - e] === r[r.length - 1 - e]) e++;
+  return { lead: t.slice(0, s).join(""), core: t.slice(s, t.length - e).join(""), trail: t.slice(t.length - e).join(""), coreReading: r.slice(s, r.length - e).join("") };
+}
+// 振假名显示：读音以小字标在汉字核心正上方并居中对齐；送假名不重复标；纯假名词不标读音
 const JaTerm = ({ w, size = 18, align = "flex-start" }) => {
   const furi = !!(w && w.reading && !isRomaji(w.reading) && hasKanji(w.term) && w.reading !== w.term);
-  return (<span style={{ display: "inline-flex", flexDirection: "column", alignItems: align, verticalAlign: "middle", lineHeight: 1.05, marginRight: 6 }}>
-    {furi && <span style={{ fontSize: Math.max(9, Math.round(size * 0.5)), color: C.inkSoft, fontWeight: 700, letterSpacing: 0.5 }}>{w.reading}</span>}
-    <span style={{ fontSize: size, fontWeight: 800 }}>{termWithLoan(w)}</span>
-  </span>);
+  if (!furi) return (<span style={{ fontSize: size, fontWeight: 800, marginRight: 6, verticalAlign: "middle" }}>{termWithLoan(w)}</span>);
+  const { lead, core, trail, coreReading } = furiCore(w.term, w.reading);
+  const fs = Math.max(9, Math.round(size * 0.5));
+  const seg = (txt, ruby, key) => (<span key={key} style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", lineHeight: 1.05 }}>
+    {ruby ? <span style={{ fontSize: fs, lineHeight: 1, color: C.inkSoft, fontWeight: 700, letterSpacing: 0.5, whiteSpace: "nowrap", marginBottom: 1 }}>{ruby}</span> : null}
+    <span style={{ fontSize: size, fontWeight: 800 }}>{txt}</span></span>);
+  if (!core) return (<span style={{ display: "inline-flex", flexDirection: "column", alignItems: align, verticalAlign: "middle", lineHeight: 1.05, marginRight: 6 }}>
+    <span style={{ fontSize: fs, color: C.inkSoft, fontWeight: 700, marginBottom: 1 }}>{w.reading}</span><span style={{ fontSize: size, fontWeight: 800 }}>{termWithLoan(w)}</span></span>);
+  return (<span style={{ display: "inline-flex", alignItems: "flex-end", verticalAlign: "middle", marginRight: 6 }}>
+    {lead ? seg(lead, "", "l") : null}{seg(core, coreReading, "c")}{trail ? seg(trail, "", "t") : null}</span>);
 };
 // 需要 AI 补正体/读音：term 或 reading 含罗马音/英文字母，或 term 是纯平假名(可能本可写汉字)。片假名/已含汉字的跳过
 const needsKanjiFix = (w) => { if (!w) return false; const t = (w.term || "").trim(); if (!t) return !!(w.meaning || "").trim(); if (/[a-zA-Z]/.test(t) || /[a-zA-Z]/.test(w.reading || "")) return true; if (w.loan && w.loan.word && !isKatakanaWord(t)) return true; return false; }; // 空term(有中文)→需根据意思生成日语；含罗马音/错标外来词→需修；纯假名词不误报
@@ -1298,7 +1312,7 @@ function MatchRound({ items, all, play, petReact, throwReact, onResult, onDone, 
       onContextMenu={(e) => { e.preventDefault(); markHes(w.id); }}
       onClick={() => { if (lpFired.current) { lpFired.current = false; return; } if (isM || wrongPair) return; play("tap"); if (side === "L") { setSelL(w.id); speakJa(w.term); } else setSelR(w.id); }}>
       {isM ? <div style={{ fontWeight: 800, fontSize: 20 }}>✓</div> : <>
-        <div style={{ fontSize: 10, color: C.inkSoft, height: 12, lineHeight: "12px", overflow: "hidden", whiteSpace: "nowrap", width: "100%" }}>{side === "L" && hasKanji(w.term) && w.reading && !isRomaji(w.reading) && w.reading !== w.term ? w.reading : ""}</div>
+        <div style={{ fontSize: 10, color: C.inkSoft, height: 12, lineHeight: "12px", overflow: "hidden", whiteSpace: "nowrap", width: "100%" }}>{side === "L" && hasKanji(w.term) && w.reading && !isRomaji(w.reading) && w.reading !== w.term ? furiCore(w.term, w.reading).coreReading : ""}</div>
         <div style={{ fontWeight: 800, fontSize: label.length > 12 ? 11 : label.length > 8 ? 13 : label.length > 5 ? 15 : 17, lineHeight: 1.12, width: "100%", overflow: "hidden", wordBreak: "break-word", display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: 2 }}>{hes[w.id] ? "🤔 " : ""}{label}</div>
       </>}</button>);
   };
