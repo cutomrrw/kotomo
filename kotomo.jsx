@@ -1149,13 +1149,9 @@ function Home({ ctx }) {
         <button className="pressable no-pix" style={S.hudBtn} onClick={() => { setMonitor(true); play("tap"); }} title="监控"><span style={{ fontSize: 19 }}>📹</span><span style={S.hudTxt}>监控</span></button>
         <button className="pressable no-pix" style={S.hudBtn} onClick={() => nav("center")} title="日记"><span style={{ fontSize: 19 }}>📔</span><span style={S.hudTxt}>日记</span></button>
       </div>
-      <div style={S.bubble} className="float-soft">{mood.word}</div>
+      {/* 心满意足气泡 / 段位行 / 点我消除 提示条 暂时删除(创始人) */}
       <div style={S.catWrapBig} className="pressable" onClick={() => { play("happy"); ctx.petLove(); }}>
         <div style={{ ...S.cat, transform: "scale(" + Math.min(catSize, 1.5) + ")" }}><Cat size={116} />{st.wearing && SHOP_BY_ID[st.wearing] && <span style={S.catWear}>{SHOP_BY_ID[st.wearing].icon}</span>}</div>
-      </div>
-      <div style={{ marginTop: "auto", width: "100%" }}>
-        <div style={S.moodChip}>{seg.emoji} {seg.title} · 已掌握 {mastered} 词{ns ? " · 再 " + (ns.min - mastered) + " 个升段" : ""}</div>
-        <button className="pressable no-pix" style={{ ...S.roomNudge, ...(roomAct.to ? {} : { cursor: "default" }) }} onClick={() => { if (roomAct.to) { if (roomAct.to === "review") ctx.setReviewWrongOnly(false); nav(roomAct.to); } }}>{roomAct.label}</button>
       </div>
     </div>
 
