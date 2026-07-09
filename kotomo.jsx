@@ -1031,7 +1031,6 @@ function LearnNew({ ctx }) {
         {w.kanjiTip && w.kanjiTip.kind === "trap" && w.kanjiTip.note && <div style={{ fontSize: 12.5, color: "var(--danger-fg)", marginTop: 8, lineHeight: 1.6 }}>⚠️ {w.kanjiTip.note}</div>}
         {w.contextSentence && <div style={{ fontSize: 13, color: "var(--ink-mid)", marginTop: 10, lineHeight: 1.7 }}>📍 你遇到它的地方：「{w.contextSentence}」</div>}
         {w.expanded && w.expanded.examples && w.expanded.examples[0] && <div style={{ fontSize: 13, color: "var(--ink-mid)", marginTop: 10, lineHeight: 1.8, cursor: "pointer" }} onClick={() => speakJa(w.expanded.examples[0].jp)}>🔊 {w.expanded.examples[0].jp}<br /><span style={{ color: "var(--ink-soft)" }}>{w.expanded.examples[0].zh}</span></div>}
-        {w.origin && w.origin.note && <div style={{ fontSize: 12, color: C.wood, marginTop: 8, lineHeight: 1.6 }}>📜 {w.origin.note}</div>}
       </div>
       <button className="pressable" style={{ ...S.bigBtn, marginTop: 14 }} onClick={gotIt}>✓ 记住了，下一个</button>
       <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
@@ -1863,8 +1862,7 @@ function Library({ ctx }) {
     {!fixing && fixMsg && <div style={{ ...S.setNote, marginBottom: 10, color: C.matchaDk, fontWeight: 800 }}>{fixMsg}</div>}
     {aiReal && tippable.length > 0 && <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.grape, boxShadow: "0 5px 0 var(--grape-dk)", opacity: tipping ? 0.75 : 1 }} disabled={tipping} onClick={runTips}>{tipping ? (tipMsg || "AI 标注中…") : "🈯 AI 标注汉字陷阱 · " + tippable.length + " 个待查"}</button>}
     {!tipping && tipMsg && <div style={{ ...S.setNote, marginBottom: 10, color: C.grapeDk || "var(--grape-dk)", fontWeight: 800 }}>{tipMsg}</div>}
-    {aiReal && originable.length > 0 && <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.wood, boxShadow: "0 5px 0 var(--bevel)", opacity: origining ? 0.75 : 1 }} disabled={origining} onClick={runOrigins}>{origining ? (originMsg || "AI 标注词源中…") : "📜 AI 标注词源·语源 · " + originable.length + " 个待标"}</button>}
-    {!origining && originMsg && <div style={{ ...S.setNote, marginBottom: 10, color: C.wood, fontWeight: 800 }}>{originMsg}</div>}
+    {/* 「词源」项暂时去除(创始人：有点多余)。逻辑 genOrigin/runOrigins 保留，想开回来把此按钮恢复即可 */}
     <div style={{ position: "relative", marginBottom: 10 }}>
       <input style={{ ...S.field, paddingRight: 34 }} value={search} placeholder="🔍 搜日语 / 中文 / 读音…" onChange={(e) => setSearch(e.target.value)} />
       {search && <button className="pressable no-pix" onClick={() => { setSearch(""); play("tap"); }} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", border: "none", background: "transparent", fontSize: 17, cursor: "pointer", color: "var(--ink-soft)", fontFamily: "inherit" }}>✕</button>}
@@ -1907,7 +1905,6 @@ function Library({ ctx }) {
             {w.kanjiTip && w.kanjiTip.kind === "same" && <Tag bg="var(--ok-bg)" fg={C.matchaDk}>✅你已会</Tag>}
             <div style={{ fontSize: 13, color: "var(--ink-mid)" }}>{w.meaning}{w.source ? " · 📍" + w.source : ""}</div>
             {w.kanjiTip && w.kanjiTip.kind === "trap" && w.kanjiTip.note && <div style={{ fontSize: 12, color: "var(--danger-fg)", marginTop: 2 }}>⚠️ {w.kanjiTip.note}</div>}
-            {w.origin && w.origin.note && <div style={{ fontSize: 12, color: C.wood, marginTop: 2, lineHeight: 1.5 }}>📜 词源{w.origin.kind ? "·" + w.origin.kind : ""}：{w.origin.note}</div>}
           </div>
           <div style={S.wStat}><span style={S.statPill}>练{w.seen || 0}</span>{(w.wrong || 0) > 0 && <span style={{ ...S.statPill, background: "var(--danger-bg)", color: "var(--danger-fg)" }}>错{w.wrong}</span>}</div>
         </div>)].concat(open ? [<div key={w.id + "edit"} className="card slide-up" style={S.editPanel}>
