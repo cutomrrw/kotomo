@@ -1880,6 +1880,14 @@ function Library({ ctx }) {
       seen: 0, wrong: 0, srs: { level: 0, dueAt: now(), lastReviewedAt: 0 } }));
     if (rows.length) { ctx.appendWords(rows, []); play("win"); }
   };
+  const hgMissing = HG_PACK.filter((p) => !words.some((w) => w.term === p[0]));
+  const addHgPack = () => {
+    const rows = hgMissing.map((p) => ({ id: uid(), type: "word", term: p[0], reading: p[1], meaning: p[2], pos: "noun", freq: !!p[3], loan: null,
+      mastered: false, source: "秒懂词包", expanded: null, cloze: null, kanjiTip: null, isSeed: true, learned: true,
+      verified: "verified", verifySrc: { reading: "seed", term: "seed", meaning: "seed" }, basicForm: "", contextSentence: "",
+      seen: 0, wrong: 0, srs: { level: 0, dueAt: now(), lastReviewedAt: 0 } }));
+    if (rows.length) { ctx.appendWords(rows, []); play("win"); }
+  };
   // 检索：搜日语(写法/读音)或中文(意思)，含外来词原词
   const q = search.trim().toLowerCase();
   const searched = q ? shown.filter((w) => ((w.term || "") + " " + (w.reading || "") + " " + (w.meaning || "") + " " + ((w.loan && w.loan.word) || "")).toLowerCase().includes(q)) : shown;
@@ -1887,6 +1895,7 @@ function Library({ ctx }) {
   const ordered = order === "new" ? [...searched].reverse() : searched;
   return (<div className="fade-in"><BackRow ctx={ctx} title="📚 我的词库" />
     <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.matcha, boxShadow: "0 5px 0 " + C.matchaDk }} onClick={() => { play("tap"); ctx.setView("add"); }}>🎙️ 去加词（打字/语音/展开）</button>
+    {hgMissing.length > 0 && <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.grape, boxShadow: "0 5px 0 var(--grape-dk)" }} onClick={addHgPack}>👀 补充经典秒懂词包（{hgMissing.length} 个：電話/銀行/病院…）</button>}
     {grammarMissing.length > 0 && <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.grape, boxShadow: "0 5px 0 var(--grape-dk)" }} onClick={addGrammarPack}>📐 补充常用语法包（{grammarMissing.length} 条：たいです/てください/…）</button>}
     {aiReal && transable.length > 0 && <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.matchaDk, boxShadow: "0 5px 0 var(--bevel)", opacity: translating ? 0.75 : 1 }} disabled={translating} onClick={runZhMeaning}>{translating ? (transMsg || "翻译中…") : "🈺 把只有英文的意思翻成中文 · " + transable.length + " 个"}</button>}
     {!aiReal && transable.length > 0 && <div style={{ ...S.setNote, marginBottom: 10, color: C.blush, fontWeight: 700 }}>有 {transable.length} 个词的意思只有英文。去「设置」贴 AI 密钥并开真AI，这里就能一键翻成中文。</div>}
@@ -2671,21 +2680,9 @@ function HomographChart({ ctx }) {
   const markHes = (id) => { if (!id) return; ctx.updateWord(id, (w) => ({ ...w, hesitant: true, mastered: false, srs: { ...(w.srs || { lastReviewedAt: 0 }), level: Math.min(((w.srs && w.srs.level) || 0), MASTER_LEVEL - 1), dueAt: now() } })); play("pop"); };
   const [mode, setMode] = useState("kana"); // 默认假名认字(不依赖声音,静音也能玩)
   const [showList, setShowList] = useState(false);
-  const missing = useMemo(() => HG_PACK.filter((p) => !st.words.some((w) => w.term === p[0])), [st.words]);
-  const addPack = () => {
-    const rows = missing.map((p) => ({ id: uid(), type: "word", term: p[0], reading: p[1], meaning: p[2], pos: "noun", freq: !!p[3], loan: null,
-      mastered: false, source: "秒懂词包", expanded: null, cloze: null, kanjiTip: null, isSeed: true,
-      verified: "verified", verifySrc: { reading: "seed", term: "seed", meaning: "seed" }, basicForm: "", contextSentence: "",
-      seen: 0, wrong: 0, srs: { level: 0, dueAt: now(), lastReviewedAt: 0 } }));
-    if (rows.length) { ctx.appendWords(rows, []); play("win"); }
-  };
-  const packBtn = missing.length > 0 && <div style={{ textAlign: "center", marginBottom: 10 }}>
-    <button className="pressable" style={{ ...S.bigBtn, maxWidth: 320, margin: "0 auto", background: C.grape, boxShadow: "0 5px 0 var(--grape-dk)" }} onClick={addPack}>➕ 补充经典秒懂词包（{missing.length} 个：電話/銀行/病院…）</button>
-  </div>;
-  if (pool.length < 4) return (<div className="fade-in"><BackRow ctx={ctx} title="👂 秒懂词·读音特训" />{packBtn}<div style={S.empty}>词库里的"秒懂词"还不到 4 个，先补充词包或去加点带汉字的词吧 🌱</div></div>);
+  if (pool.length < 4) return (<div className="fade-in"><BackRow ctx={ctx} title="👂 秒懂词·读音特训" /><div style={S.empty}>词库里的"秒懂词"还不到 4 个 🌱<br />去「📚 我的词库」点「补充经典秒懂词包」，或加点带汉字的词。</div></div>);
   return (<div className="fade-in"><BackRow ctx={ctx} title="👂 秒懂词·读音特训" />
     <div style={{ fontSize: 12.5, color: "var(--ink-mid)", textAlign: "center", margin: "0 0 10px", lineHeight: 1.7 }}>这些词你<b>看字就懂</b>，大脑会偷懒跳过读音——结果听不懂、说不出。这里把字形的"外挂"关掉，专练耳朵和嘴。</div>
-    {packBtn}
     <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
       <button className="pressable" style={{ ...S.seg, minWidth: "30%", ...(mode === "kana" ? S.segOn : {}) }} onClick={() => { setMode("kana"); play("tap"); }}>🈶 假名认字</button>
       <button className="pressable" style={{ ...S.seg, minWidth: "30%", ...(mode === "listen" ? S.segOn : {}) }} onClick={() => { setMode("listen"); play("tap"); }}>🎧 听音辨字</button>
