@@ -15,6 +15,9 @@
 !assets/cat/
 !assets/cat/*.png
 !assets/icon-180.png
+# 猫窝家具装饰素材（创始人提供的像素图：床/沙发/猫爬架/猫碗/挂饰包包）
+!assets/room/
+!assets/room/*.png
 
 # GitHub Pages: 跳过 Jekyll 构建(纯静态直发,防构建抽风)
 !.nojekyll

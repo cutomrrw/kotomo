@@ -71,6 +71,11 @@ const Cat = ({ size = 100, bob = true, exp = "idle" }) => (
   <img src={CAT_DIR + (CAT_EXP[exp] || CAT_EXP.idle)} alt="日狗" draggable={false}
     style={{ width: size, height: "auto", display: "inline-block", objectFit: "contain", animation: bob ? "bob 3.5s ease-in-out infinite" : "none", pointerEvents: "none" }} />
 );
+// 猫窝家具装饰：从 assets/room/ 加载像素图，绝对定位;文件不存在则自动隐藏(缺图不破版)
+const RoomImg = ({ src, style }) => (
+  <img src={"assets/room/" + src} alt="" draggable={false} onError={(e) => { e.currentTarget.style.display = "none"; }}
+    style={{ position: "absolute", imageRendering: "pixelated", pointerEvents: "none", ...style }} />
+);
 
 // ── 大块像素精灵：纯色方块网格 + crispEdges 硬边，画 💩 / 银色小鱼 ──
 const PIX_COLORS = { K: "#2b2b2b", W: "#ffffff", S: "#c7cfd8", L: "#ffffff", E: "#1a1a1a",
@@ -1149,10 +1154,16 @@ function Home({ ctx }) {
         <button className="pressable no-pix" style={S.hudBtn} onClick={() => { setMonitor(true); play("tap"); }} title="监控"><span style={{ fontSize: 19 }}>📹</span><span style={S.hudTxt}>监控</span></button>
         <button className="pressable no-pix" style={S.hudBtn} onClick={() => nav("center")} title="日记"><span style={{ fontSize: 19 }}>📔</span><span style={S.hudTxt}>日记</span></button>
       </div>
+      {/* 猫窝家具装饰(创始人素材)：文件放 assets/room/，缺图自动隐藏；位置先粗排，有图后再微调 */}
+      <RoomImg src="wallbag.png" style={{ top: "3%", left: "5%", width: "22%", zIndex: 1 }} />
+      <RoomImg src="cattree.png" style={{ bottom: "16%", left: "1%", width: "24%", zIndex: 1 }} />
+      <RoomImg src="bed.png" style={{ bottom: "4%", right: "2%", width: "42%", zIndex: 1 }} />
+      <RoomImg src="sofa.png" style={{ bottom: "6%", left: "16%", width: "38%", zIndex: 1 }} />
       {/* 心满意足气泡 / 段位行 / 点我消除 提示条 暂时删除(创始人) */}
-      <div style={S.catWrapBig} className="pressable" onClick={() => { play("happy"); ctx.petLove(); }}>
-        <div style={{ ...S.cat, transform: "scale(" + Math.min(catSize, 1.5) + ")" }}><Cat size={116} />{st.wearing && SHOP_BY_ID[st.wearing] && <span style={S.catWear}>{SHOP_BY_ID[st.wearing].icon}</span>}</div>
+      <div style={{ ...S.catWrapBig, zIndex: 2, alignItems: "flex-end", paddingBottom: "18%" }} className="pressable" onClick={() => { play("happy"); ctx.petLove(); }}>
+        <div style={{ ...S.cat, transform: "scale(" + Math.min(catSize, 1.25) + ")" }}><Cat size={100} />{st.wearing && SHOP_BY_ID[st.wearing] && <span style={S.catWear}>{SHOP_BY_ID[st.wearing].icon}</span>}</div>
       </div>
+      <RoomImg src="bowl.png" style={{ bottom: "10%", left: "60%", width: "13%", zIndex: 2 }} />
     </div>
 
     {/* 底部导航（错题强化不再单列，已并入底部「错题本」） */}
