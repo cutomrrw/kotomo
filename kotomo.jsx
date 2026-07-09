@@ -1114,24 +1114,25 @@ function Home({ ctx }) {
     { icon: "👂", label: "特训", on: () => nav("homograph") },
     { icon: "➕", label: "加词", on: () => nav("add"), center: true },
     { icon: "📚", label: "词库", on: () => nav("library") },
-    { icon: "📊", label: "统计", on: () => nav("center") },
+    { icon: "📕", label: "错题本", on: () => { if (!wrongs.length) return; ctx.setReviewWrongOnly(true); nav("review"); }, dim: !wrongs.length },
   ];
   return (<div className="fade-in" style={{ paddingBottom: 8 }}>
     {/* 连续天数 + 三档能量 */}
     <div style={S.streakRow}>
       <div style={S.streakCard}><span style={{ fontSize: 20 }}>🔥</span><div><div style={S.streakBig}>{st.streak.totalDays}<span style={{ fontSize: 12 }}> 天</span></div><div style={S.streakSmall}>累计学习 · 只涨不减</div></div></div>
-      <div style={S.tri}>{[["low", "🌙", "躺平"], ["normal", "☀️", "正常"], ["super", "🔥", "超能"]].map(([m, e, l]) => (
+      <div style={S.tri}>{[["low", "🌙", "冬眠"], ["normal", "☀️", "普通"], ["super", "🔥", "暴走"]].map(([m, e, l]) => (
         <button key={m} className="pressable" style={{ ...S.triBtn, ...(st.settings.energyMode === m ? S.triOn : {}) }} onClick={() => { ctx.setSetting("energyMode", m); play("tap"); }}>
           <span style={{ fontSize: 17 }}>{e}</span><span style={S.triLabel}>{l}</span></button>))}</div>
     </div>
 
     {/* 日狗大区(绝对核心) */}
     <div style={S.roomBig}>
-      {/* 悬浮 HUD：商店 / 衣柜 / 监控 */}
+      {/* 悬浮 HUD：商店 / 衣柜 / 监控 / 日记 */}
       <div style={S.hud}>
         <button className="pressable no-pix" style={S.hudBtn} onClick={() => nav("shop")} title="商店"><span style={{ fontSize: 19 }}>🛒</span><span style={S.hudTxt}>商店</span></button>
         <button className="pressable no-pix" style={S.hudBtn} onClick={() => nav("shop")} title="衣柜"><span style={{ fontSize: 19 }}>👕</span><span style={S.hudTxt}>衣柜</span></button>
         <button className="pressable no-pix" style={S.hudBtn} onClick={() => { setMonitor(true); play("tap"); }} title="监控"><span style={{ fontSize: 19 }}>📹</span><span style={S.hudTxt}>监控</span></button>
+        <button className="pressable no-pix" style={S.hudBtn} onClick={() => nav("center")} title="日记"><span style={{ fontSize: 19 }}>📔</span><span style={S.hudTxt}>日记</span></button>
       </div>
       <div style={S.bubble} className="float-soft">{mood.word}</div>
       <div style={S.catWrapBig} className="pressable" onClick={() => { play("happy"); ctx.petLove(); }}>
@@ -1143,10 +1144,7 @@ function Home({ ctx }) {
       </div>
     </div>
 
-    {wrongs.length > 0 && <button className="pressable" style={{ ...S.reviewBig, width: "100%", background: "var(--danger-bg)", borderColor: C.blush, boxShadow: "0 5px 0 var(--danger-bevel)", marginBottom: 4 }} onClick={() => { ctx.setReviewWrongOnly(true); nav("review"); }}>
-      <span style={{ fontSize: 20 }}>❗</span><div style={{ textAlign: "left" }}><div style={{ fontWeight: 800 }}>错题强化</div><div style={S.reviewSub}>{wrongs.length} 个易错/犹豫，答对才消灭</div></div></button>}
-
-    {/* 底部导航 */}
+    {/* 底部导航（错题强化不再单列，已并入底部「错题本」） */}
     <nav style={S.bnav}>{bnav.map((b) => (
       <button key={b.label} className="pressable no-pix" style={{ ...(b.center ? S.bnavCenter : S.bnavItem), ...(b.dim ? { opacity: .4 } : {}) }} onClick={b.on}>
         <span style={{ fontSize: b.center ? 26 : 21 }}>{b.icon}</span><span style={b.center ? S.bnavCLabel : S.bnavLabel}>{b.label}</span></button>))}</nav>
@@ -1246,7 +1244,7 @@ function ReviewRun({ ctx, mode }) {
       <div style={S.progOuter}><div style={{ ...S.progInner, width: ((qi / queue.length) * 100) + "%" }} /></div>
       <div style={S.hearts}>{"❤️".repeat(Math.max(0, hearts))}<span style={{ opacity: .25 }}>{"🤍".repeat(Math.max(0, 5 - hearts))}</span></div>
     </div>
-    {reviewWrongOnly && <div style={S.wrongBanner}>❗ 错题强化中 · 答对才算消灭</div>}
+    {reviewWrongOnly && <div style={S.wrongBanner}>📕 错题本 · 答对才算消灭</div>}
     <div style={{ fontSize: 11.5, color: C.inkSoft, textAlign: "center", margin: "2px 0 8px" }}>不确定的词，长按它 →「犹豫词」，会更高频回来考你（防排除法蒙混）</div>
     {q.kind === "match" && <MatchRound key={qi} items={q.items} all={st.words} play={play} petReact={ctx.petReact} throwReact={ctx.throwReact} onResult={recordResult} onDone={advance} onWrong={loseHeart} onHesitate={markHesitate} />}
     {q.kind === "card" && <CardRound key={qi} item={q.item} all={st.words} play={play} onResult={recordResult} onNext={advance} onWrong={loseHeart} onHesitate={markHesitate} />}
@@ -1968,14 +1966,13 @@ function ReviewCenter({ ctx }) {
   const base = tab === "wrong" ? wrongs : tab === "freq" ? freqs : studied;
   const sorted = [...base].sort((a, b) => sort === "wrong" ? ((b.wrong || 0) - (a.wrong || 0) || (b.seen || 0) - (a.seen || 0)) : sort === "seen" ? ((b.seen || 0) - (a.seen || 0)) : ((b.freq ? 1 : 0) - (a.freq ? 1 : 0)));
   const totalWrong = all.reduce((s, w) => s + (w.wrong || 0), 0);
-  return (<div className="fade-in"><BackRow ctx={ctx} title="🌟 复习中心" />
+  return (<div className="fade-in"><BackRow ctx={ctx} title="📔 学习日记" />
     <div style={S.statCards}>
       <div className="card" style={S.statCard}><div style={{ ...S.statBig, color: C.honeyDk }}>{st.streak.totalDays}</div><div style={S.statSmall}>累计学习天</div></div>
       <div className="card" style={S.statCard}><div style={{ ...S.statBig, color: C.matchaDk }}>{ctx.mastered}</div><div style={S.statSmall}>已掌握词</div></div>
       <div className="card" style={S.statCard}><div style={{ ...S.statBig, color: C.blush }}>{totalWrong}</div><div style={S.statSmall}>总错误次数</div></div>
     </div>
     <MiniCalendar calendar={st.streak.calendar} />
-    {wrongWords(all).length > 0 && <button className="pressable" style={{ ...S.bigBtn, background: C.blush, boxShadow: "0 6px 0 var(--blush-dk)", marginTop: 14 }} onClick={() => { ctx.setReviewWrongOnly(true); play("tap"); ctx.setView("review"); }}>❗ 强化错题（{wrongWords(all).length} 词）</button>}
     <div style={{ ...S.sectTitle, marginTop: 16 }}>📊 单词统计</div>
     <div style={S.filterRow}>
       <Chip on={tab === "all"} onClick={() => { setTab("all"); play("tap"); }}>学过 {studied.length}</Chip>
@@ -2726,7 +2723,7 @@ function Settings({ ctx }) {
           <button className="pressable" style={S.addBtn} onClick={saveKey}>存</button>
         </div>
       </Row>
-      <Row label="低能量模式" hint="状态不好时主动开，温柔不评判"><div style={S.energyWrap}>{[["low", "🌙 低能"], ["normal", "☀️ 正常"], ["super", "🔥 超人"]].map(([m, l]) => (<button key={m} style={{ ...S.energyBtn, padding: "6px 10px", fontSize: 12, ...(st.settings.energyMode === m ? S.energyOn : {}) }} onClick={() => { setSetting("energyMode", m); play("tap"); }}>{l}</button>))}</div></Row>
+      <Row label="能量模式" hint="状态不好时主动开，温柔不评判"><div style={S.energyWrap}>{[["low", "🌙 冬眠"], ["normal", "☀️ 普通"], ["super", "🔥 暴走"]].map(([m, l]) => (<button key={m} style={{ ...S.energyBtn, padding: "6px 10px", fontSize: 12, ...(st.settings.energyMode === m ? S.energyOn : {}) }} onClick={() => { setSetting("energyMode", m); play("tap"); }}>{l}</button>))}</div></Row>
     </div>
     <div className="card" style={{ ...S.setCard, padding: 14, marginTop: 14 }}>
       <div style={{ fontWeight: 800, marginBottom: 4 }}>➕ 补充初始词库</div>
@@ -2761,7 +2758,7 @@ const S = {
   stats: { display: "flex", gap: 8, alignItems: "center" }, stat: { display: "flex", gap: 4, alignItems: "center" },
   statVal: { fontWeight: 800, fontSize: 15, lineHeight: 1 }, statLabel: { fontSize: 10, color: C.inkSoft },
   aiToggle: { border: "none", borderRadius: 10, padding: "6px 8px", fontWeight: 800, fontSize: 11, cursor: "pointer", fontFamily: "inherit" },
-  iconBtn: { border: "none", background: "var(--surface)", borderRadius: 10, width: 32, height: 32, fontSize: 15, cursor: "pointer", boxShadow: "0 3px 0 var(--bevel)" },
+  iconBtn: { background: "var(--surface)", width: 42, height: 42, fontSize: 19, cursor: "pointer", display: "grid", placeItems: "center", fontFamily: "inherit", flexShrink: 0 },
   // 顶栏头像+昵称+等级
   profile: { display: "flex", alignItems: "center", gap: 10, cursor: "pointer", flex: 1, minWidth: 0, background: "none", border: "none", padding: 0, fontFamily: "inherit", textAlign: "left" },
   avatar: { width: 42, height: 42, borderRadius: 12, objectFit: "cover", background: "var(--window)", border: "3px solid var(--pix-border)", flexShrink: 0 },
