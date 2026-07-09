@@ -290,6 +290,8 @@ async function genKanjiTip(w) {
   const kind = (d && ["trap", "same", "other"].indexOf(d.kind) >= 0) ? d.kind : "other";
   return { kind, note: (d && d.note) ? String(d.note).trim() : "" };
 }
+// 意思栏只有英文、没中文的词（历史/外部数据，如 JMdict 英文释义混进来）：含拉丁字母且不含任何中文汉字
+const needsZhMeaning = (w) => { const m = (w.meaning || "").trim(); return !!m && /[A-Za-z]/.test(m) && !/[一-鿿々]/.test(m); };
 // 词源/语源：以日语为桥融会贯通。严防编造——不确定就 unknown;多说法都给且各标可信度(确定/有力/俗説·一说)
 const needsOrigin = (w) => (w.type || "word") === "word" && !!(w.term || "").trim() && !w.origin;
 async function genOrigin(w) {
@@ -1774,11 +1776,13 @@ function Library({ ctx }) {
   const [tipping, setTipping] = useState(false), [tipMsg, setTipMsg] = useState("");
   const [verifying, setVerifying] = useState(false), [verifyMsg, setVerifyMsg] = useState("");
   const [origining, setOrigining] = useState(false), [originMsg, setOriginMsg] = useState("");
+  const [translating, setTranslating] = useState(false), [transMsg, setTransMsg] = useState("");
   const aiReal = st.settings.aiReal;
   const words = st.words;
   const fixable = words.filter(needsKanjiFix); // 只有假名/罗马音、缺汉字正体的词
   const tippable = words.filter(needsKanjiTip); // 含汉字、还没做过"汉字对照"判定的词
   const originable = words.filter(needsOrigin); // 还没标过词源的词
+  const transable = words.filter(needsZhMeaning); // 意思栏只有英文、没有中文的词
   const verifiable = words.filter((w) => w.verified !== "verified" && (w.term || "").trim() && /[ぁ-んァ-ヶ一-鿿々ーｦ-ﾟ]/.test(w.term)); // 待核实、且 term 是日语的词（离线 kuromoji 能核读音）
   // AI 一键补全：逐个让 AI 把"假名/罗马音"补成 汉字正体 + 平假名读音（带进度）
   const runFix = async () => {
@@ -1833,6 +1837,21 @@ function Library({ ctx }) {
     }
     setVerifying(false); setVerifyMsg("已核实 " + ok + " 个词的读音 ✓" + (ok < list.length ? "（其余生僻/专有名词需 AI 或词典进一步核）" : "")); play("win"); setTimeout(() => setVerifyMsg(""), 5000);
   };
+  // AI：把「只有英文」的意思翻成地道中文（用日语词+英文释义作参考）
+  const runZhMeaning = async () => {
+    if (translating) return; const list = words.filter(needsZhMeaning); if (!list.length) return;
+    setTranslating(true); let done = 0, ok = 0;
+    for (const w of list) {
+      setTransMsg("翻译中… " + done + "/" + list.length);
+      try {
+        const sys = "给定一个日语词及其英文释义，用最地道、简洁的中文写出它的意思。只输出中文意思本身，不要英文、不要注音、不要解释。例：日语『網焼き』英文『grilling on a wire mesh』→ 铁网烤。";
+        const zh = stripFence(await callAI(sys, "日语：" + w.term + "（" + (w.reading || "") + "）\n英文：" + w.meaning)).trim();
+        if (zh && /[一-鿿]/.test(zh) && !needsZhMeaning({ meaning: zh })) { updateWord(w.id, (x) => ({ ...x, meaning: zh, verifySrc: { ...(x.verifySrc || {}), meaning: "ai" } })); ok++; }
+      } catch (e) { logEvent("warn", "英文意思翻中文失败", w.term + " / " + ((e && e.message) || e)); }
+      done++;
+    }
+    setTranslating(false); setTransMsg("已翻好 " + ok + " 个词的中文意思 ✓" + (ok < list.length ? "（其余可手动补）" : "")); play("win"); setTimeout(() => setTransMsg(""), 6000);
+  };
   const shown = filter === "all" ? words
     : filter === "freq" ? words.filter((w) => w.freq)
     : filter === "loan" ? words.filter((w) => w.loan)
@@ -1855,6 +1874,9 @@ function Library({ ctx }) {
   return (<div className="fade-in"><BackRow ctx={ctx} title="📚 我的词库" />
     <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.matcha, boxShadow: "0 5px 0 " + C.matchaDk }} onClick={() => { play("tap"); ctx.setView("add"); }}>🎙️ 去加词（打字/语音/展开）</button>
     {grammarMissing.length > 0 && <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.grape, boxShadow: "0 5px 0 var(--grape-dk)" }} onClick={addGrammarPack}>📐 补充常用语法包（{grammarMissing.length} 条：たいです/てください/…）</button>}
+    {aiReal && transable.length > 0 && <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.matchaDk, boxShadow: "0 5px 0 var(--bevel)", opacity: translating ? 0.75 : 1 }} disabled={translating} onClick={runZhMeaning}>{translating ? (transMsg || "翻译中…") : "🈺 把只有英文的意思翻成中文 · " + transable.length + " 个"}</button>}
+    {!aiReal && transable.length > 0 && <div style={{ ...S.setNote, marginBottom: 10, color: C.blush, fontWeight: 700 }}>有 {transable.length} 个词的意思只有英文。去「设置」贴 AI 密钥并开真AI，这里就能一键翻成中文。</div>}
+    {!translating && transMsg && <div style={{ ...S.setNote, marginBottom: 10, color: C.matchaDk, fontWeight: 800 }}>{transMsg}</div>}
     {verifiable.length > 0 && <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.sky, boxShadow: "0 5px 0 var(--bevel)", opacity: verifying ? 0.75 : 1 }} disabled={verifying} onClick={runVerify}>{verifying ? (verifyMsg || "词典核实中…") : "🔍 用词典核实读音·写法 · " + verifiable.length + " 个待核实"}</button>}
     {!verifying && verifyMsg && <div style={{ ...S.setNote, marginBottom: 10, color: C.sky, fontWeight: 800 }}>{verifyMsg}</div>}
     {aiReal && fixable.length > 0 && <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.honey, boxShadow: "0 5px 0 " + C.honeyDk, opacity: fixing ? 0.75 : 1 }} disabled={fixing} onClick={runFix}>{fixing ? (fixMsg || "AI 补全中…") : "🈶 用 AI 补全 " + fixable.length + " 个词的汉字/读音"}</button>}
