@@ -1157,8 +1157,8 @@ function Home({ ctx }) {
       {/* 猫窝家具装饰(创始人素材)：文件放 assets/room/，缺图自动隐藏；位置先粗排，有图后再微调 */}
       <RoomImg src="wallbag.png" style={{ top: "3%", left: "5%", width: "22%", zIndex: 1 }} />
       <RoomImg src="cattree.png" style={{ bottom: "16%", left: "1%", width: "24%", zIndex: 1 }} />
-      <RoomImg src="bed.png" style={{ bottom: "4%", right: "2%", width: "42%", zIndex: 1 }} />
-      <RoomImg src="sofa.png" style={{ bottom: "6%", left: "16%", width: "38%", zIndex: 1 }} />
+      <RoomImg src="bed.png" style={{ top: "9%", right: "23%", width: "39%", zIndex: 1 }} />
+      <RoomImg src="sofa.png" style={{ top: "26%", left: "3%", width: "38%", zIndex: 1 }} />
       {/* 心满意足气泡 / 段位行 / 点我消除 提示条 暂时删除(创始人) */}
       <div style={{ ...S.catWrapBig, zIndex: 2, alignItems: "flex-end", paddingBottom: "18%" }} className="pressable" onClick={() => { play("happy"); ctx.petLove(); }}>
         <div style={{ ...S.cat, transform: "scale(" + Math.min(catSize, 1.25) + ")" }}><Cat size={100} />{st.wearing && SHOP_BY_ID[st.wearing] && <span style={S.catWear}>{SHOP_BY_ID[st.wearing].icon}</span>}</div>
