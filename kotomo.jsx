@@ -1120,7 +1120,7 @@ function Home({ ctx }) {
     {/* 连续天数 + 三档能量 */}
     <div style={S.streakRow}>
       <div style={S.streakCard}><span style={{ fontSize: 20 }}>🔥</span><div><div style={S.streakBig}>{st.streak.totalDays}<span style={{ fontSize: 12 }}> 天</span></div><div style={S.streakSmall}>累计学习 · 只涨不减</div></div></div>
-      <div style={S.tri}>{[["low", "🌙", "冬眠"], ["normal", "☀️", "普通"], ["super", "🔥", "暴走"]].map(([m, e, l]) => (
+      <div style={S.tri}>{[["low", "🌙", "咸鱼"], ["normal", "☀️", "日常"], ["super", "🔥", "暴走"]].map(([m, e, l]) => (
         <button key={m} className="pressable" style={{ ...S.triBtn, ...(st.settings.energyMode === m ? S.triOn : {}) }} onClick={() => { ctx.setSetting("energyMode", m); play("tap"); }}>
           <span style={{ fontSize: 17 }}>{e}</span><span style={S.triLabel}>{l}</span></button>))}</div>
     </div>
@@ -2723,7 +2723,7 @@ function Settings({ ctx }) {
           <button className="pressable" style={S.addBtn} onClick={saveKey}>存</button>
         </div>
       </Row>
-      <Row label="能量模式" hint="状态不好时主动开，温柔不评判"><div style={S.energyWrap}>{[["low", "🌙 冬眠"], ["normal", "☀️ 普通"], ["super", "🔥 暴走"]].map(([m, l]) => (<button key={m} style={{ ...S.energyBtn, padding: "6px 10px", fontSize: 12, ...(st.settings.energyMode === m ? S.energyOn : {}) }} onClick={() => { setSetting("energyMode", m); play("tap"); }}>{l}</button>))}</div></Row>
+      <Row label="能量模式" hint="状态不好时主动开，温柔不评判"><div style={S.energyWrap}>{[["low", "🌙 咸鱼"], ["normal", "☀️ 日常"], ["super", "🔥 暴走"]].map(([m, l]) => (<button key={m} style={{ ...S.energyBtn, padding: "6px 10px", fontSize: 12, ...(st.settings.energyMode === m ? S.energyOn : {}) }} onClick={() => { setSetting("energyMode", m); play("tap"); }}>{l}</button>))}</div></Row>
     </div>
     <div className="card" style={{ ...S.setCard, padding: 14, marginTop: 14 }}>
       <div style={{ fontWeight: 800, marginBottom: 4 }}>➕ 补充初始词库</div>
