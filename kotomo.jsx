@@ -2409,7 +2409,7 @@ const DrillScore = ({ score, total, streak }) => (<div style={{ textAlign: "cent
 // 抽 1 答案 + 3 干扰(同池)
 const pick4 = (pool) => { const ans = pool[Math.floor(Math.random() * pool.length)]; const opts = [ans]; let guard = 0; while (opts.length < Math.min(4, pool.length) && guard++ < 60) { const r = pool[Math.floor(Math.random() * pool.length)]; if (!opts.some((x) => x.id === r.id)) opts.push(r); } return { ans, opts: shuffle(opts) }; };
 // 🎧 听音辨字：只放声音不给假名，四个汉字词里选出你听到的那个(字形帮不上忙，逼耳朵干活)
-function ListenDrill({ pool, play, throwReact, bonusFish }) {
+function ListenDrill({ pool, play, throwReact, bonusFish, markHes }) {
   const [q, setQ] = useState(() => pick4(pool));
   const [picked, setPicked] = useState(null); const [heard, setHeard] = useState(false);
   const [score, setScore] = useState(0), [total, setTotal] = useState(0), [streak, setStreak] = useState(0);
@@ -2421,6 +2421,7 @@ function ListenDrill({ pool, play, throwReact, bonusFish }) {
     if (ok) { play("correct"); if (throwReact) throwReact("churu"); setScore((s) => s + 1); const ns = streak + 1; setStreak(ns); if (ns % 5 === 0 && bonusFish) bonusFish(); } else { play("wrong"); setStreak(0); }
     nextT.current = setTimeout(() => { setPicked(null); setHeard(false); setQ(pick4(pool)); }, ok ? 1000 : 2000);
   };
+  const hes = () => { if (picked) return; if (markHes) markHes(q.ans.id); clearTimeout(nextT.current); setStreak(0); setPicked(null); setHeard(false); setQ(pick4(pool)); };
   return (<div className="fade-in">
     <DrillScore score={score} total={total} streak={streak} />
     <div className="card pop-in" style={{ ...S.bigCard, padding: "26px 20px" }}>
@@ -2432,10 +2433,14 @@ function ListenDrill({ pool, play, throwReact, bonusFish }) {
       if (picked) { if (o.id === q.ans.id) s2 = { ...s2, outline: "3px solid " + C.matchaDk, outlineOffset: -4, background: "var(--ok-bg)" }; else if (picked.id === o.id) s2 = { ...s2, outline: "3px solid " + C.blush, outlineOffset: -4, background: "var(--danger-bg)" }; }
       return <button key={o.id} className="pressable" style={s2} onClick={() => pick(o)}><span style={{ fontSize: 20, fontWeight: 800 }}>{o.term}</span></button>;
     })}</div>
+    <HesBtn onClick={hes} disabled={!!picked} />
   </div>);
 }
+// 特训「拿不准」键：标进错题本，跳下一题
+const HesBtn = ({ onClick, disabled }) => (<div style={{ display: "flex", justifyContent: "center", marginTop: 12 }}>
+  <button className="pressable" disabled={disabled} style={{ ...S.ghostBtn, opacity: disabled ? 0.4 : 1 }} title="拿不准？记进错题本，之后回来考你" onClick={onClick}>🤔 拿不准 · 记错题本</button></div>);
 // 🈶 假名认字：给假名注音(げんきん)，选出对应的汉字词——把"读音→字"的连接练反向(创始人提议)
-function KanaPickDrill({ pool, play, throwReact, bonusFish }) {
+function KanaPickDrill({ pool, play, throwReact, bonusFish, markHes }) {
   const [q, setQ] = useState(() => pick4(pool));
   const [picked, setPicked] = useState(null);
   const [score, setScore] = useState(0), [total, setTotal] = useState(0), [streak, setStreak] = useState(0);
@@ -2448,6 +2453,7 @@ function KanaPickDrill({ pool, play, throwReact, bonusFish }) {
     if (ok) { play("correct"); if (throwReact) throwReact("churu"); setScore((s) => s + 1); const ns = streak + 1; setStreak(ns); if (ns % 5 === 0 && bonusFish) bonusFish(); } else { play("wrong"); setStreak(0); }
     nextT.current = setTimeout(() => { setPicked(null); setQ(pick4(pool)); }, ok ? 900 : 2000);
   };
+  const hes = () => { if (picked) return; if (markHes) markHes(q.ans.id); clearTimeout(nextT.current); setStreak(0); setPicked(null); setQ(pick4(pool)); };
   return (<div className="fade-in">
     <DrillScore score={score} total={total} streak={streak} />
     <div className="card pop-in" style={{ ...S.bigCard, padding: "26px 20px" }}>
@@ -2459,6 +2465,7 @@ function KanaPickDrill({ pool, play, throwReact, bonusFish }) {
       if (picked) { if (o.id === q.ans.id) s2 = { ...s2, outline: "3px solid " + C.matchaDk, outlineOffset: -4, background: "var(--ok-bg)" }; else if (picked.id === o.id) s2 = { ...s2, outline: "3px solid " + C.blush, outlineOffset: -4, background: "var(--danger-bg)" }; }
       return <button key={o.id} className="pressable" style={s2} onClick={() => pick(o)}><span style={{ fontSize: 20, fontWeight: 800 }}>{o.term}</span></button>;
     })}</div>
+    <HesBtn onClick={hes} disabled={!!picked} />
   </div>);
 }
 // 🧩 拼读音：给汉字词，从打乱的假名块里拼出读音(能拼出来=能读出来=能说出来)
@@ -2505,7 +2512,7 @@ function SpellDrill({ pool, play, throwReact, bonusFish }) {
   </div>);
 }
 // 🎲 混合挑战：假名认字/听音辨字/拼读音 随机轮着出，不知道下一题考什么
-function MixDrill({ pool, play, throwReact, bonusFish }) {
+function MixDrill({ pool, play, throwReact, bonusFish, markHes }) {
   const makeQ = () => {
     const type = ["kana", "listen", "spell"][Math.floor(Math.random() * 3)];
     if (type === "spell") { const w = pool[Math.floor(Math.random() * pool.length)]; const chars = Array.from(w.reading); const extra = []; let g = 0; while (extra.length < 3 && g++ < 40) { const k = HIRA_POOL[Math.floor(Math.random() * HIRA_POOL.length)]; if (!chars.includes(k) && !extra.includes(k)) extra.push(k); } return { type, w, tiles: shuffle(chars.concat(extra).map((ch, i) => ({ ch, i }))) }; }
@@ -2522,6 +2529,7 @@ function MixDrill({ pool, play, throwReact, bonusFish }) {
     if (ok) { play("correct"); if (throwReact) throwReact("churu"); setScore((s) => s + 1); const ns = streak + 1; setStreak(ns); if (ns % 5 === 0 && bonusFish) bonusFish(); } else { play("wrong"); setStreak(0); }
     nextT.current = setTimeout(() => { setPicked(null); setHeard(false); setPicks([]); setReveal(false); setQ(makeQ()); }, delay);
   };
+  const hes = () => { if (picked || reveal) return; if (markHes) markHes(q.type === "spell" ? q.w.id : q.ans.id); clearTimeout(nextT.current); setStreak(0); setPicked(null); setHeard(false); setPicks([]); setReveal(false); setQ(makeQ()); };
   if (q.type === "spell") {
     const target = Array.from(q.w.reading);
     const tap = (t) => { if (reveal || picked || picks.some((p) => p.i === t.i)) return; const np = picks.concat(t); setPicks(np); play("tap");
@@ -2539,7 +2547,7 @@ function MixDrill({ pool, play, throwReact, bonusFish }) {
         {q.tiles.map((t) => { const used = picks.some((p) => p.i === t.i); return (
           <button key={t.i} className="pressable" disabled={used || !!picked} style={{ width: 52, height: 52, fontSize: 21, fontWeight: 800, fontFamily: "inherit", background: used ? "var(--surface2)" : "var(--surface)", opacity: used ? 0.45 : 1, cursor: "pointer" }} onClick={() => tap(t)}>{t.ch}</button>); })}
       </div>
-      <div style={{ display: "flex", justifyContent: "center", marginTop: 12 }}><button className="pressable" style={{ ...S.ghostBtn }} onClick={() => { if (!picked && picks.length) { setPicks(picks.slice(0, -1)); play("tap"); } }}>⌫ 退一格</button></div>
+      <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 12, flexWrap: "wrap" }}><button className="pressable" style={{ ...S.ghostBtn }} onClick={() => { if (!picked && picks.length) { setPicks(picks.slice(0, -1)); play("tap"); } }}>⌫ 退一格</button><button className="pressable" disabled={!!picked} style={{ ...S.ghostBtn, opacity: picked ? 0.4 : 1 }} onClick={hes}>🤔 拿不准 · 记错题本</button></div>
     </div>);
   }
   const isListen = q.type === "listen";
@@ -2557,6 +2565,7 @@ function MixDrill({ pool, play, throwReact, bonusFish }) {
       if (picked) { if (o.id === q.ans.id) s2 = { ...s2, outline: "3px solid " + C.matchaDk, outlineOffset: -4, background: "var(--ok-bg)" }; else if (picked.id === o.id) s2 = { ...s2, outline: "3px solid " + C.blush, outlineOffset: -4, background: "var(--danger-bg)" }; }
       return <button key={o.id} className="pressable" style={s2} onClick={() => pickOpt(o)}><span style={{ fontSize: 20, fontWeight: 800 }}>{o.term}</span></button>;
     })}</div>
+    <HesBtn onClick={hes} disabled={!!picked} />
   </div>);
 }
 // ⏱️ 60秒冲刺：假名认字连发，答对+1分并加2秒，倒计时归零结算(破纪录存档)
@@ -2611,6 +2620,8 @@ function SprintDrill({ pool, play, throwReact, bonusFish, best, onBest }) {
 function HomographChart({ ctx }) {
   const { st, play } = ctx;
   const pool = useMemo(() => st.words.filter(isTransparentKanji), [st.words]);
+  // 特训里点「拿不准」：把该词标 hesitant + 若已掌握则降级，确保它进错题本、之后回来考你
+  const markHes = (id) => { if (!id) return; ctx.updateWord(id, (w) => ({ ...w, hesitant: true, mastered: false, srs: { ...(w.srs || { lastReviewedAt: 0 }), level: Math.min(((w.srs && w.srs.level) || 0), MASTER_LEVEL - 1), dueAt: now() } })); play("pop"); };
   const [mode, setMode] = useState("kana"); // 默认假名认字(不依赖声音,静音也能玩)
   const [showList, setShowList] = useState(false);
   const missing = useMemo(() => HG_PACK.filter((p) => !st.words.some((w) => w.term === p[0])), [st.words]);
@@ -2635,10 +2646,10 @@ function HomographChart({ ctx }) {
       <button className="pressable" style={{ ...S.seg, minWidth: "30%", ...(mode === "mix" ? S.segOn : {}) }} onClick={() => { setMode("mix"); play("tap"); }}>🎲 混合挑战</button>
       <button className="pressable" style={{ ...S.seg, minWidth: "30%", ...(mode === "sprint" ? S.segOn : {}) }} onClick={() => { setMode("sprint"); play("tap"); }}>⏱️ 60秒冲刺</button>
     </div>
-    {mode === "kana" ? <KanaPickDrill pool={pool} play={play} throwReact={ctx.throwReact} bonusFish={ctx.bonusFish} />
-      : mode === "listen" ? <ListenDrill pool={pool} play={play} throwReact={ctx.throwReact} bonusFish={ctx.bonusFish} />
+    {mode === "kana" ? <KanaPickDrill pool={pool} play={play} throwReact={ctx.throwReact} bonusFish={ctx.bonusFish} markHes={markHes} />
+      : mode === "listen" ? <ListenDrill pool={pool} play={play} throwReact={ctx.throwReact} bonusFish={ctx.bonusFish} markHes={markHes} />
       : mode === "spell" ? <SpellDrill pool={pool} play={play} throwReact={ctx.throwReact} bonusFish={ctx.bonusFish} />
-      : mode === "mix" ? <MixDrill pool={pool} play={play} throwReact={ctx.throwReact} bonusFish={ctx.bonusFish} />
+      : mode === "mix" ? <MixDrill pool={pool} play={play} throwReact={ctx.throwReact} bonusFish={ctx.bonusFish} markHes={markHes} />
       : <SprintDrill pool={pool} play={play} throwReact={ctx.throwReact} bonusFish={ctx.bonusFish} best={st.hgBest || 0} onBest={ctx.setHgBest} />}
     <div style={{ textAlign: "center", marginTop: 14 }}>
       <button className="pressable" style={{ ...S.ghostBtn }} onClick={() => { setShowList(!showList); play("tap"); }}>{showList ? "收起词单 ▴" : "查看词单(" + pool.length + " 个秒懂词) ▾"}</button>
