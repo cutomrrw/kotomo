@@ -1130,7 +1130,7 @@ function Home({ ctx }) {
       {/* 悬浮 HUD：商店 / 衣柜 / 监控 / 日记 */}
       <div style={S.hud}>
         <button className="pressable no-pix" style={S.hudBtn} onClick={() => nav("shop")} title="商店"><span style={{ fontSize: 19 }}>🛒</span><span style={S.hudTxt}>商店</span></button>
-        <button className="pressable no-pix" style={S.hudBtn} onClick={() => nav("shop")} title="衣柜"><span style={{ fontSize: 19 }}>👕</span><span style={S.hudTxt}>衣柜</span></button>
+        <button className="pressable no-pix" style={S.hudBtn} onClick={() => nav("shop")} title="衣橱"><span style={{ fontSize: 19 }}>👕</span><span style={S.hudTxt}>衣橱</span></button>
         <button className="pressable no-pix" style={S.hudBtn} onClick={() => { setMonitor(true); play("tap"); }} title="监控"><span style={{ fontSize: 19 }}>📹</span><span style={S.hudTxt}>监控</span></button>
         <button className="pressable no-pix" style={S.hudBtn} onClick={() => nav("center")} title="日记"><span style={{ fontSize: 19 }}>📔</span><span style={S.hudTxt}>日记</span></button>
       </div>
@@ -1159,7 +1159,7 @@ function Home({ ctx }) {
           <div style={{ width: 130, height: 12, background: "var(--track)", border: "2px solid var(--pix-border)", overflow: "hidden" }}><div style={{ height: "100%", width: Math.round((st.pet.mood ?? 75)) + "%", background: C.matcha }} /></div>
           <span style={{ fontSize: 12, fontWeight: 800, color: C.matchaDk }}>{Math.round(st.pet.mood ?? 75)}</span>
         </div>
-        <div style={{ fontSize: 12, color: "var(--ink-mid)", lineHeight: 1.7, marginTop: 4 }}>陪伴 {st.streak.totalDays} 天 · 身上穿着 {st.wearing && SHOP_BY_ID[st.wearing] ? SHOP_BY_ID[st.wearing].icon + SHOP_BY_ID[st.wearing].name : "还没换装(去衣柜)"}</div>
+        <div style={{ fontSize: 12, color: "var(--ink-mid)", lineHeight: 1.7, marginTop: 4 }}>陪伴 {st.streak.totalDays} 天 · 身上穿着 {st.wearing && SHOP_BY_ID[st.wearing] ? SHOP_BY_ID[st.wearing].icon + SHOP_BY_ID[st.wearing].name : "还没换装(去衣橱)"}</div>
         <button className="pressable" style={{ ...S.bigBtn, marginTop: 12 }} onClick={() => { setMonitor(false); play("happy"); ctx.petLove(); }}>戳它一下 ❤️</button>
       </div>
     </div>}
