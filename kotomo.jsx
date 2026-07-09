@@ -2470,7 +2470,7 @@ function KanaPickDrill({ pool, play, throwReact, bonusFish, markHes }) {
   </div>);
 }
 // 🧩 拼读音：给汉字词，从打乱的假名块里拼出读音(能拼出来=能读出来=能说出来)
-function SpellDrill({ pool, play, throwReact, bonusFish }) {
+function SpellDrill({ pool, play, throwReact, bonusFish, markHes }) {
   const makeQ = () => { const w = pool[Math.floor(Math.random() * pool.length)]; const chars = Array.from(w.reading); const extra = []; let guard = 0; while (extra.length < Math.min(3, 10 - chars.length > 0 ? 3 : 0) && guard++ < 40) { const k = HIRA_POOL[Math.floor(Math.random() * HIRA_POOL.length)]; if (!chars.includes(k) && !extra.includes(k)) extra.push(k); } const tiles = shuffle(chars.concat(extra).map((ch, i) => ({ ch, i }))); return { w, tiles }; };
   const [q, setQ] = useState(makeQ);
   const [picks, setPicks] = useState([]); // [{ch,i}]
@@ -2488,11 +2488,12 @@ function SpellDrill({ pool, play, throwReact, bonusFish }) {
       const ok = np.map((p) => p.ch).join("") === q.w.reading;
       setTotal((x) => x + 1);
       if (ok) { setState("right"); play("correct"); if (throwReact) throwReact("churu"); speakJa(q.w.term); setScore((s) => s + 1); const ns = streak + 1; setStreak(ns); if (ns % 5 === 0 && bonusFish) bonusFish(); advance(1300); }
-      else if (fails >= 1) { setState("reveal"); play("wrong"); setStreak(0); speakJa(q.w.term); advance(2200); } // 错第二次→揭晓答案再走
+      else if (fails >= 1) { setState("reveal"); play("wrong"); setStreak(0); speakJa(q.w.term); if (markHes) markHes(q.w.id); advance(2200); } // 错第二次→揭晓答案 + 放错题本
       else { setState("wrong"); play("wrong"); setStreak(0); setFails(1); nextT.current = setTimeout(() => { setPicks([]); setState("doing"); }, 800); }
     }
   };
   const undo = () => { if (state === "doing" && picks.length) { setPicks(picks.slice(0, -1)); play("tap"); } };
+  const hes = () => { if (state !== "doing") return; if (markHes) markHes(q.w.id); setStreak(0); setState("reveal"); speakJa(q.w.term); clearTimeout(nextT.current); advance(2400); };
   return (<div className="fade-in">
     <DrillScore score={score} total={total} streak={streak} />
     <div className="card pop-in" style={{ ...S.bigCard, padding: "22px 20px" }}>
@@ -2507,8 +2508,9 @@ function SpellDrill({ pool, play, throwReact, bonusFish }) {
       {q.tiles.map((t) => { const used = picks.some((p) => p.i === t.i); return (
         <button key={t.i} className="pressable" disabled={used || state !== "doing"} style={{ width: 52, height: 52, fontSize: 21, fontWeight: 800, fontFamily: "inherit", background: used ? "var(--surface2)" : "var(--surface)", color: used ? "var(--ink-soft)" : "var(--ink)", cursor: "pointer", opacity: used ? 0.45 : 1 }} onClick={() => tap(t)}>{t.ch}</button>); })}
     </div>
-    <div style={{ display: "flex", justifyContent: "center", marginTop: 12 }}>
+    <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap", marginTop: 12 }}>
       <button className="pressable" style={{ ...S.ghostBtn }} onClick={undo}>⌫ 退一格</button>
+      <button className="pressable" disabled={state !== "doing"} style={{ ...S.ghostBtn, opacity: state !== "doing" ? 0.4 : 1 }} onClick={hes}>🤔 犹豫 · 放入错题本</button>
     </div>
   </div>);
 }
@@ -2651,7 +2653,7 @@ function HomographChart({ ctx }) {
     </div>
     {mode === "kana" ? <KanaPickDrill pool={pool} play={play} throwReact={ctx.throwReact} bonusFish={ctx.bonusFish} markHes={markHes} />
       : mode === "listen" ? <ListenDrill pool={pool} play={play} throwReact={ctx.throwReact} bonusFish={ctx.bonusFish} markHes={markHes} />
-      : mode === "spell" ? <SpellDrill pool={pool} play={play} throwReact={ctx.throwReact} bonusFish={ctx.bonusFish} />
+      : mode === "spell" ? <SpellDrill pool={pool} play={play} throwReact={ctx.throwReact} bonusFish={ctx.bonusFish} markHes={markHes} />
       : mode === "mix" ? <MixDrill pool={pool} play={play} throwReact={ctx.throwReact} bonusFish={ctx.bonusFish} markHes={markHes} />
       : <SprintDrill pool={pool} play={play} throwReact={ctx.throwReact} bonusFish={ctx.bonusFish} best={st.hgBest || 0} onBest={ctx.setHgBest} />}
   </div>);
