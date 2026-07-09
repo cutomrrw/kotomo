@@ -2421,12 +2421,12 @@ function ListenDrill({ pool, play, throwReact, bonusFish, markHes }) {
     if (ok) { play("correct"); if (throwReact) throwReact("churu"); setScore((s) => s + 1); const ns = streak + 1; setStreak(ns); if (ns % 5 === 0 && bonusFish) bonusFish(); } else { play("wrong"); setStreak(0); }
     nextT.current = setTimeout(() => { setPicked(null); setHeard(false); setQ(pick4(pool)); }, ok ? 1000 : 2000);
   };
-  const hes = () => { if (picked) return; if (markHes) markHes(q.ans.id); clearTimeout(nextT.current); setStreak(0); setPicked(null); setHeard(false); setQ(pick4(pool)); };
+  const hes = () => { if (picked) return; if (markHes) markHes(q.ans.id); setStreak(0); setHeard(true); setPicked(HES_MARK); speakJa(q.ans.term); clearTimeout(nextT.current); nextT.current = setTimeout(() => { setPicked(null); setHeard(false); setQ(pick4(pool)); }, 2000); };
   return (<div className="fade-in">
     <DrillScore score={score} total={total} streak={streak} />
     <div className="card pop-in" style={{ ...S.bigCard, padding: "26px 20px" }}>
       <button className="pressable" style={{ ...S.bigBtn, maxWidth: 240, margin: "0 auto" }} onClick={() => { speakJa(q.ans.term); setHeard(true); play("tap"); }}>🔊 {heard ? "再听一次" : "点我听发音"}</button>
-      <div style={{ fontSize: 13, color: "var(--ink-soft)", marginTop: 10 }}>{picked ? (picked.id === q.ans.id ? "✓ " : "✗ 是「" + q.ans.term + "」 ") + q.ans.reading + " · " + q.ans.meaning : heard ? "它是下面哪个词？" : "先听，再选(听不清可反复听)"}</div>
+      <div style={{ fontSize: 13, color: "var(--ink-soft)", marginTop: 10 }}>{picked ? (picked === HES_MARK ? "🤔 答案是「" + q.ans.term + "」 " : picked.id === q.ans.id ? "✓ " : "✗ 是「" + q.ans.term + "」 ") + q.ans.reading + " · " + q.ans.meaning : heard ? "它是下面哪个词？" : "先听，再选(听不清可反复听)"}</div>
     </div>
     <div style={{ ...S.optGrid, marginTop: 14 }}>{q.opts.map((o) => {
       let s2 = { ...S.opt, opacity: heard ? 1 : 0.5 };
@@ -2437,8 +2437,9 @@ function ListenDrill({ pool, play, throwReact, bonusFish, markHes }) {
   </div>);
 }
 // 特训「拿不准」键：标进错题本，跳下一题
+const HES_MARK = { id: "__hes__" }; // 点「犹豫」后的占位选中：让正确项高亮、揭晓答案，但不算选错任何一项
 const HesBtn = ({ onClick, disabled }) => (<div style={{ display: "flex", justifyContent: "center", marginTop: 12 }}>
-  <button className="pressable" disabled={disabled} style={{ ...S.ghostBtn, opacity: disabled ? 0.4 : 1 }} title="拿不准？记进错题本，之后回来考你" onClick={onClick}>🤔 拿不准 · 记错题本</button></div>);
+  <button className="pressable" disabled={disabled} style={{ ...S.ghostBtn, opacity: disabled ? 0.4 : 1 }} title="拿不准就点它：告诉你答案，并放入错题本回来考你" onClick={onClick}>🤔 犹豫 · 放入错题本</button></div>);
 // 🈶 假名认字：给假名注音(げんきん)，选出对应的汉字词——把"读音→字"的连接练反向(创始人提议)
 function KanaPickDrill({ pool, play, throwReact, bonusFish, markHes }) {
   const [q, setQ] = useState(() => pick4(pool));
@@ -2453,12 +2454,12 @@ function KanaPickDrill({ pool, play, throwReact, bonusFish, markHes }) {
     if (ok) { play("correct"); if (throwReact) throwReact("churu"); setScore((s) => s + 1); const ns = streak + 1; setStreak(ns); if (ns % 5 === 0 && bonusFish) bonusFish(); } else { play("wrong"); setStreak(0); }
     nextT.current = setTimeout(() => { setPicked(null); setQ(pick4(pool)); }, ok ? 900 : 2000);
   };
-  const hes = () => { if (picked) return; if (markHes) markHes(q.ans.id); clearTimeout(nextT.current); setStreak(0); setPicked(null); setQ(pick4(pool)); };
+  const hes = () => { if (picked) return; if (markHes) markHes(q.ans.id); setStreak(0); setPicked(HES_MARK); speakJa(q.ans.term); clearTimeout(nextT.current); nextT.current = setTimeout(() => { setPicked(null); setQ(pick4(pool)); }, 2000); };
   return (<div className="fade-in">
     <DrillScore score={score} total={total} streak={streak} />
     <div className="card pop-in" style={{ ...S.bigCard, padding: "26px 20px" }}>
       <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: 2 }}>{q.ans.reading}</div>
-      <div style={{ fontSize: 13, color: "var(--ink-soft)", marginTop: 8 }}>{picked ? (picked.id === q.ans.id ? "✓ " : "✗ 是「" + q.ans.term + "」 ") + q.ans.meaning : "这个读音是下面哪个词？"}</div>
+      <div style={{ fontSize: 13, color: "var(--ink-soft)", marginTop: 8 }}>{picked ? (picked === HES_MARK ? "🤔 答案是「" + q.ans.term + "」 " : picked.id === q.ans.id ? "✓ " : "✗ 是「" + q.ans.term + "」 ") + q.ans.meaning : "这个读音是下面哪个词？"}</div>
     </div>
     <div style={{ ...S.optGrid, marginTop: 14 }}>{q.opts.map((o) => {
       let s2 = { ...S.opt };
@@ -2529,7 +2530,9 @@ function MixDrill({ pool, play, throwReact, bonusFish, markHes }) {
     if (ok) { play("correct"); if (throwReact) throwReact("churu"); setScore((s) => s + 1); const ns = streak + 1; setStreak(ns); if (ns % 5 === 0 && bonusFish) bonusFish(); } else { play("wrong"); setStreak(0); }
     nextT.current = setTimeout(() => { setPicked(null); setHeard(false); setPicks([]); setReveal(false); setQ(makeQ()); }, delay);
   };
-  const hes = () => { if (picked || reveal) return; if (markHes) markHes(q.type === "spell" ? q.w.id : q.ans.id); clearTimeout(nextT.current); setStreak(0); setPicked(null); setHeard(false); setPicks([]); setReveal(false); setQ(makeQ()); };
+  const hes = () => { if (picked || reveal) return; const isSpell = q.type === "spell"; if (markHes) markHes(isSpell ? q.w.id : q.ans.id); setStreak(0); speakJa(isSpell ? q.w.term : q.ans.term);
+    if (isSpell) { setPicked(true); setReveal(true); } else { setHeard(true); setPicked(HES_MARK); }
+    clearTimeout(nextT.current); nextT.current = setTimeout(() => { setPicked(null); setHeard(false); setPicks([]); setReveal(false); setQ(makeQ()); }, 2400); };
   if (q.type === "spell") {
     const target = Array.from(q.w.reading);
     const tap = (t) => { if (reveal || picked || picks.some((p) => p.i === t.i)) return; const np = picks.concat(t); setPicks(np); play("tap");
@@ -2547,7 +2550,7 @@ function MixDrill({ pool, play, throwReact, bonusFish, markHes }) {
         {q.tiles.map((t) => { const used = picks.some((p) => p.i === t.i); return (
           <button key={t.i} className="pressable" disabled={used || !!picked} style={{ width: 52, height: 52, fontSize: 21, fontWeight: 800, fontFamily: "inherit", background: used ? "var(--surface2)" : "var(--surface)", opacity: used ? 0.45 : 1, cursor: "pointer" }} onClick={() => tap(t)}>{t.ch}</button>); })}
       </div>
-      <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 12, flexWrap: "wrap" }}><button className="pressable" style={{ ...S.ghostBtn }} onClick={() => { if (!picked && picks.length) { setPicks(picks.slice(0, -1)); play("tap"); } }}>⌫ 退一格</button><button className="pressable" disabled={!!picked} style={{ ...S.ghostBtn, opacity: picked ? 0.4 : 1 }} onClick={hes}>🤔 拿不准 · 记错题本</button></div>
+      <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 12, flexWrap: "wrap" }}><button className="pressable" style={{ ...S.ghostBtn }} onClick={() => { if (!picked && picks.length) { setPicks(picks.slice(0, -1)); play("tap"); } }}>⌫ 退一格</button><button className="pressable" disabled={!!picked} style={{ ...S.ghostBtn, opacity: picked ? 0.4 : 1 }} onClick={hes}>🤔 犹豫 · 放入错题本</button></div>
     </div>);
   }
   const isListen = q.type === "listen";
@@ -2558,7 +2561,7 @@ function MixDrill({ pool, play, throwReact, bonusFish, markHes }) {
       {isListen
         ? <button className="pressable" style={{ ...S.bigBtn, maxWidth: 240, margin: "8px auto 0" }} onClick={() => { speakJa(q.ans.term); setHeard(true); play("tap"); }}>🔊 {heard ? "再听一次" : "点我听发音"}</button>
         : <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: 2, marginTop: 4 }}>{q.ans.reading}</div>}
-      <div style={{ fontSize: 13, color: "var(--ink-soft)", marginTop: 8 }}>{picked ? (picked.id === q.ans.id ? "✓ " : "✗ 是「" + q.ans.term + "」 ") + q.ans.reading + " · " + q.ans.meaning : isListen && !heard ? "先听，再选" : "是下面哪个词？"}</div>
+      <div style={{ fontSize: 13, color: "var(--ink-soft)", marginTop: 8 }}>{picked ? (picked === HES_MARK ? "🤔 答案是「" + q.ans.term + "」 " : picked.id === q.ans.id ? "✓ " : "✗ 是「" + q.ans.term + "」 ") + q.ans.reading + " · " + q.ans.meaning : isListen && !heard ? "先听，再选" : "是下面哪个词？"}</div>
     </div>
     <div style={{ ...S.optGrid, marginTop: 14 }}>{q.opts.map((o) => {
       let s2 = { ...S.opt, opacity: isListen && !heard ? 0.5 : 1 };
@@ -2651,13 +2654,6 @@ function HomographChart({ ctx }) {
       : mode === "spell" ? <SpellDrill pool={pool} play={play} throwReact={ctx.throwReact} bonusFish={ctx.bonusFish} />
       : mode === "mix" ? <MixDrill pool={pool} play={play} throwReact={ctx.throwReact} bonusFish={ctx.bonusFish} markHes={markHes} />
       : <SprintDrill pool={pool} play={play} throwReact={ctx.throwReact} bonusFish={ctx.bonusFish} best={st.hgBest || 0} onBest={ctx.setHgBest} />}
-    <div style={{ textAlign: "center", marginTop: 14 }}>
-      <button className="pressable" style={{ ...S.ghostBtn }} onClick={() => { setShowList(!showList); play("tap"); }}>{showList ? "收起词单 ▴" : "查看词单(" + pool.length + " 个秒懂词) ▾"}</button>
-    </div>
-    {showList && <div className="card" style={{ marginTop: 10, padding: "10px 12px" }}>{pool.map((w) => (
-      <div key={w.id} style={{ display: "flex", alignItems: "baseline", gap: 8, padding: "5px 2px", borderBottom: "1.5px dashed var(--surface2)", cursor: "pointer" }} onClick={() => speakJa(w.term)}>
-        <span style={{ fontWeight: 800, fontSize: 15 }}>{w.term}</span><span style={{ fontSize: 12.5, color: C.honeyDk, fontWeight: 700 }}>{w.reading}</span><span style={{ fontSize: 12, color: "var(--ink-soft)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{w.meaning}</span><span style={{ fontSize: 12 }}>🔊</span>
-      </div>))}</div>}
   </div>);
 }
 
