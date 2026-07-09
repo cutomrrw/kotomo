@@ -1895,7 +1895,7 @@ function Library({ ctx }) {
   const ordered = order === "new" ? [...searched].reverse() : searched;
   return (<div className="fade-in"><BackRow ctx={ctx} title="📚 我的词库" />
     <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.matcha, boxShadow: "0 5px 0 " + C.matchaDk }} onClick={() => { play("tap"); ctx.setView("add"); }}>🎙️ 去加词（打字/语音/展开）</button>
-    {hgMissing.length > 0 && <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.grape, boxShadow: "0 5px 0 var(--grape-dk)" }} onClick={addHgPack}>👀 补充经典秒懂词包（{hgMissing.length} 个：電話/銀行/病院…）</button>}
+    {/* 「补充秒懂词包」按钮暂时全局隐藏(创始人)。逻辑 hgMissing/addHgPack 保留，想开回来把此按钮恢复即可 */}
     {grammarMissing.length > 0 && <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.grape, boxShadow: "0 5px 0 var(--grape-dk)" }} onClick={addGrammarPack}>📐 补充常用语法包（{grammarMissing.length} 条：たいです/てください/…）</button>}
     {aiReal && transable.length > 0 && <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.matchaDk, boxShadow: "0 5px 0 var(--bevel)", opacity: translating ? 0.75 : 1 }} disabled={translating} onClick={runZhMeaning}>{translating ? (transMsg || "翻译中…") : "🈺 把只有英文的意思翻成中文 · " + transable.length + " 个"}</button>}
     {!aiReal && transable.length > 0 && <div style={{ ...S.setNote, marginBottom: 10, color: C.blush, fontWeight: 700 }}>有 {transable.length} 个词的意思只有英文。去「设置」贴 AI 密钥并开真AI，这里就能一键翻成中文。</div>}
