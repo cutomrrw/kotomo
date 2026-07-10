@@ -480,6 +480,23 @@ const KURO_WORKER_SRC = [
   '  self.postMessage({type:"res",id:d.id,tokens:toks});}',
   '};'
 ].join("\n");
+// ── 图片 OCR：Tesseract.js(浏览器内识别，日文模型)，仅在用户用"拍照/图片"时按需加载 ──
+let _tessP = null;
+function loadTesseract() {
+  if (typeof window !== "undefined" && window.Tesseract) return Promise.resolve(window.Tesseract);
+  if (_tessP) return _tessP;
+  _tessP = new Promise((resolve, reject) => {
+    try {
+      const s = document.createElement("script");
+      s.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
+      s.async = true;
+      s.onload = () => window.Tesseract ? resolve(window.Tesseract) : (_tessP = null, reject(new Error("OCR 引擎未就绪")));
+      s.onerror = () => { _tessP = null; reject(new Error("OCR 引擎加载失败(需联网)")); };
+      document.head.appendChild(s);
+    } catch (e) { _tessP = null; reject(e); }
+  });
+  return _tessP;
+}
 function loadKuromoji() {
   if (_kuroReady) return _kuroReady;
   _kuroReady = new Promise((resolve, reject) => {
@@ -1548,12 +1565,13 @@ function AddWords({ ctx }) {
   return (<div className="fade-in"><BackRow ctx={ctx} title="🎙️ 加词" onBack={tab === "expand" ? () => { if (expandBackRef.current && expandBackRef.current()) return; setExpandWord(null); setTab("type"); } : undefined} />
     {!aiReal && <div style={{ background: "var(--warn-bg)", border: "3px solid var(--pix-border)", padding: "9px 12px", marginBottom: 10, fontSize: 12.5, lineHeight: 1.7, color: "var(--ink-mid)", fontWeight: 700 }}>
       🔕 当前是「AI拟」离线模式：只自动补<b>读音</b>，<b>不会自动补中文意思</b>。想恢复自动补全 → <span style={{ color: C.matchaDk, fontWeight: 800, cursor: "pointer", textDecoration: "underline" }} onClick={() => ctx.setView("settings")}>去设置贴 AI 密钥</span>（换设备/加到主屏幕后密钥要重新贴一次，两边存档是分开的）。</div>}
-    {tab !== "expand" && <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>{[["ja", "日 → 中（输入日语）"], ["zh", "中 → 日（输入中文）"]].map(([k, l]) => (
+    {tab !== "expand" && tab !== "photo" && <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>{[["ja", "日 → 中（输入日语）"], ["zh", "中 → 日（输入中文）"]].map(([k, l]) => (
       <button key={k} className="pressable" style={{ ...S.seg, flex: 1, ...(dir === k ? S.segOn : {}) }} onClick={() => { setDir(k); play("tap"); }}>{l}</button>))}</div>}
-    <div style={S.segRow}>{[["type", "⌨️ 打字"], ["voice", "🎙️ 语音"], ["expand", "✨ 展开学习"]].map(([k, l]) => (
+    <div style={S.segRow}>{[["type", "⌨️ 打字"], ["voice", "🎙️ 语音"], ["photo", "📷 拍照/图"], ["expand", "✨ 展开"]].map(([k, l]) => (
       <button key={k} style={{ ...S.seg, ...(tab === k ? S.segOn : {}) }} onClick={() => { setTab(k); setExpandWord(null); play("tap"); }}>{l}</button>))}</div>
     {tab === "type" && <TypeInput aiReal={aiReal} dir={dir} onRows={addDraft} play={play} />}
     {tab === "voice" && <VoiceInput aiReal={aiReal} dir={dir} onRows={addDraft} play={play} />}
+    {tab === "photo" && <PhotoInput aiReal={aiReal} onRows={addDraft} play={play} />}
     {tab === "expand" && <ExpandTool ctx={ctx} initialWord={expandWord} backRef={expandBackRef} onDone={() => { setExpandWord(null); setTab("type"); }} />}
     {draft.length > 0 && tab !== "expand" && (<div style={{ marginTop: 16 }}>
       <div style={S.sectTitle}>📥 待确认 ({draft.length}) · 点⭐标高频，🔤标外来词</div>
@@ -1623,6 +1641,64 @@ function TypeInput({ aiReal, dir, onRows, play }) {
     </div>
     {dir === "zh" && aiReal && <input style={{ ...S.field, marginTop: 8, fontSize: 13 }} value={ctxSent} placeholder="(可选) 这词出现在哪句话/什么场景 → 帮 AI 选对词" onChange={(e) => setCtxSent(e.target.value)} />}
     <div style={S.tip}>加进"待确认"后可以编辑，确认无误再入库。</div>
+  </div>);
+}
+
+// 📷 拍照/图片 OCR：识别图中日文 → 点选/编辑要学的词 → 走"日→中"管线入库
+function PhotoInput({ aiReal, onRows, play }) {
+  const [imgUrl, setImgUrl] = useState(null);
+  const [lines, setLines] = useState(null);
+  const [busy, setBusy] = useState(false), [prog, setProg] = useState(""), [err, setErr] = useState("");
+  const [pick, setPick] = useState(""), [adding, setAdding] = useState(false);
+  const fileRef = useRef(null);
+  useEffect(() => () => { if (imgUrl) URL.revokeObjectURL(imgUrl); }, [imgUrl]);
+  const onFile = async (e) => {
+    const f = e.target.files && e.target.files[0]; if (!f) return;
+    setErr(""); setLines(null); setPick("");
+    const url = URL.createObjectURL(f); setImgUrl(url);
+    setBusy(true); setProg("准备识别…");
+    try {
+      const T = await loadTesseract();
+      const { data } = await T.recognize(f, "jpn", { logger: (m) => {
+        if (m.status === "recognizing text") setProg("识别中… " + Math.round((m.progress || 0) * 100) + "%");
+        else if (/traineddata|loading language/i.test(m.status || "")) setProg("首次要下载日文识别包(约 15MB，只这一次)…");
+        else setProg("准备中…");
+      } });
+      let ls = (data.lines || []).map((l) => (l.text || "").replace(/\s+/g, "")).filter((x) => x && /[぀-ヿ一-鿿]/.test(x));
+      if (!ls.length) { const whole = (data.text || "").replace(/\s+/g, ""); if (whole) ls = [whole]; }
+      setLines(ls);
+      if (!ls.length) setErr("没识别到日文。换张更清晰、正对着的照片试试（避免反光/倾斜）。");
+    } catch (e2) { logEvent("warn", "OCR 失败", (e2 && e2.message) || e2); setErr("识别失败：" + ((e2 && e2.message) || e2) + "。首次需联网下载识别包；或换张更清晰的图。"); }
+    finally { setBusy(false); setProg(""); }
+  };
+  const addTerm = async () => {
+    const t = pick.trim(); if (!t) return; setAdding(true); play("tap");
+    try {
+      const sysJa = "用户给一个日语词。要求：term 用日语规范写法（日语汉字，不要用中文简体字，如「预」应写「預」）；reading 是准确的平假名读音，逐字核对促音っ/长音/浊音半浊音（不要罗马音）；meaning 用地道中文。输出 JSON：{term,reading,meaning,pos:noun|verb|adj|phrase|other,freq:是否高频(bool),loan:仅当确实是片假名外来词才填{from:语言码,word:原词}、否则null}。只输出 JSON。";
+      let row;
+      if (aiReal) { try { row = JSON.parse(stripFence(await callAI(sysJa, t))); row.verified = "unverified"; row.verifySrc = { reading: "ai", term: "ai", meaning: "ai" }; } catch { row = await localAutoFill(t); } }
+      else row = await localAutoFill(t);
+      onRows(await enrichRowsWithDict([row]));
+      setPick("");
+    } finally { setAdding(false); play("coin"); }
+  };
+  return (<div className="card" style={S.padCard}>
+    <div style={S.howto}>拍张日文照片（菜单/招牌/包装），识别出文字后，<b>点一段</b>填进下面，再改成你要学的那个词 → 加进来。</div>
+    <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onFile} />
+    <button className="pressable" style={{ ...S.bigBtn }} disabled={busy} onClick={() => { play("tap"); if (fileRef.current) fileRef.current.click(); }}>📷 {imgUrl ? "换一张 照片/图片" : "拍照 / 选图片"}</button>
+    {imgUrl && <img src={imgUrl} alt="" style={{ width: "100%", maxHeight: 220, objectFit: "contain", marginTop: 10, border: "3px solid var(--pix-border)", background: "var(--surface2)" }} />}
+    {busy && <div style={{ ...S.setNote, color: C.sky, fontWeight: 800, marginTop: 8 }}>⏳ {prog}</div>}
+    {err && <div style={{ ...S.setNote, color: C.blush, fontWeight: 700, marginTop: 8 }}>{err}</div>}
+    {lines && lines.length > 0 && <div style={{ marginTop: 10 }}>
+      <div style={{ fontSize: 12.5, fontWeight: 800, color: "var(--ink-mid)", marginBottom: 6 }}>识别到 {lines.length} 段 · 点一段填进下面：</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, maxHeight: 160, overflowY: "auto" }}>{lines.map((l, i) => (
+        <button key={i} className="pressable" onClick={() => { setPick(l); play("tap"); }} style={{ border: "2px solid var(--line)", background: pick === l ? "var(--surface-sel)" : "var(--surface)", cursor: "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: 15, padding: "6px 10px" }}>{l}</button>))}</div>
+    </div>}
+    {(lines || pick) && <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+      <input style={S.field} value={pick} placeholder="要加的词（可编辑，只留你要学的那个）" onChange={(e) => setPick(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addTerm()} />
+      <button className="pressable" style={S.addBtn} disabled={adding || !pick.trim()} onClick={addTerm}>{adding ? "…" : "＋"}</button>
+    </div>}
+    <div style={S.tip}>识别在你手机本地跑（浏览器内 OCR·日文）；首次下载识别包需联网。加进"待确认"后可编辑再入库。</div>
   </div>);
 }
 
