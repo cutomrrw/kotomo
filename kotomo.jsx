@@ -441,6 +441,49 @@ async function callAI(system, userMsg) {
   } catch (e) { logEvent("error", "AI 请求失败（" + providerOf(key) + "）", (e && e.message) || e); throw e; } finally { clearTimeout(timer); }
 }
 
+// AI 视觉：把图片(dataURL)交给多模态模型读文字。用于拍照 OCR(远比 Tesseract 准，读实景/招牌/菜单日文)
+async function callVision(prompt, dataUrl) {
+  const key = (await getApiKey()).trim();
+  if (!key) throw new Error("未配置 API 密钥");
+  const m = /^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i.exec(dataUrl || "");
+  if (!m) throw new Error("图片格式不支持");
+  const mediaType = m[1], b64 = m[2];
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 45000);
+  try {
+    if (providerOf(key) === "anthropic") {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
+        body: JSON.stringify({ model: ANTHROPIC_MODEL, max_tokens: 1000, messages: [{ role: "user", content: [
+          { type: "image", source: { type: "base64", media_type: mediaType, data: b64 } },
+          { type: "text", text: prompt },
+        ] }] }),
+        signal: ctrl.signal,
+      });
+      if (!res.ok) throw new Error("AI 视觉请求失败 " + res.status);
+      const data = await res.json();
+      logEvent("info", "AI 视觉成功（Claude）", "");
+      return data.content.filter((b) => b.type === "text").map((b) => b.text).join("\n");
+    }
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + key },
+      body: JSON.stringify({ model: OPENAI_MODEL, max_completion_tokens: 1000, messages: [{ role: "user", content: [
+        { type: "text", text: prompt },
+        { type: "image_url", image_url: { url: dataUrl } },
+      ] }] }),
+      signal: ctrl.signal,
+    });
+    if (!res.ok) throw new Error("AI 视觉请求失败 " + res.status);
+    const data = await res.json();
+    const text = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+    if (!text) throw new Error("AI 视觉返回为空");
+    logEvent("info", "AI 视觉成功（OpenAI）", "");
+    return text;
+  } catch (e) { logEvent("error", "AI 视觉失败（" + providerOf(key) + "）", (e && e.message) || e); throw e; } finally { clearTimeout(timer); }
+}
+
 // 保存密钥时校验：用 GET /v1/models —— 即使密钥错误也带 CORS 头、能拿到清晰的 401，
 // 避免聊天端点遇到错误密钥时只抛模糊的 CORS 错误，让用户摸不着头脑。
 async function validateKey(key) {
@@ -1644,7 +1687,31 @@ function TypeInput({ aiReal, dir, onRows, play }) {
   </div>);
 }
 
-// 📷 拍照/图片 OCR：识别图中日文 → 点选/编辑要学的词 → 走"日→中"管线入库
+// 图片预处理：缩到 maxDim 内；gray=灰度+提对比(给离线 OCR 用，减少乱码)。返回 dataURL
+function scaleImage(file, maxDim, gray) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const im = new Image();
+    im.onload = () => {
+      try {
+        URL.revokeObjectURL(url);
+        let w = im.naturalWidth || im.width, h = im.naturalHeight || im.height;
+        const s = Math.min(1, maxDim / Math.max(w, h)); w = Math.max(1, Math.round(w * s)); h = Math.max(1, Math.round(h * s));
+        const c = document.createElement("canvas"); c.width = w; c.height = h;
+        const x = c.getContext("2d"); x.drawImage(im, 0, 0, w, h);
+        if (gray) {
+          const d = x.getImageData(0, 0, w, h), p = d.data;
+          for (let i = 0; i < p.length; i += 4) { const g = p[i] * 0.3 + p[i+1] * 0.59 + p[i+2] * 0.11; const v = g > 165 ? 255 : g < 95 ? 0 : Math.round((g - 95) / 70 * 255); p[i] = p[i+1] = p[i+2] = v; }
+          x.putImageData(d, 0, 0);
+          resolve(c.toDataURL("image/png"));
+        } else resolve(c.toDataURL("image/jpeg", 0.85));
+      } catch (e) { reject(e); }
+    };
+    im.onerror = () => { URL.revokeObjectURL(url); reject(new Error("图片读取失败")); };
+    im.src = url;
+  });
+}
+// 📷 拍照/图片 OCR：AI视觉(开AI，准) / Tesseract(离线兜底) 识别日文 → 点选/编辑 → 走"日→中"入库
 function PhotoInput({ aiReal, onRows, play }) {
   const [imgUrl, setImgUrl] = useState(null);
   const [lines, setLines] = useState(null);
@@ -1656,19 +1723,33 @@ function PhotoInput({ aiReal, onRows, play }) {
     const f = e.target.files && e.target.files[0]; if (!f) return;
     setErr(""); setLines(null); setPick("");
     const url = URL.createObjectURL(f); setImgUrl(url);
-    setBusy(true); setProg("准备识别…");
+    setBusy(true);
     try {
-      const T = await loadTesseract();
-      const { data } = await T.recognize(f, "jpn", { logger: (m) => {
-        if (m.status === "recognizing text") setProg("识别中… " + Math.round((m.progress || 0) * 100) + "%");
-        else if (/traineddata|loading language/i.test(m.status || "")) setProg("首次要下载日文识别包(约 15MB，只这一次)…");
-        else setProg("准备中…");
-      } });
-      let ls = (data.lines || []).map((l) => (l.text || "").replace(/\s+/g, "")).filter((x) => x && /[぀-ヿ一-鿿]/.test(x));
-      if (!ls.length) { const whole = (data.text || "").replace(/\s+/g, ""); if (whole) ls = [whole]; }
+      let ls = [];
+      if (aiReal) {
+        // 开了 AI：用 AI 视觉识别，对实景照片/手写/艺术字都准很多
+        setProg("AI 识别中…");
+        const dataUrl = await scaleImage(f, 1500, false);
+        const out = await callVision("识别这张图片里所有的日语文字（单词、短语或句子）。按出现顺序，每行输出一条，只输出图中的日文原文，保留原样，不要翻译、不要加读音、不要编号、不要任何多余说明。如果图里没有日文，只输出「无」。", dataUrl);
+        ls = String(out || "").split(/\n+/).map((s) => s.replace(/^[\s0-9.、,)）(（-]*/, "").trim()).filter((s) => s && s !== "无" && /[぀-ヿ一-鿿]/.test(s));
+      } else {
+        // 没开 AI：退回离线 Tesseract（先灰度+提对比，减少乱码；但实景照片仍偏弱）
+        setProg("准备识别…（离线）");
+        const dataUrl = await scaleImage(f, 1400, true);
+        const T = await loadTesseract();
+        const { data } = await T.recognize(dataUrl, "jpn", { logger: (m) => {
+          if (m.status === "recognizing text") setProg("离线识别中… " + Math.round((m.progress || 0) * 100) + "%");
+          else if (/traineddata|loading language/i.test(m.status || "")) setProg("首次要下载日文识别包(约 15MB，只这一次)…");
+          else setProg("准备中…");
+        } });
+        ls = (data.lines || []).map((l) => (l.text || "").replace(/\s+/g, "")).filter((x) => x && /[぀-ヿ一-鿿]/.test(x));
+        if (!ls.length) { const whole = (data.text || "").replace(/\s+/g, ""); if (whole) ls = [whole]; }
+      }
+      // 去重、去太长的整段
+      const seen = {}; ls = ls.filter((x) => x.length <= 24 && !seen[x] && (seen[x] = 1));
       setLines(ls);
-      if (!ls.length) setErr("没识别到日文。换张更清晰、正对着的照片试试（避免反光/倾斜）。");
-    } catch (e2) { logEvent("warn", "OCR 失败", (e2 && e2.message) || e2); setErr("识别失败：" + ((e2 && e2.message) || e2) + "。首次需联网下载识别包；或换张更清晰的图。"); }
+      if (!ls.length) setErr(aiReal ? "没识别到日文。换张更清晰、正对的照片再试。" : "离线识别没认出日文（它对实景照片较弱）。开 AI 后走「AI 识别」会准很多。");
+    } catch (e2) { logEvent("warn", "OCR 失败", (e2 && e2.message) || e2); setErr((aiReal ? "AI 识别失败：" : "识别失败：") + ((e2 && e2.message) || e2) + "。检查网络或换张更清晰的图。"); }
     finally { setBusy(false); setProg(""); }
   };
   const addTerm = async () => {
@@ -1683,7 +1764,7 @@ function PhotoInput({ aiReal, onRows, play }) {
     } finally { setAdding(false); play("coin"); }
   };
   return (<div className="card" style={S.padCard}>
-    <div style={S.howto}>拍张日文照片（菜单/招牌/包装），识别出文字后，<b>点一段</b>填进下面，再改成你要学的那个词 → 加进来。</div>
+    <div style={S.howto}>拍张日文照片（菜单/招牌/包装），识别出文字后，<b>点一段</b>填进下面，再改成你要学的那个词 → 加进来。{aiReal ? "（已用 AI 识别，实景照片更准）" : "（当前离线识别，对实景照片较弱；开 AI 后会准很多）"}</div>
     <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onFile} />
     <button className="pressable" style={{ ...S.bigBtn }} disabled={busy} onClick={() => { play("tap"); if (fileRef.current) fileRef.current.click(); }}>📷 {imgUrl ? "换一张 照片/图片" : "拍照 / 选图片"}</button>
     {imgUrl && <img src={imgUrl} alt="" style={{ width: "100%", maxHeight: 220, objectFit: "contain", marginTop: 10, border: "3px solid var(--pix-border)", background: "var(--surface2)" }} />}
@@ -1698,7 +1779,7 @@ function PhotoInput({ aiReal, onRows, play }) {
       <input style={S.field} value={pick} placeholder="要加的词（可编辑，只留你要学的那个）" onChange={(e) => setPick(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addTerm()} />
       <button className="pressable" style={S.addBtn} disabled={adding || !pick.trim()} onClick={addTerm}>{adding ? "…" : "＋"}</button>
     </div>}
-    <div style={S.tip}>识别在你手机本地跑（浏览器内 OCR·日文）；首次下载识别包需联网。加进"待确认"后可编辑再入库。</div>
+    <div style={S.tip}>{aiReal ? "用你自己的 AI 识别图中日文（图只发给你设置里的 AI，不外传）。" : "离线识别在你手机本地跑（首次下载识别包需联网）；开 AI 后识别更准。"}加进"待确认"后可编辑再入库。</div>
   </div>);
 }
 
