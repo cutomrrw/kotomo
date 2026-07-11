@@ -442,46 +442,69 @@ async function callAI(system, userMsg) {
 }
 
 // AI 视觉：把图片(dataURL)交给多模态模型读文字。用于拍照 OCR(远比 Tesseract 准，读实景/招牌/菜单日文)
+// 抛出的 Error 都带 e.code：quota(额度用完) / auth(密钥失效) / rate(限流) / server(服务不稳)
+//   / image(图不行) / timeout(超时) / network(联网失败) / empty(返回空)，上层据此决定文案与是否兜底。
+const tagErr = (code, msg) => Object.assign(new Error(msg), { code });
 async function callVision(prompt, dataUrl) {
   const key = (await getApiKey()).trim();
-  if (!key) throw new Error("未配置 API 密钥");
+  if (!key) throw tagErr("auth", "未配置 API 密钥");
   const m = /^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i.exec(dataUrl || "");
-  if (!m) throw new Error("图片格式不支持");
-  const mediaType = m[1], b64 = m[2];
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 45000);
-  try {
-    if (providerOf(key) === "anthropic") {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
-        body: JSON.stringify({ model: ANTHROPIC_MODEL, max_tokens: 1000, messages: [{ role: "user", content: [
-          { type: "image", source: { type: "base64", media_type: mediaType, data: b64 } },
-          { type: "text", text: prompt },
-        ] }] }),
-        signal: ctrl.signal,
-      });
-      if (!res.ok) throw new Error("AI 视觉请求失败 " + res.status);
-      const data = await res.json();
-      logEvent("info", "AI 视觉成功（Claude）", "");
-      return data.content.filter((b) => b.type === "text").map((b) => b.text).join("\n");
+  if (!m) throw tagErr("image", "图片格式不支持");
+  const mediaType = m[1], b64 = m[2], prov = providerOf(key);
+  const url = prov === "anthropic" ? "https://api.anthropic.com/v1/messages" : "https://api.openai.com/v1/chat/completions";
+  const headers = prov === "anthropic"
+    ? { "Content-Type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" }
+    : { "Content-Type": "application/json", "Authorization": "Bearer " + key };
+  const payload = JSON.stringify(prov === "anthropic"
+    ? { model: ANTHROPIC_MODEL, max_tokens: 1000, messages: [{ role: "user", content: [{ type: "image", source: { type: "base64", media_type: mediaType, data: b64 } }, { type: "text", text: prompt }] }] }
+    : { model: OPENAI_MODEL, max_completion_tokens: 1000, messages: [{ role: "user", content: [{ type: "text", text: prompt }, { type: "image_url", image_url: { url: dataUrl } }] }] });
+  const creditRe = /credit|balance|quota|billing|余额|充值|额度/i;
+  const MAX = 3;
+  for (let attempt = 1; attempt <= MAX; attempt++) {
+    const ctrl = new AbortController();               // 每次尝试都用全新的 controller/timer，避免上次超时污染下次
+    const timer = setTimeout(() => ctrl.abort(), 45000);
+    let res;
+    try {
+      res = await fetch(url, { method: "POST", headers, body: payload, signal: ctrl.signal });
+    } catch (e) {
+      clearTimeout(timer);
+      if (e && e.name === "AbortError") throw tagErr("timeout", "AI 识别超时（图太大或网络太慢）");
+      if (attempt < MAX && e instanceof TypeError) { await new Promise((r) => setTimeout(r, 3000)); continue; } // 网络抖动重试一次
+      throw tagErr("network", "联网失败（检查网络）");
     }
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + key },
-      body: JSON.stringify({ model: OPENAI_MODEL, max_completion_tokens: 1000, messages: [{ role: "user", content: [
-        { type: "text", text: prompt },
-        { type: "image_url", image_url: { url: dataUrl } },
-      ] }] }),
-      signal: ctrl.signal,
-    });
-    if (!res.ok) throw new Error("AI 视觉请求失败 " + res.status);
-    const data = await res.json();
-    const text = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
-    if (!text) throw new Error("AI 视觉返回为空");
-    logEvent("info", "AI 视觉成功（OpenAI）", "");
-    return text;
-  } catch (e) { logEvent("error", "AI 视觉失败（" + providerOf(key) + "）", (e && e.message) || e); throw e; } finally { clearTimeout(timer); }
+    clearTimeout(timer);
+    if (res.ok) {
+      const data = await res.json();
+      logEvent("info", "AI 视觉成功（" + prov + "）", "");
+      if (prov === "anthropic") return (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
+      const text = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+      if (!text) throw tagErr("empty", "AI 视觉返回为空");
+      return text;
+    }
+    // 非 2xx：防御式解析错误体（529/网关常返回 HTML 而非 JSON）
+    let et = "", em = "";
+    try { const ej = await res.json(); if (ej && ej.error) { et = ej.error.type || ""; em = ej.error.message || ""; } } catch {}
+    const s = res.status;
+    logEvent("warn", "AI 视觉非2xx", s + " " + et + " " + em.slice(0, 80));
+    // 额度/账单：OpenAI=429 insufficient_quota；Anthropic=400 invalid_request(credit) 或 402 billing_error → 绝不重试
+    if (et === "insufficient_quota" || et === "billing_error" || s === 402 || ((s === 400 || s === 429) && creditRe.test(em)))
+      throw tagErr("quota", "AI 额度用完了（这把密钥没余额）");
+    if (s === 401 || s === 403 || et === "authentication_error" || et === "permission_error") throw tagErr("auth", "AI 密钥失效或没权限");
+    const retryable = s === 429 || s === 529 || (s >= 500 && s <= 599);
+    if (retryable) {
+      if (attempt < MAX) {
+        const ra = parseFloat(res.headers.get("retry-after") || "");    // Anthropic 429 带 retry-after（秒）
+        const delay = Math.min(10000, Math.max(0, (Number.isFinite(ra) ? ra : 0) * 1000)) || (attempt === 1 ? 3000 : 6000);
+        logEvent("info", "AI 视觉限流重试", "status=" + s + " wait=" + delay);
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+      throw tagErr(s === 429 ? "rate" : "server", s === 429 ? "AI 太忙/太频繁（稍后再试）" : "AI 服务暂时不稳（稍后再试）");
+    }
+    if (s === 400) throw tagErr("image", "AI 拒收这张图（可能太大或格式不支持）");
+    throw tagErr("server", "AI 请求失败（" + s + (em ? "：" + em.slice(0, 50) : "") + "）");
+  }
+  throw tagErr("rate", "AI 太忙/太频繁（稍后再试）");   // 安全网：绝不落到返回 undefined
 }
 
 // 保存密钥时校验：用 GET /v1/models —— 即使密钥错误也带 CORS 头、能拿到清晰的 401，
@@ -1698,10 +1721,18 @@ function scaleImage(file, maxDim, gray) {
         let w = im.naturalWidth || im.width, h = im.naturalHeight || im.height;
         const s = Math.min(1, maxDim / Math.max(w, h)); w = Math.max(1, Math.round(w * s)); h = Math.max(1, Math.round(h * s));
         const c = document.createElement("canvas"); c.width = w; c.height = h;
-        const x = c.getContext("2d"); x.drawImage(im, 0, 0, w, h);
+        const x = c.getContext("2d");
+        if (gray) { x.fillStyle = "#fff"; x.fillRect(0, 0, w, h); }   // 透明底铺白，别让透明像素被当成黑底误判反相
+        x.drawImage(im, 0, 0, w, h);
         if (gray) {
-          const d = x.getImageData(0, 0, w, h), p = d.data;
-          for (let i = 0; i < p.length; i += 4) { const g = p[i] * 0.3 + p[i+1] * 0.59 + p[i+2] * 0.11; const v = g > 165 ? 255 : g < 95 ? 0 : Math.round((g - 95) / 70 * 255); p[i] = p[i+1] = p[i+2] = v; }
+          const d = x.getImageData(0, 0, w, h), p = d.data, n = w * h;
+          // pass 1：算灰度 + 明暗直方图，判断是不是「白字黑底」(强双峰且暗色为主) → 需要反相给 Tesseract
+          const lum = new Uint8Array(n); let dark = 0, light = 0, mid = 0;
+          for (let i = 0, j = 0; i < p.length; i += 4, j++) { const g = (p[i] * 0.3 + p[i+1] * 0.59 + p[i+2] * 0.11) | 0; lum[j] = g; if (g < 64) dark++; else if (g > 192) light++; else mid++; }
+          const df = dark / n, lf = light / n, mf = mid / n;
+          const invert = (df + lf > 0.7) && (mf < 0.2) && (df > lf);  // 双峰+暗多才反相；连续调的暗照片(夜景/深色木牌)不反相
+          // pass 2：(必要时)反相 → 轻对比拉伸(反相后已是黑字白底，阈值常数继续有效)
+          for (let i = 0, j = 0; i < p.length; i += 4, j++) { let g = lum[j]; if (invert) g = 255 - g; const v = g > 165 ? 255 : g < 95 ? 0 : Math.round((g - 95) / 70 * 255); p[i] = p[i+1] = p[i+2] = v; }
           x.putImageData(d, 0, 0);
           resolve(c.toDataURL("image/png"));
         } else resolve(c.toDataURL("image/jpeg", 0.85));
@@ -1711,45 +1742,73 @@ function scaleImage(file, maxDim, gray) {
     im.src = url;
   });
 }
+const OCR_PROMPT = "识别这张图片里所有的日语文字（单词、短语或句子）。按出现顺序，每行输出一条，只输出图中的日文原文，保留原样，不要翻译、不要加读音、不要编号、不要任何多余说明。如果图里没有日文，只输出「无」。";
+// AI 视觉返回的多行文本 → 干净的日文词条数组（去序号/项目符号、只留含假名或汉字的行）
+const parseVisionLines = (out) => String(out || "").split(/\n+/).map((sx) => sx.replace(/^[\s0-9.、,)）(（\-—・]+/, "").trim()).filter((sx) => sx && sx !== "无" && /[぀-ヿ一-鿿]/.test(sx));
 // 📷 拍照/图片 OCR：AI视觉(开AI，准) / Tesseract(离线兜底) 识别日文 → 点选/编辑 → 走"日→中"入库
 function PhotoInput({ aiReal, onRows, play }) {
   const [imgUrl, setImgUrl] = useState(null);
   const [lines, setLines] = useState(null);
-  const [busy, setBusy] = useState(false), [prog, setProg] = useState(""), [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false), [prog, setProg] = useState(""), [err, setErr] = useState(""), [note, setNote] = useState("");
   const [pick, setPick] = useState(""), [adding, setAdding] = useState(false);
   const fileRef = useRef(null);
   useEffect(() => () => { if (imgUrl) URL.revokeObjectURL(imgUrl); }, [imgUrl]);
+  // 离线 Tesseract 识别（!aiReal 主路 + AI 失败兜底都用它）。白字黑底会在 scaleImage 里自动反相
+  const runTesseract = async (f) => {
+    setProg("准备识别…（离线）");
+    const dataUrl = await scaleImage(f, 1400, true);
+    const T = await loadTesseract();
+    const { data } = await T.recognize(dataUrl, "jpn", { logger: (m) => {
+      if (m.status === "recognizing text") setProg("离线识别中… " + Math.round((m.progress || 0) * 100) + "%");
+      else if (/traineddata|loading language/i.test(m.status || "")) setProg("首次要下载日文识别包(约 15MB，只这一次)…");
+      else setProg("准备中…");
+    } });
+    let ls = (data.lines || []).map((l) => (l.text || "").replace(/\s+/g, "")).filter((x) => x && /[぀-ヿ一-鿿]/.test(x));
+    if (!ls.length) { const whole = (data.text || "").replace(/\s+/g, ""); if (whole && /[぀-ヿ一-鿿]/.test(whole)) ls = [whole]; }
+    return ls;
+  };
   const onFile = async (e) => {
     const f = e.target.files && e.target.files[0]; if (!f) return;
-    setErr(""); setLines(null); setPick("");
+    setErr(""); setNote(""); setLines(null); setPick("");
     const url = URL.createObjectURL(f); setImgUrl(url);
     setBusy(true);
+    let ls = [], aiCode = "";
     try {
-      let ls = [];
       if (aiReal) {
-        // 开了 AI：用 AI 视觉识别，对实景照片/手写/艺术字都准很多
-        setProg("AI 识别中…");
-        const dataUrl = await scaleImage(f, 1500, false);
-        const out = await callVision("识别这张图片里所有的日语文字（单词、短语或句子）。按出现顺序，每行输出一条，只输出图中的日文原文，保留原样，不要翻译、不要加读音、不要编号、不要任何多余说明。如果图里没有日文，只输出「无」。", dataUrl);
-        ls = String(out || "").split(/\n+/).map((s) => s.replace(/^[\s0-9.、,)）(（-]*/, "").trim()).filter((s) => s && s !== "无" && /[぀-ヿ一-鿿]/.test(s));
+        try {
+          // 开了 AI：优先用 AI 视觉识别，对实景照片/手写/艺术字都准很多
+          setProg("AI 识别中…");
+          const dataUrl = await scaleImage(f, 1500, false);
+          ls = parseVisionLines(await callVision(OCR_PROMPT, dataUrl));
+          if (!ls.length) throw tagErr("empty", "AI 没读到日文");
+        } catch (aiErr) {
+          // AI 失败/没读到 → 自动退回离线识别，尽量别让创始人空手而归；文案按错误类型区分
+          aiCode = (aiErr && aiErr.code) || "";
+          logEvent("warn", "AI 视觉转离线兜底", aiCode + ":" + ((aiErr && aiErr.message) || aiErr));
+          ls = await runTesseract(f);
+          setNote(
+            aiCode === "auth" ? "AI 密钥失效了（" + aiErr.message + "），这次先用离线识别兜底；去设置重贴密钥后会更准。"
+            : aiCode === "quota" ? "AI 额度用完了，这次先用离线识别兜底；充值后走 AI 会更准。"
+            : aiCode === "empty" ? "AI 没读到日文，先给你离线识别的结果，核对一下。"
+            : "AI 这次没走通（" + ((aiErr && aiErr.message) || "") + "），已自动改用离线识别；稍后 AI 缓过来再试更准。"
+          );
+        }
       } else {
-        // 没开 AI：退回离线 Tesseract（先灰度+提对比，减少乱码；但实景照片仍偏弱）
-        setProg("准备识别…（离线）");
-        const dataUrl = await scaleImage(f, 1400, true);
-        const T = await loadTesseract();
-        const { data } = await T.recognize(dataUrl, "jpn", { logger: (m) => {
-          if (m.status === "recognizing text") setProg("离线识别中… " + Math.round((m.progress || 0) * 100) + "%");
-          else if (/traineddata|loading language/i.test(m.status || "")) setProg("首次要下载日文识别包(约 15MB，只这一次)…");
-          else setProg("准备中…");
-        } });
-        ls = (data.lines || []).map((l) => (l.text || "").replace(/\s+/g, "")).filter((x) => x && /[぀-ヿ一-鿿]/.test(x));
-        if (!ls.length) { const whole = (data.text || "").replace(/\s+/g, ""); if (whole) ls = [whole]; }
+        ls = await runTesseract(f);
       }
       // 去重、去太长的整段
       const seen = {}; ls = ls.filter((x) => x.length <= 24 && !seen[x] && (seen[x] = 1));
       setLines(ls);
-      if (!ls.length) setErr(aiReal ? "没识别到日文。换张更清晰、正对的照片再试。" : "离线识别没认出日文（它对实景照片较弱）。开 AI 后走「AI 识别」会准很多。");
-    } catch (e2) { logEvent("warn", "OCR 失败", (e2 && e2.message) || e2); setErr((aiReal ? "AI 识别失败：" : "识别失败：") + ((e2 && e2.message) || e2) + "。检查网络或换张更清晰的图。"); }
+      if (!ls.length) {
+        setNote("");   // 啥都没识别到就只留红字，别同时挂着蓝提示
+        setErr(
+          aiCode === "auth" ? "AI 密钥失效，离线也没认出来。去设置重贴密钥后再试。"
+          : aiCode === "quota" ? "AI 额度用完，离线也没认出来。充值后 AI 会准很多。"
+          : aiReal ? "AI 和离线都没识别到日文，换张更清晰、正对的照片再试。"
+          : "离线识别没认出日文（它对实景照片较弱）。开 AI 后走「AI 识别」会准很多。"
+        );
+      }
+    } catch (e2) { logEvent("warn", "OCR 失败", (e2 && e2.message) || e2); setNote(""); setErr(((e2 && e2.message) || e2) + "。检查网络或换张更清晰的图。"); }
     finally { setBusy(false); setProg(""); }
   };
   const addTerm = async () => {
@@ -1769,6 +1828,7 @@ function PhotoInput({ aiReal, onRows, play }) {
     <button className="pressable" style={{ ...S.bigBtn }} disabled={busy} onClick={() => { play("tap"); if (fileRef.current) fileRef.current.click(); }}>📷 {imgUrl ? "换一张 照片/图片" : "拍照 / 选图片"}</button>
     {imgUrl && <img src={imgUrl} alt="" style={{ width: "100%", maxHeight: 220, objectFit: "contain", marginTop: 10, border: "3px solid var(--pix-border)", background: "var(--surface2)" }} />}
     {busy && <div style={{ ...S.setNote, color: C.sky, fontWeight: 800, marginTop: 8 }}>⏳ {prog}</div>}
+    {!busy && note && <div style={{ ...S.setNote, color: C.sky, fontWeight: 700, marginTop: 8 }}>ℹ️ {note}</div>}
     {err && <div style={{ ...S.setNote, color: C.blush, fontWeight: 700, marginTop: 8 }}>{err}</div>}
     {lines && lines.length > 0 && <div style={{ marginTop: 10 }}>
       <div style={{ fontSize: 12.5, fontWeight: 800, color: "var(--ink-mid)", marginBottom: 6 }}>识别到 {lines.length} 段 · 点一段填进下面：</div>
