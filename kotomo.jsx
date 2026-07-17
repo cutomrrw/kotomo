@@ -1226,19 +1226,21 @@ function Home({ ctx }) {
   if (kanaMode) return (<div className="fade-in">
     {/* 猫窝：与词汇模式同款同大小(含日记 HUD) */}
     {roomBigEl}
-    {/* 学习：着重强调的主行动，紧贴猫窝/日记下面 */}
-    <button className="pressable" style={{ width: "100%", background: C.honey, color: "#fff", border: "none", borderRadius: 16, padding: "18px 16px", boxShadow: "0 6px 0 " + C.honeyDk, display: "flex", alignItems: "center", gap: 14, cursor: "pointer", fontFamily: "inherit", marginBottom: 12 }} onClick={() => { play("tap"); nav("kana"); }}>
-      <span style={{ fontSize: 34, flexShrink: 0 }}>🔤</span>
-      <div style={{ flex: 1, textAlign: "left" }}><div style={{ fontWeight: 800, fontSize: 20 }}>五十音学习区</div><div style={{ fontSize: 12.5, opacity: 0.92, marginTop: 3 }}>假名表 · 认读 · 🥁节奏跟读 · 🀄成语认读</div></div>
-      <span style={{ fontSize: 24 }}>›</span>
-    </button>
-    {/* 毕业考试(次要) */}
-    <button className="pressable card" style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", padding: "13px 15px", marginBottom: 12, cursor: "pointer", fontFamily: "inherit" }} onClick={() => { play("tap"); nav("settings"); }}>
-      <span style={{ fontSize: 24, width: 44, height: 44, background: "var(--window)", display: "grid", placeItems: "center", flexShrink: 0 }}>🎓</span>
-      <div style={{ flex: 1, textAlign: "left" }}><div style={{ fontWeight: 800, fontSize: 15, color: C.ink }}>毕业考试 · 下一版开考</div><div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 2 }}>已经会五十音了？去设置里直接切到词汇模式 ›</div></div>
-    </button>
-    {/* 广播：放首页最下方 */}
+    {/* 广播：紧贴猫窝下方，形状不变 */}
     <PetTips play={play} />
+    {/* 往下分左右两格：左 学习(强调) · 右 毕业考试 */}
+    <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
+      <button className="pressable" style={{ flex: 1, background: C.honey, color: "#fff", border: "none", borderRadius: 16, padding: "16px 12px", boxShadow: "0 6px 0 " + C.honeyDk, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, cursor: "pointer", fontFamily: "inherit", textAlign: "center" }} onClick={() => { play("tap"); nav("kana"); }}>
+        <span style={{ fontSize: 34 }}>🔤</span>
+        <span style={{ fontWeight: 800, fontSize: 16 }}>五十音学习区</span>
+        <span style={{ fontSize: 11, opacity: 0.92, lineHeight: 1.4 }}>假名表 · 认读 · 节奏 · 成语</span>
+      </button>
+      <button className="pressable card" style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, padding: "16px 12px", cursor: "pointer", fontFamily: "inherit", textAlign: "center" }} onClick={() => { play("tap"); nav("settings"); }}>
+        <span style={{ fontSize: 34 }}>🎓</span>
+        <span style={{ fontWeight: 800, fontSize: 16, color: C.ink }}>毕业考试</span>
+        <span style={{ fontSize: 11, color: "var(--ink-soft)", lineHeight: 1.4 }}>下一版开考 · 去设置切词汇</span>
+      </button>
+    </div>
     {monitorEl}
   </div>);
 
