@@ -1222,23 +1222,32 @@ function Home({ ctx }) {
       </div>
       <RoomImg src="bowl.png" style={{ bottom: "10%", left: "60%", width: "13%", zIndex: 2 }} />
     </div>);
+  // 连续天数 + 三档能量(两模式共用同款同大小)
+  const streakEl = (<div style={S.streakRow}>
+      <div style={S.streakCard}><span style={{ fontSize: 20 }}>🔥</span><div><div style={S.streakBig}>{st.streak.totalDays}<span style={{ fontSize: 12 }}> 天</span></div><div style={S.streakSmall}>累计学习 · 只涨不减</div></div></div>
+      <div style={S.tri}>{[["low", "🌙", "咸鱼"], ["normal", "☀️", "日常"], ["super", "🔥", "暴走"]].map(([m, e, l]) => (
+        <button key={m} className="pressable" style={{ ...S.triBtn, ...(st.settings.energyMode === m ? S.triOn : {}) }} onClick={() => { ctx.setSetting("energyMode", m); play("tap"); }}>
+          <span style={{ fontSize: 17 }}>{e}</span><span style={S.triLabel}>{l}</span></button>))}</div>
+    </div>);
 
   if (kanaMode) return (<div className="fade-in">
+    {/* 顶部：连续天数 + 三档能量(与词汇模式一致) */}
+    {streakEl}
     {/* 猫窝：与词汇模式同款同大小(含日记 HUD) */}
     {roomBigEl}
     {/* 广播：紧贴猫窝下方，形状不变 */}
     <PetTips play={play} />
-    {/* 往下分左右两格：左 学习(强调) · 右 毕业考试 */}
+    {/* 往下分左右两格：左 学习(强调) · 右 毕业考试(顶部加了天数条，这里做小一点) */}
     <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
-      <button className="pressable" style={{ flex: 1, background: C.honey, color: "#fff", border: "none", borderRadius: 16, padding: "16px 12px", boxShadow: "0 6px 0 " + C.honeyDk, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, cursor: "pointer", fontFamily: "inherit", textAlign: "center" }} onClick={() => { play("tap"); nav("kana"); }}>
-        <span style={{ fontSize: 34 }}>🔤</span>
-        <span style={{ fontWeight: 800, fontSize: 16 }}>五十音学习区</span>
-        <span style={{ fontSize: 11, opacity: 0.92, lineHeight: 1.4 }}>假名表 · 认读 · 节奏 · 成语</span>
+      <button className="pressable" style={{ flex: 1, background: C.honey, color: "#fff", border: "none", borderRadius: 14, padding: "11px 10px", boxShadow: "0 5px 0 " + C.honeyDk, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, cursor: "pointer", fontFamily: "inherit", textAlign: "center" }} onClick={() => { play("tap"); nav("kana"); }}>
+        <span style={{ fontSize: 26 }}>🔤</span>
+        <span style={{ fontWeight: 800, fontSize: 14.5 }}>五十音学习区</span>
+        <span style={{ fontSize: 10, opacity: 0.9, lineHeight: 1.35 }}>假名表 · 认读 · 节奏 · 成语</span>
       </button>
-      <button className="pressable card" style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, padding: "16px 12px", cursor: "pointer", fontFamily: "inherit", textAlign: "center" }} onClick={() => { play("tap"); nav("settings"); }}>
-        <span style={{ fontSize: 34 }}>🎓</span>
-        <span style={{ fontWeight: 800, fontSize: 16, color: C.ink }}>毕业考试</span>
-        <span style={{ fontSize: 11, color: "var(--ink-soft)", lineHeight: 1.4 }}>下一版开考 · 去设置切词汇</span>
+      <button className="pressable card" style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "11px 10px", cursor: "pointer", fontFamily: "inherit", textAlign: "center" }} onClick={() => { play("tap"); nav("settings"); }}>
+        <span style={{ fontSize: 26 }}>🎓</span>
+        <span style={{ fontWeight: 800, fontSize: 14.5, color: C.ink }}>毕业考试</span>
+        <span style={{ fontSize: 10, color: "var(--ink-soft)", lineHeight: 1.35 }}>下一版开考 · 去设置切词汇</span>
       </button>
     </div>
     {monitorEl}
@@ -1256,13 +1265,8 @@ function Home({ ctx }) {
     { icon: "📕", label: "错题本", on: () => { if (!wrongs.length) return; ctx.setReviewWrongOnly(true); nav("review"); }, dim: !wrongs.length },
   ];
   return (<div className="fade-in" style={{ paddingBottom: 8 }}>
-    {/* 连续天数 + 三档能量 */}
-    <div style={S.streakRow}>
-      <div style={S.streakCard}><span style={{ fontSize: 20 }}>🔥</span><div><div style={S.streakBig}>{st.streak.totalDays}<span style={{ fontSize: 12 }}> 天</span></div><div style={S.streakSmall}>累计学习 · 只涨不减</div></div></div>
-      <div style={S.tri}>{[["low", "🌙", "咸鱼"], ["normal", "☀️", "日常"], ["super", "🔥", "暴走"]].map(([m, e, l]) => (
-        <button key={m} className="pressable" style={{ ...S.triBtn, ...(st.settings.energyMode === m ? S.triOn : {}) }} onClick={() => { ctx.setSetting("energyMode", m); play("tap"); }}>
-          <span style={{ fontSize: 17 }}>{e}</span><span style={S.triLabel}>{l}</span></button>))}</div>
-    </div>
+    {/* 连续天数 + 三档能量(与五十音模式共用 streakEl) */}
+    {streakEl}
 
     {/* 日狗大区(绝对核心) —— 与五十音模式共用 roomBigEl */}
     {roomBigEl}
