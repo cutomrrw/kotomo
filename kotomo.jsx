@@ -391,6 +391,11 @@ if (typeof window !== "undefined" && !window.__kotomoLogHooked) {
 // ── AI 调用（OpenAI 与 Anthropic 都支持，按密钥前缀自动识别）─────────────
 const OPENAI_MODEL = "gpt-5.4";               // OpenAI：查词/读音准确度优先（学习类应用错读音=学错，比省钱重要）；想更省可降 gpt-5.4-mini，想更强可升 gpt-5.5
 const ANTHROPIC_MODEL = "claude-haiku-4-5";   // Anthropic：又快又便宜；想更准可换 claude-sonnet-4-6 / claude-opus-4-8
+// 拍照 OCR 专用「高分辨率视觉档」：haiku/普通档只把图压到 1568px，小字/密集汉字根本认不清还会脑补错字。
+// sonnet-5 是高分档(2576px，~2.7x 有效分辨率)，准确/成本的甜点；想要极致准可临时把下面换成 claude-opus-4-8。
+const ANTHROPIC_VISION_MODEL = "claude-sonnet-5";
+const OPENAI_VISION_MODEL = "gpt-5.4";        // 配 detail:high + reasoning_effort:low（见 callVision）
+const VISION_MAX_TOKENS = 8000;               // 1000 会被「推理token+长转写」吃光 → 返回空/截断（不全的元凶之一）
 const AKEY = "kotomo:aikey";                  // API 密钥单独存（不进词库状态、不随数据导出）
 // 判家：sk-ant- 开头 = Anthropic(Claude)；其余 sk-（含 sk-proj-/sk-svcacct-/sk-admin-）当作 OpenAI
 const providerOf = (key) => ((key || "").trim().startsWith("sk-ant-") ? "anthropic" : "openai");
@@ -455,14 +460,15 @@ async function callVision(prompt, dataUrl) {
   const headers = prov === "anthropic"
     ? { "Content-Type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" }
     : { "Content-Type": "application/json", "Authorization": "Bearer " + key };
+  // 图在前、文字在后（官方：image→text 效果最好）；OpenAI 开 detail:high 强制全清晰度分块 + reasoning_effort:low 免得推理吃光 token
   const payload = JSON.stringify(prov === "anthropic"
-    ? { model: ANTHROPIC_MODEL, max_tokens: 1000, messages: [{ role: "user", content: [{ type: "image", source: { type: "base64", media_type: mediaType, data: b64 } }, { type: "text", text: prompt }] }] }
-    : { model: OPENAI_MODEL, max_completion_tokens: 1000, messages: [{ role: "user", content: [{ type: "text", text: prompt }, { type: "image_url", image_url: { url: dataUrl } }] }] });
+    ? { model: ANTHROPIC_VISION_MODEL, max_tokens: VISION_MAX_TOKENS, messages: [{ role: "user", content: [{ type: "image", source: { type: "base64", media_type: mediaType, data: b64 } }, { type: "text", text: prompt }] }] }
+    : { model: OPENAI_VISION_MODEL, max_completion_tokens: VISION_MAX_TOKENS, reasoning_effort: "low", messages: [{ role: "user", content: [{ type: "text", text: prompt }, { type: "image_url", image_url: { url: dataUrl, detail: "high" } }] }] });
   const creditRe = /credit|balance|quota|billing|余额|充值|额度/i;
   const MAX = 3;
   for (let attempt = 1; attempt <= MAX; attempt++) {
     const ctrl = new AbortController();               // 每次尝试都用全新的 controller/timer，避免上次超时污染下次
-    const timer = setTimeout(() => ctrl.abort(), 45000);
+    const timer = setTimeout(() => ctrl.abort(), 60000);  // sonnet-5 高清档更慢，给足 60s
     let res;
     try {
       res = await fetch(url, { method: "POST", headers, body: payload, signal: ctrl.signal });
@@ -475,10 +481,16 @@ async function callVision(prompt, dataUrl) {
     clearTimeout(timer);
     if (res.ok) {
       const data = await res.json();
-      logEvent("info", "AI 视觉成功（" + prov + "）", "");
-      if (prov === "anthropic") return (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
-      const text = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+      if (prov === "anthropic") {
+        if (data.stop_reason === "max_tokens") logEvent("warn", "AI 视觉被截断(max_tokens)", "图字太多，考虑调大 VISION_MAX_TOKENS");
+        logEvent("info", "AI 视觉成功（anthropic）", "");
+        return (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
+      }
+      const ch = data && data.choices && data.choices[0];
+      if (ch && ch.finish_reason === "length") logEvent("warn", "AI 视觉被截断(length)", "推理/转写超预算");
+      const text = ch && ch.message && ch.message.content;
       if (!text) throw tagErr("empty", "AI 视觉返回为空");
+      logEvent("info", "AI 视觉成功（openai）", "");
       return text;
     }
     // 非 2xx：防御式解析错误体（529/网关常返回 HTML 而非 JSON）
@@ -1735,14 +1747,14 @@ function scaleImage(file, maxDim, gray) {
           for (let i = 0, j = 0; i < p.length; i += 4, j++) { let g = lum[j]; if (invert) g = 255 - g; const v = g > 165 ? 255 : g < 95 ? 0 : Math.round((g - 95) / 70 * 255); p[i] = p[i+1] = p[i+2] = v; }
           x.putImageData(d, 0, 0);
           resolve(c.toDataURL("image/png"));
-        } else resolve(c.toDataURL("image/jpeg", 0.85));
+        } else resolve(c.toDataURL("image/jpeg", 0.92));  // 0.85 的块状压缩会糊掉小字笔画→认错；0.92 更清且仍比 PNG 小
       } catch (e) { reject(e); }
     };
     im.onerror = () => { URL.revokeObjectURL(url); reject(new Error("图片读取失败")); };
     im.src = url;
   });
 }
-const OCR_PROMPT = "识别这张图片里所有的日语文字（单词、短语或句子）。按出现顺序，每行输出一条，只输出图中的日文原文，保留原样，不要翻译、不要加读音、不要编号、不要任何多余说明。如果图里没有日文，只输出「无」。";
+const OCR_PROMPT = "逐条识别这张图片里出现的所有日语单词、短语或句子。严格遵守：\n1. 每条单独占一行；按图中自然阅读顺序输出（先从上到下，再由右向左）。\n2. 只输出图中真实存在的日文原文，完整保留原有汉字、假名（含浊音/半浊音/促音/送假名）与标点，一字不改——不要翻译、不要注音/读音、不要罗马字、不要编号或项目符号、不要任何解释。\n3. 部分文字可能为竖排（縦書き），需自上而下、再由右向左逐列读完再换列。\n4. 不要漏掉边角、小字、注释中的日文；但纯价格、纯数字、货币符号不要单独作为一条输出。\n5. 看不清或无法确定的单个字，用〓代替那一个字；绝不猜测、绝不编造图中不存在的词。宁可漏字也不要写错字。\n6. 全部输出后，再回看一遍图片，补上遗漏的日文条目。\n7. 若图中根本没有日文，只输出：无";
 // AI 视觉返回的多行文本 → 干净的日文词条数组（去序号/项目符号、只留含假名或汉字的行）
 const parseVisionLines = (out) => String(out || "").split(/\n+/).map((sx) => sx.replace(/^[\s0-9.、,)）(（\-—・]+/, "").trim()).filter((sx) => sx && sx !== "无" && /[぀-ヿ一-鿿]/.test(sx));
 // 📷 拍照/图片 OCR：AI视觉(开AI，准) / Tesseract(离线兜底) 识别日文 → 点选/编辑 → 走"日→中"入库
@@ -1778,7 +1790,7 @@ function PhotoInput({ aiReal, onRows, play }) {
         try {
           // 开了 AI：优先用 AI 视觉识别，对实景照片/手写/艺术字都准很多
           setProg("AI 识别中…");
-          const dataUrl = await scaleImage(f, 1500, false);
+          const dataUrl = await scaleImage(f, 2048, false);   // 高清档模型才吃得下 2048px；小字更清
           ls = parseVisionLines(await callVision(OCR_PROMPT, dataUrl));
           if (!ls.length) throw tagErr("empty", "AI 没读到日文");
         } catch (aiErr) {
@@ -1796,8 +1808,8 @@ function PhotoInput({ aiReal, onRows, play }) {
       } else {
         ls = await runTesseract(f);
       }
-      // 去重、去太长的整段
-      const seen = {}; ls = ls.filter((x) => x.length <= 24 && !seen[x] && (seen[x] = 1));
+      // 去重、去太长的整段（放宽到 32，容纳长复合词/短句；仍丢掉整段落）
+      const seen = {}; ls = ls.filter((x) => x.length <= 32 && !seen[x] && (seen[x] = 1));
       setLines(ls);
       if (!ls.length) {
         setNote("");   // 啥都没识别到就只留红字，别同时挂着蓝提示
