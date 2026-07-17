@@ -727,7 +727,7 @@ function mockRelated(w) {
 
 // ── SRS 引擎 ──────────────────────────────────────────
 const SRS_INTERVALS = [0, 1, 2, 4, 7, 15, 30, 60]; // 天，按 level 取
-const MASTER_LEVEL = 4; // level≥4 视为"完全掌握"
+const MASTER_LEVEL = 3; // level≥3(复习答对3次)视为"已掌握"——原为4太慢一直显示0，降到3更快见涨仍保留间隔巩固
 function nextDue(level) { const days = SRS_INTERVALS[Math.min(level, SRS_INTERVALS.length - 1)]; return now() + days * DAY; }
 function applyAnswer(w, correct) {
   const srs = { ...(w.srs || { level: 0, dueAt: now(), lastReviewedAt: 0 }) };
