@@ -2127,7 +2127,11 @@ function Library({ ctx }) {
   // 词库按加入先后排（words 数组本身是从旧到新追加的）：从新到旧=倒序，从旧到新=原序
   const ordered = order === "new" ? [...searched].reverse() : searched;
   return (<div className="fade-in"><BackRow ctx={ctx} title="📚 我的词库" />
-    <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.matcha, boxShadow: "0 5px 0 " + C.matchaDk }} onClick={() => { play("tap"); ctx.setView("add"); }}>🎙️ 去加词（打字/语音/展开）</button>
+    {/* 搜索栏置顶（原「去加词」按钮已删：首页已有加词入口，这里多余） */}
+    <div style={{ position: "relative", marginBottom: 12 }}>
+      <input style={{ ...S.field, paddingRight: 34 }} value={search} placeholder="🔍 搜日语 / 中文 / 读音…" onChange={(e) => setSearch(e.target.value)} />
+      {search && <button className="pressable no-pix" onClick={() => { setSearch(""); play("tap"); }} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", border: "none", background: "transparent", fontSize: 17, cursor: "pointer", color: "var(--ink-soft)", fontFamily: "inherit" }}>✕</button>}
+    </div>
     {/* 「补充秒懂词包」按钮暂时全局隐藏(创始人)。逻辑 hgMissing/addHgPack 保留，想开回来把此按钮恢复即可 */}
     {grammarMissing.length > 0 && <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.grape, boxShadow: "0 5px 0 var(--grape-dk)" }} onClick={addGrammarPack}>📐 补充常用语法包（{grammarMissing.length} 条：たいです/てください/…）</button>}
     {aiReal && transable.length > 0 && <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.matchaDk, boxShadow: "0 5px 0 var(--bevel)", opacity: translating ? 0.75 : 1 }} disabled={translating} onClick={runZhMeaning}>{translating ? (transMsg || "翻译中…") : "🈺 把只有英文的意思翻成中文 · " + transable.length + " 个"}</button>}
@@ -2141,10 +2145,6 @@ function Library({ ctx }) {
     {aiReal && tippable.length > 0 && <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.grape, boxShadow: "0 5px 0 var(--grape-dk)", opacity: tipping ? 0.75 : 1 }} disabled={tipping} onClick={runTips}>{tipping ? (tipMsg || "AI 标注中…") : "🈯 AI 标注汉字陷阱 · " + tippable.length + " 个待查"}</button>}
     {!tipping && tipMsg && <div style={{ ...S.setNote, marginBottom: 10, color: C.grapeDk || "var(--grape-dk)", fontWeight: 800 }}>{tipMsg}</div>}
     {/* 「词源」项暂时去除(创始人：有点多余)。逻辑 genOrigin/runOrigins 保留，想开回来把此按钮恢复即可 */}
-    <div style={{ position: "relative", marginBottom: 10 }}>
-      <input style={{ ...S.field, paddingRight: 34 }} value={search} placeholder="🔍 搜日语 / 中文 / 读音…" onChange={(e) => setSearch(e.target.value)} />
-      {search && <button className="pressable no-pix" onClick={() => { setSearch(""); play("tap"); }} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", border: "none", background: "transparent", fontSize: 17, cursor: "pointer", color: "var(--ink-soft)", fontFamily: "inherit" }}>✕</button>}
-    </div>
     <div style={{ ...S.filterRow, marginBottom: 8 }}>
       <span style={{ fontSize: 12.5, fontWeight: 800, color: "var(--ink-mid)", alignSelf: "center", marginRight: 2 }}>排序</span>
       <Chip on={order === "new"} onClick={() => { setOrder("new"); play("tap"); }}>🆕 从新到旧</Chip>
