@@ -2335,7 +2335,21 @@ const KANA_DAKUTEN = [
   [["ば", "バ", "ba"], ["び", "ビ", "bi"], ["ぶ", "ブ", "bu"], ["べ", "ベ", "be"], ["ぼ", "ボ", "bo"]],
   [["ぱ", "パ", "pa"], ["ぴ", "ピ", "pi"], ["ぷ", "プ", "pu"], ["ぺ", "ペ", "pe"], ["ぽ", "ポ", "po"]],
 ];
-const KANA_ALL = [].concat.apply([], KANA_GRID.concat(KANA_DAKUTEN)).filter(Boolean);
+// 拗音：辅音行 + 小や/ゆ/よ 拼出的音（きゃ/しゃ/ちょ…），每行 3 个
+const KANA_YOON = [
+  [["きゃ", "キャ", "kya"], ["きゅ", "キュ", "kyu"], ["きょ", "キョ", "kyo"]],
+  [["しゃ", "シャ", "sha"], ["しゅ", "シュ", "shu"], ["しょ", "ショ", "sho"]],
+  [["ちゃ", "チャ", "cha"], ["ちゅ", "チュ", "chu"], ["ちょ", "チョ", "cho"]],
+  [["にゃ", "ニャ", "nya"], ["にゅ", "ニュ", "nyu"], ["にょ", "ニョ", "nyo"]],
+  [["ひゃ", "ヒャ", "hya"], ["ひゅ", "ヒュ", "hyu"], ["ひょ", "ヒョ", "hyo"]],
+  [["みゃ", "ミャ", "mya"], ["みゅ", "ミュ", "myu"], ["みょ", "ミョ", "myo"]],
+  [["りゃ", "リャ", "rya"], ["りゅ", "リュ", "ryu"], ["りょ", "リョ", "ryo"]],
+  [["ぎゃ", "ギャ", "gya"], ["ぎゅ", "ギュ", "gyu"], ["ぎょ", "ギョ", "gyo"]],
+  [["じゃ", "ジャ", "ja"], ["じゅ", "ジュ", "ju"], ["じょ", "ジョ", "jo"]],
+  [["びゃ", "ビャ", "bya"], ["びゅ", "ビュ", "byu"], ["びょ", "ビョ", "byo"]],
+  [["ぴゃ", "ピャ", "pya"], ["ぴゅ", "ピュ", "pyu"], ["ぴょ", "ピョ", "pyo"]],
+];
+const KANA_ALL = [].concat.apply([], KANA_GRID.concat(KANA_DAKUTEN).concat(KANA_YOON)).filter(Boolean);
 const kanaQ = (idx) => {
   const ans = KANA_ALL[Math.floor(Math.random() * KANA_ALL.length)];
   const opts = [ans[2]];
@@ -2351,6 +2365,8 @@ function KanaTable({ idx, onTap }) {
     {rowsOf(KANA_GRID)}
     <div style={{ ...S.sectTitle, marginTop: 12 }}>浊音 · 半浊音</div>
     {rowsOf(KANA_DAKUTEN)}
+    <div style={{ ...S.sectTitle, marginTop: 12 }}>拗音（辅音 + 小 ゃゅょ）</div>
+    {rowsOf(KANA_YOON)}
     <div style={{ ...S.setNote, marginTop: 8 }}>点任意假名听发音 🔊</div>
   </div>);
 }
