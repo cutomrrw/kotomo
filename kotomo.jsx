@@ -1189,35 +1189,57 @@ function Home({ ctx }) {
     return { bg: "var(--warn-bg)", text: "今天有 " + due.length + " 个词到期，消掉它们，喂饱小猫 🍙" };
   })();
 
-  if (kanaMode) return (<div className="fade-in">
-    {/* 日狗区 */}
-    <div style={S.room}>
-      {decor.includes("plant") && <div style={S.dPlant}>🪴</div>}
-      {decor.includes("lamp") && <div style={S.dLamp}>🏮</div>}
-      <div style={S.bubble} className="float-soft">{mood.word}</div>
-      <div style={S.catWrap} className="pressable" onClick={() => { play("happy"); ctx.petLove(); }}>
-        {decor.includes("cushion") && <div style={S.dCushion}>🛋️</div>}
-        <div style={S.matCushion} />
-        <div style={{ ...S.cat, transform: "scale(" + catSize + ")" }}><Cat size={100} />{st.wearing && SHOP_BY_ID[st.wearing] && <span style={S.catWear}>{SHOP_BY_ID[st.wearing].icon}</span>}</div>
+  // 猫窝大区(两模式共用同款同大小) + 监控弹窗，抽成变量，避免两处走样
+  const monitorEl = monitor && (<div style={S.monOverlay} onClick={() => setMonitor(false)}>
+      <div className="pop-in" style={S.monCard} onClick={(e) => e.stopPropagation()}>
+        <div style={{ fontSize: 11, color: C.honeyDk, fontWeight: 800, letterSpacing: 1 }}>📹 日狗监控 · REC ●</div>
+        <div style={{ margin: "8px 0" }}><Cat size={96} exp={(st.pet.mood ?? 75) >= 80 ? "happy" : mood.awayDays >= 1.5 ? "sleepy" : "idle"} /></div>
+        <div style={{ fontWeight: 800, fontSize: 15 }}>{mood.word}</div>
+        <div style={{ display: "flex", gap: 6, alignItems: "center", justifyContent: "center", margin: "10px 0 4px" }}>
+          <span style={{ fontSize: 12, color: "var(--ink-soft)", fontWeight: 700 }}>心情</span>
+          <div style={{ width: 130, height: 12, background: "var(--track)", border: "2px solid var(--pix-border)", overflow: "hidden" }}><div style={{ height: "100%", width: Math.round((st.pet.mood ?? 75)) + "%", background: C.matcha }} /></div>
+          <span style={{ fontSize: 12, fontWeight: 800, color: C.matchaDk }}>{Math.round(st.pet.mood ?? 75)}</span>
+        </div>
+        <div style={{ fontSize: 12, color: "var(--ink-mid)", lineHeight: 1.7, marginTop: 4 }}>陪伴 {st.streak.totalDays} 天 · 身上穿着 {st.wearing && SHOP_BY_ID[st.wearing] ? SHOP_BY_ID[st.wearing].icon + SHOP_BY_ID[st.wearing].name : "还没换装(去衣橱)"}</div>
+        <button className="pressable" style={{ ...S.bigBtn, marginTop: 12 }} onClick={() => { setMonitor(false); play("happy"); ctx.petLove(); }}>戳它一下 ❤️</button>
       </div>
-      <div style={S.moodChip}>{seg.emoji} {seg.title} · 已掌握 {mastered} 词</div>
-      {ns && <div style={S.segHint}>再掌握 {ns.min - mastered} 个 → {ns.emoji} {ns.title}</div>}
-    </div>
-    <PetTips play={play} />
-    <button className="pressable card" style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", padding: "16px 15px", marginBottom: 12, cursor: "pointer", fontFamily: "inherit" }} onClick={() => nav("kana")}>
-      <span style={{ fontSize: 26, width: 48, height: 48, background: "var(--window)", display: "grid", placeItems: "center", flexShrink: 0 }}>🔤</span>
-      <div style={{ flex: 1, textAlign: "left" }}><div style={{ fontWeight: 800, fontSize: 17, color: C.ink }}>五十音学习区</div><div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 2 }}>假名表 · 认读 · 🥁节奏跟读 · 🀄成语认读</div></div>
-      <span style={{ fontSize: 20, color: "var(--ink-soft)" }}>›</span>
+    </div>);
+  const roomBigEl = (<div style={S.roomBig}>
+      {/* 悬浮 HUD：商店 / 衣柜 / 监控 / 日记 */}
+      <div style={S.hud}>
+        <button className="pressable no-pix" style={S.hudBtn} onClick={() => nav("shop")} title="商店"><span style={{ fontSize: 19 }}>🛒</span><span style={S.hudTxt}>商店</span></button>
+        <button className="pressable no-pix" style={S.hudBtn} onClick={() => nav("shop")} title="衣橱"><span style={{ fontSize: 19 }}>👕</span><span style={S.hudTxt}>衣橱</span></button>
+        <button className="pressable no-pix" style={S.hudBtn} onClick={() => { setMonitor(true); play("tap"); }} title="监控"><span style={{ fontSize: 19 }}>📹</span><span style={S.hudTxt}>监控</span></button>
+        <button className="pressable no-pix" style={S.hudBtn} onClick={() => nav("center")} title="日记"><span style={{ fontSize: 19 }}>📔</span><span style={S.hudTxt}>日记</span></button>
+      </div>
+      {/* 猫窝家具装饰(创始人素材)：缺图自动隐藏 */}
+      <RoomImg src="wallbag.png" style={{ top: "3%", left: "5%", width: "22%", zIndex: 1 }} />
+      <RoomImg src="cattree.png" style={{ bottom: "16%", left: "1%", width: "24%", zIndex: 1 }} />
+      <RoomImg src="bed.png" style={{ top: "9%", right: "23%", width: "39%", zIndex: 1 }} />
+      <RoomImg src="sofa.png" style={{ top: "26%", left: "3%", width: "38%", zIndex: 1 }} />
+      <div style={{ ...S.catWrapBig, zIndex: 2, alignItems: "flex-end", paddingBottom: "18%" }} className="pressable" onClick={() => { play("happy"); ctx.petLove(); }}>
+        <div style={{ ...S.cat, transform: "scale(" + Math.min(catSize, 1.25) + ")" }}><Cat size={100} />{st.wearing && SHOP_BY_ID[st.wearing] && <span style={S.catWear}>{SHOP_BY_ID[st.wearing].icon}</span>}</div>
+      </div>
+      <RoomImg src="bowl.png" style={{ bottom: "10%", left: "60%", width: "13%", zIndex: 2 }} />
+    </div>);
+
+  if (kanaMode) return (<div className="fade-in">
+    {/* 猫窝：与词汇模式同款同大小(含日记 HUD) */}
+    {roomBigEl}
+    {/* 学习：着重强调的主行动，紧贴猫窝/日记下面 */}
+    <button className="pressable" style={{ width: "100%", background: C.honey, color: "#fff", border: "none", borderRadius: 16, padding: "18px 16px", boxShadow: "0 6px 0 " + C.honeyDk, display: "flex", alignItems: "center", gap: 14, cursor: "pointer", fontFamily: "inherit", marginBottom: 12 }} onClick={() => { play("tap"); nav("kana"); }}>
+      <span style={{ fontSize: 34, flexShrink: 0 }}>🔤</span>
+      <div style={{ flex: 1, textAlign: "left" }}><div style={{ fontWeight: 800, fontSize: 20 }}>五十音学习区</div><div style={{ fontSize: 12.5, opacity: 0.92, marginTop: 3 }}>假名表 · 认读 · 🥁节奏跟读 · 🀄成语认读</div></div>
+      <span style={{ fontSize: 24 }}>›</span>
     </button>
+    {/* 毕业考试(次要) */}
     <button className="pressable card" style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", padding: "13px 15px", marginBottom: 12, cursor: "pointer", fontFamily: "inherit" }} onClick={() => { play("tap"); nav("settings"); }}>
       <span style={{ fontSize: 24, width: 44, height: 44, background: "var(--window)", display: "grid", placeItems: "center", flexShrink: 0 }}>🎓</span>
       <div style={{ flex: 1, textAlign: "left" }}><div style={{ fontWeight: 800, fontSize: 15, color: C.ink }}>毕业考试 · 下一版开考</div><div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 2 }}>已经会五十音了？去设置里直接切到词汇模式 ›</div></div>
     </button>
-    <div style={S.toolRow}>
-      <button className="pressable card" style={S.toolBtn} onClick={() => nav("add")}><span style={S.toolIcon}>👜</span><span>收词袋 · 收一个</span></button>
-      <button className="pressable card" style={S.toolBtn} onClick={() => nav("library")}><span style={S.toolIcon}>📚</span><span>袋里 {st.words.length} 词</span></button>
-    </div>
-    <div style={S.statLine}>路上撞见的词先收着，不用学 · 毕业时它们就是你词汇模式的第一批词 🎁</div>
+    {/* 广播：放首页最下方 */}
+    <PetTips play={play} />
+    {monitorEl}
   </div>);
 
   // ── 词汇模式首页(iPhone14 版式)：顶栏(全局) → 连续天数+三档 → 日狗大区(悬浮 商店/衣柜/监控) → 底部导航 ──
@@ -1240,46 +1262,15 @@ function Home({ ctx }) {
           <span style={{ fontSize: 17 }}>{e}</span><span style={S.triLabel}>{l}</span></button>))}</div>
     </div>
 
-    {/* 日狗大区(绝对核心) */}
-    <div style={S.roomBig}>
-      {/* 悬浮 HUD：商店 / 衣柜 / 监控 / 日记 */}
-      <div style={S.hud}>
-        <button className="pressable no-pix" style={S.hudBtn} onClick={() => nav("shop")} title="商店"><span style={{ fontSize: 19 }}>🛒</span><span style={S.hudTxt}>商店</span></button>
-        <button className="pressable no-pix" style={S.hudBtn} onClick={() => nav("shop")} title="衣橱"><span style={{ fontSize: 19 }}>👕</span><span style={S.hudTxt}>衣橱</span></button>
-        <button className="pressable no-pix" style={S.hudBtn} onClick={() => { setMonitor(true); play("tap"); }} title="监控"><span style={{ fontSize: 19 }}>📹</span><span style={S.hudTxt}>监控</span></button>
-        <button className="pressable no-pix" style={S.hudBtn} onClick={() => nav("center")} title="日记"><span style={{ fontSize: 19 }}>📔</span><span style={S.hudTxt}>日记</span></button>
-      </div>
-      {/* 猫窝家具装饰(创始人素材)：文件放 assets/room/，缺图自动隐藏；位置先粗排，有图后再微调 */}
-      <RoomImg src="wallbag.png" style={{ top: "3%", left: "5%", width: "22%", zIndex: 1 }} />
-      <RoomImg src="cattree.png" style={{ bottom: "16%", left: "1%", width: "24%", zIndex: 1 }} />
-      <RoomImg src="bed.png" style={{ top: "9%", right: "23%", width: "39%", zIndex: 1 }} />
-      <RoomImg src="sofa.png" style={{ top: "26%", left: "3%", width: "38%", zIndex: 1 }} />
-      {/* 心满意足气泡 / 段位行 / 点我消除 提示条 暂时删除(创始人) */}
-      <div style={{ ...S.catWrapBig, zIndex: 2, alignItems: "flex-end", paddingBottom: "18%" }} className="pressable" onClick={() => { play("happy"); ctx.petLove(); }}>
-        <div style={{ ...S.cat, transform: "scale(" + Math.min(catSize, 1.25) + ")" }}><Cat size={100} />{st.wearing && SHOP_BY_ID[st.wearing] && <span style={S.catWear}>{SHOP_BY_ID[st.wearing].icon}</span>}</div>
-      </div>
-      <RoomImg src="bowl.png" style={{ bottom: "10%", left: "60%", width: "13%", zIndex: 2 }} />
-    </div>
+    {/* 日狗大区(绝对核心) —— 与五十音模式共用 roomBigEl */}
+    {roomBigEl}
 
     {/* 底部导航（错题强化不再单列，已并入底部「错题本」） */}
     <nav style={S.bnav}>{bnav.map((b) => (
       <button key={b.label} className="pressable no-pix" style={{ ...(b.center ? S.bnavCenter : S.bnavItem), ...(b.dim ? { opacity: .4 } : {}) }} onClick={b.on}>
         <span style={{ fontSize: b.center ? 26 : 21 }}>{b.icon}</span><span style={b.center ? S.bnavCLabel : S.bnavLabel}>{b.label}</span></button>))}</nav>
 
-    {monitor && <div style={S.monOverlay} onClick={() => setMonitor(false)}>
-      <div className="pop-in" style={S.monCard} onClick={(e) => e.stopPropagation()}>
-        <div style={{ fontSize: 11, color: C.honeyDk, fontWeight: 800, letterSpacing: 1 }}>📹 日狗监控 · REC ●</div>
-        <div style={{ margin: "8px 0" }}><Cat size={96} exp={(st.pet.mood ?? 75) >= 80 ? "happy" : mood.awayDays >= 1.5 ? "sleepy" : "idle"} /></div>
-        <div style={{ fontWeight: 800, fontSize: 15 }}>{mood.word}</div>
-        <div style={{ display: "flex", gap: 6, alignItems: "center", justifyContent: "center", margin: "10px 0 4px" }}>
-          <span style={{ fontSize: 12, color: "var(--ink-soft)", fontWeight: 700 }}>心情</span>
-          <div style={{ width: 130, height: 12, background: "var(--track)", border: "2px solid var(--pix-border)", overflow: "hidden" }}><div style={{ height: "100%", width: Math.round((st.pet.mood ?? 75)) + "%", background: C.matcha }} /></div>
-          <span style={{ fontSize: 12, fontWeight: 800, color: C.matchaDk }}>{Math.round(st.pet.mood ?? 75)}</span>
-        </div>
-        <div style={{ fontSize: 12, color: "var(--ink-mid)", lineHeight: 1.7, marginTop: 4 }}>陪伴 {st.streak.totalDays} 天 · 身上穿着 {st.wearing && SHOP_BY_ID[st.wearing] ? SHOP_BY_ID[st.wearing].icon + SHOP_BY_ID[st.wearing].name : "还没换装(去衣橱)"}</div>
-        <button className="pressable" style={{ ...S.bigBtn, marginTop: 12 }} onClick={() => { setMonitor(false); play("happy"); ctx.petLove(); }}>戳它一下 ❤️</button>
-      </div>
-    </div>}
+    {monitorEl}
   </div>);
 }
 // 点猫即时心情反馈在 Home 内联处理（轻量，不滥用互动）
