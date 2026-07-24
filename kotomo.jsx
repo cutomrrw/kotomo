@@ -2154,7 +2154,11 @@ function Library({ ctx }) {
   const searched = q ? shown.filter((w) => ((w.term || "") + " " + (w.reading || "") + " " + (w.meaning || "") + " " + ((w.loan && w.loan.word) || "")).toLowerCase().includes(q)) : shown;
   // 词库按加入先后排（words 数组本身是从旧到新追加的）：从新到旧=倒序，从旧到新=原序
   const ordered = order === "new" ? [...searched].reverse() : searched;
-  return (<div className="fade-in"><BackRow ctx={ctx} title="📚 我的词库" />
+  return (<div className="fade-in"><BackRow ctx={ctx} title="📚 我的词库" right={<>
+      {/* 排序单键 + 多选，收进标题行右侧（创始人：别太繁杂） */}
+      <Chip on={false} onClick={() => { setOrder(order === "new" ? "old" : "new"); play("tap"); }}>{order === "new" ? "🆕 新→旧" : "📜 旧→新"}</Chip>
+      <Chip on={selectMode} onClick={() => { if (selectMode) exitSelect(); else { setSelectMode(true); setEditing(null); } play("tap"); }}>{selectMode ? "✕ 退出" : "☑️ 多选"}</Chip>
+    </>} />
     {/* 搜索栏置顶（原「去加词」按钮已删：首页已有加词入口，这里多余） */}
     <div style={{ position: "relative", marginBottom: 12 }}>
       <input style={{ ...S.field, paddingRight: 34 }} value={search} placeholder="🔍 搜日语 / 中文 / 读音…" onChange={(e) => setSearch(e.target.value)} />
@@ -2172,11 +2176,7 @@ function Library({ ctx }) {
     {aiReal && tippable.length > 0 && <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.grape, boxShadow: "0 5px 0 var(--grape-dk)", opacity: tipping ? 0.75 : 1 }} disabled={tipping} onClick={runTips}>{tipping ? (tipMsg || "AI 标注中…") : "🈯 AI 标注汉字陷阱 · " + tippable.length + " 个待查"}</button>}
     {!tipping && tipMsg && <div style={{ ...S.setNote, marginBottom: 10, color: C.grapeDk || "var(--grape-dk)", fontWeight: 800 }}>{tipMsg}</div>}
     {/* 「词源」项暂时去除(创始人：有点多余)。逻辑 genOrigin/runOrigins 保留，想开回来把此按钮恢复即可 */}
-    <div style={{ ...S.filterRow, marginBottom: 8 }}>
-      {/* 排序：一个键来回切（创始人：删「排序」二字，两键并一键） */}
-      <Chip on={false} onClick={() => { setOrder(order === "new" ? "old" : "new"); play("tap"); }}>{order === "new" ? "🆕 新→旧" : "📜 旧→新"}</Chip>
-      <Chip on={selectMode} onClick={() => { if (selectMode) exitSelect(); else { setSelectMode(true); setEditing(null); } play("tap"); }}>{selectMode ? "✕ 退出多选" : "☑️ 多选删除"}</Chip>
-    </div>
+    {/* 排序/多选已收进标题行右侧（创始人） */}
     {selectMode && <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, padding: "9px 11px", background: "var(--surface-sel)", borderRadius: 12, flexWrap: "wrap" }}>
       <span style={{ fontWeight: 800, fontSize: 13, color: "var(--ink-mid)" }}>已选 {sel.length}</span>
       <Chip on={false} onClick={() => { setSel(ordered.map((w) => w.id)); play("tap"); }}>全选 {ordered.length}</Chip>
@@ -3065,7 +3065,7 @@ function Settings({ ctx }) {
 const Row = ({ label, hint, children }) => (<div style={S.setRow}><div><div style={{ fontWeight: 800 }}>{label}</div><div style={{ fontSize: 12, color: C.inkSoft }}>{hint}</div></div>{children}</div>);
 const Switch = ({ on, label, onClick }) => (<button className="pressable no-pix" style={{ ...S.switch, background: on ? C.matcha : "var(--switch-off)" }} onClick={onClick}><span style={{ ...S.switchKnob, transform: on ? "translateX(20px)" : "translateX(0)" }} />{label && <span style={S.switchLabel}>{label}</span>}</button>);
 
-const BackRow = ({ ctx, title, onBack }) => (<div style={S.backRow}><button className="pressable" style={S.backBtn} onClick={() => { ctx.play("tap"); onBack ? onBack() : ctx.setView("home"); }}>← 返回</button><h2 style={S.pageTitle}>{title}</h2></div>);
+const BackRow = ({ ctx, title, onBack, right }) => (<div style={S.backRow}><button className="pressable" style={S.backBtn} onClick={() => { ctx.play("tap"); onBack ? onBack() : ctx.setView("home"); }}>← 返回</button><h2 style={S.pageTitle}>{title}</h2>{right && <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>{right}</div>}</div>);
 
 const S = {
   shell: { minHeight: "100vh", background: "radial-gradient(var(--dot) 2.4px, transparent 2.4px), linear-gradient(180deg,var(--shell-top) 0%," + C.cream + " 45%)", backgroundSize: "16px 16px, 100% 100%", color: C.ink, fontFamily: "'DotGothic16','PingFang SC','Microsoft YaHei',monospace", position: "relative", overflow: "hidden" },
