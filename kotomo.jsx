@@ -2184,14 +2184,23 @@ function Library({ ctx }) {
       <div style={{ flex: 1 }} />
       <button className="pressable" disabled={!sel.length} style={{ background: "var(--danger-bg)", color: "var(--danger-fg)", border: "2px solid var(--danger-fg)", borderRadius: 10, padding: "8px 14px", fontWeight: 800, fontSize: 13, cursor: "pointer", fontFamily: "inherit", opacity: sel.length ? 1 : 0.45, flexShrink: 0 }} onClick={delSelected}>🗑️ 删除选中 {sel.length}</button>
     </div>}
-    <div style={S.filterRow}>
+    {/* 分类筛选：三行固定分组、纯文字（创始人）：①全部/高频/已掌握 ②语法/短语寒暄/外来词 ③名词/动词/形容词(+其他) */}
+    {(() => { const posChip = (key) => { const p = POS.find((x) => x.key === key); const n = words.filter((w) => (w.pos || "other") === key).length; if (!n) return null; return <Chip key={key} on={filter === key} onClick={() => { setFilter(key); play("tap"); }}>{p.label} {n}</Chip>; };
+    return (<>
+    <div style={{ ...S.filterRow, marginBottom: 6 }}>
       <Chip on={filter === "all"} onClick={() => { setFilter("all"); play("tap"); }}>全部 {words.length}</Chip>
-      {words.some((w) => w.type === "grammar") && <Chip on={filter === "grammar"} onClick={() => { setFilter("grammar"); play("tap"); }}>📐语法 {words.filter((w) => w.type === "grammar").length}</Chip>}
-      <Chip on={filter === "freq"} onClick={() => { setFilter("freq"); play("tap"); }}>⭐高频 {words.filter((w) => w.freq).length}</Chip>
-      <Chip on={filter === "loan"} onClick={() => { setFilter("loan"); play("tap"); }}>🔤外来词 {words.filter((w) => w.loan).length}</Chip>
-      <Chip on={filter === "mastered"} onClick={() => { setFilter("mastered"); play("tap"); }}>🌸已掌握 {countMastered(words)}</Chip>
-      {POS.map((p) => { const n = words.filter((w) => (w.pos || "other") === p.key).length; if (!n) return null; return <Chip key={p.key} on={filter === p.key} onClick={() => { setFilter(p.key); play("tap"); }}>{p.emoji}{p.label} {n}</Chip>; })}
+      <Chip on={filter === "freq"} onClick={() => { setFilter("freq"); play("tap"); }}>高频 {words.filter((w) => w.freq).length}</Chip>
+      <Chip on={filter === "mastered"} onClick={() => { setFilter("mastered"); play("tap"); }}>已掌握 {countMastered(words)}</Chip>
     </div>
+    <div style={{ ...S.filterRow, marginBottom: 6 }}>
+      {words.some((w) => w.type === "grammar") && <Chip on={filter === "grammar"} onClick={() => { setFilter("grammar"); play("tap"); }}>语法 {words.filter((w) => w.type === "grammar").length}</Chip>}
+      {posChip("phrase")}
+      <Chip on={filter === "loan"} onClick={() => { setFilter("loan"); play("tap"); }}>外来词 {words.filter((w) => w.loan).length}</Chip>
+    </div>
+    <div style={S.filterRow}>
+      {posChip("noun")}{posChip("verb")}{posChip("adj")}{posChip("other")}
+    </div>
+    </>); })()}
     <div style={S.list}>{ordered.length === 0 && <div style={S.empty}>{q ? "没找到「" + search.trim() + "」相关的词" : "这里还没有词 🌱"}</div>}
       {ordered.map((w) => { const p = posInfo(w.pos); const done = w.mastered || (w.srs && w.srs.level >= MASTER_LEVEL); const open = !selectMode && editing === w.id; const isSel = sel.includes(w.id);
         return [(<div key={w.id} className="card" style={{ ...S.wordRow, ...(w.hl ? { background: w.hl } : {}), ...(selectMode && isSel ? { border: "2.5px solid " + C.matcha, background: "var(--ok-bg)" } : {}) }}>
