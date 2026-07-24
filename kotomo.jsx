@@ -832,6 +832,7 @@ export default function App() {
   const [st, setSt] = useState(freshState());
   const [view, setView] = useState("home");
   const [reviewWrongOnly, setReviewWrongOnly] = useState(false);
+  const [reviewPreset, setReviewPreset] = useState(null); // 特训「单词消除/句子填空」直达复习模式(word/sentence)，消费后即清
   const [expandTarget, setExpandTarget] = useState(null); // 从词库点"展开学习"传给加词页的目标词
   const [tick, setTick] = useState(0);
   const [naughty, setNaughty] = useState(null); // 回归盲盒消息
@@ -1007,7 +1008,7 @@ export default function App() {
   const setHgBest = (n) => setSt((s) => (n > (s.hgBest || 0) ? { ...s, hgBest: n } : s)); // 冲刺最高纪录
   const setMode = (m) => setSt((s) => ({ ...s, mode: m })); // 五十音图模式 ⇄ 词汇模式
   const setNickname = (n) => setSt((s) => ({ ...s, nickname: n })); // 昵称
-  const ctx = { st, play, petReact, throwReact, bonusFish, setHgBest, setMode, setNickname, mastered, seg, decor, mood, nav, addWords, updateWord, delWord, delWords, restoreWord, appendWords, petLove, buyItem, setWearing, setSetting, finishReview, ownWordCount, reviewWrongOnly, setReviewWrongOnly, setView, expandTarget, setExpandTarget, amb };
+  const ctx = { st, play, petReact, throwReact, bonusFish, setHgBest, setMode, setNickname, mastered, seg, decor, mood, nav, addWords, updateWord, delWord, delWords, restoreWord, appendWords, petLove, buyItem, setWearing, setSetting, finishReview, ownWordCount, reviewWrongOnly, setReviewWrongOnly, reviewPreset, setReviewPreset, setView, expandTarget, setExpandTarget, amb };
 
   return (
     <div style={S.shell}>
@@ -1285,8 +1286,8 @@ function Home({ ctx }) {
   const roomAct = unlearned.length ? { label: "📥 " + unlearned.length + " 个新词待认识，点我去学", to: "learn" }
     : due.length ? { label: "📖 " + due.length + " 个词待复习，点我消除", to: "review" }
     : { label: "🌿 今天的都学完啦，摸摸它吧", to: null };
+  // 「消除」并进特训(创始人)：底部剩四项，加词仍居中突出
   const bnav = [
-    { icon: "🎮", label: "消除", on: () => { if (!canReview) return; ctx.setReviewWrongOnly(false); nav("review"); }, dim: !canReview },
     { icon: "👂", label: "特训", on: () => nav("homograph") },
     { icon: "➕", label: "加词", on: () => nav("add"), center: true },
     { icon: "📚", label: "词库", on: () => nav("library") },
@@ -1330,14 +1331,16 @@ const Splash = () => (<div style={{ ...S.shell, display: "grid", placeItems: "ce
 
 // ── 复习前：选今天练 单词 / 句子 / 全部 ─────────────────────
 function ReviewSession({ ctx }) {
-  const { st, play, reviewWrongOnly } = ctx;
+  const { st, play, reviewWrongOnly, reviewPreset, setReviewPreset } = ctx;
   const em = st.settings.energyMode;
-  const [mode, setMode] = useState(reviewWrongOnly ? "all" : null); // 错题强化直达全部；普通复习先选模式
   // 各类的数量按"该类型自己的选词池"算：到期清零也会凑出未掌握的来 → 当天能反复再练（不再因混合截断而显示 0）
   const isW = (w) => (w.type || "word") !== "sentence", isS = (w) => w.type === "sentence";
   const nAll = useMemo(() => reviewPool(st.words, em, reviewWrongOnly).length, [st.words, em, reviewWrongOnly]);
   const nWord = useMemo(() => reviewPool(st.words.filter(isW), em, reviewWrongOnly).length, [st.words, em, reviewWrongOnly]);
   const nSent = useMemo(() => reviewPool(st.words.filter(isS), em, reviewWrongOnly).length, [st.words, em, reviewWrongOnly]);
+  // 错题强化直达全部；特训「单词消除/句子填空」直达对应模式(池子空则回选择页)；普通进入先选模式
+  const [mode, setMode] = useState(() => reviewWrongOnly ? "all" : (reviewPreset === "word" && nWord > 0) ? "word" : (reviewPreset === "sentence" && nSent > 0) ? "sentence" : null);
+  useEffect(() => { if (reviewPreset) setReviewPreset(null); }, []); // 消费一次即清，别影响下次进入
   if (mode) return <ReviewRun ctx={ctx} mode={mode} />;
   if (nAll === 0) return <EmptyReview ctx={ctx} />;
   const Opt = ({ m, emoji, label, n, hint }) => (
@@ -2964,10 +2967,19 @@ function HomographChart({ ctx }) {
   const markHes = (id) => { if (!id) return; ctx.updateWord(id, (w) => ({ ...w, hesitant: true, mastered: false, srs: { ...(w.srs || { lastReviewedAt: 0 }), level: Math.min(((w.srs && w.srs.level) || 0), MASTER_LEVEL - 1), dueAt: now() } })); play("pop"); };
   const [mode, setMode] = useState("kana"); // 默认假名认字(不依赖声音,静音也能玩)
   const [showList, setShowList] = useState(false);
-  if (pool.length < 4) return (<div className="fade-in"><BackRow ctx={ctx} title="👂 秒懂词·读音特训" /><div style={S.empty}>词库里的"秒懂词"还不到 4 个 🌱<br />去「📚 我的词库」点「补充经典秒懂词包」，或加点带汉字的词。</div></div>);
-  return (<div className="fade-in"><BackRow ctx={ctx} title="👂 秒懂词·读音特训" />
-    <div style={{ fontSize: 12.5, color: "var(--ink-mid)", textAlign: "center", margin: "0 0 10px", lineHeight: 1.7 }}>这些词你<b>看字就懂</b>，大脑会偷懒跳过读音——结果听不懂、说不出。这里把字形的"外挂"关掉，专练耳朵和嘴。</div>
+  // 主页「消除」并进特训(创始人)：单词消除/句子填空 直达复习对应模式
+  const jumpReview = (preset) => { play("tap"); ctx.setReviewWrongOnly(false); ctx.setReviewPreset(preset); ctx.setView("review"); };
+  const reviewBtns = (<>
+    <button className="pressable" style={{ ...S.seg, minWidth: "30%" }} onClick={() => jumpReview("word")}>🎮 单词消除</button>
+    <button className="pressable" style={{ ...S.seg, minWidth: "30%" }} onClick={() => jumpReview("sentence")}>📝 句子填空</button>
+  </>);
+  if (pool.length < 4) return (<div className="fade-in"><BackRow ctx={ctx} title="👂 特训" />
+    <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>{reviewBtns}</div>
+    <div style={S.empty}>读音特训要凑够 4 个"秒懂词"才开 🌱<br />先用上面的「单词消除 / 句子填空」复习，或加点带汉字的词。</div></div>);
+  return (<div className="fade-in"><BackRow ctx={ctx} title="👂 特训" />
+    <div style={{ fontSize: 12.5, color: "var(--ink-mid)", textAlign: "center", margin: "0 0 10px", lineHeight: 1.7 }}>「单词消除 / 句子填空」是每天的复习；下面的读音特训练"看字就懂"的词——把字形外挂关掉，专练耳朵和嘴。</div>
     <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+      {reviewBtns}
       <button className="pressable" style={{ ...S.seg, minWidth: "30%", ...(mode === "kana" ? S.segOn : {}) }} onClick={() => { setMode("kana"); play("tap"); }}>🈶 假名认字</button>
       <button className="pressable" style={{ ...S.seg, minWidth: "30%", ...(mode === "listen" ? S.segOn : {}) }} onClick={() => { setMode("listen"); play("tap"); }}>🎧 听音辨字</button>
       <button className="pressable" style={{ ...S.seg, minWidth: "30%", ...(mode === "spell" ? S.segOn : {}) }} onClick={() => { setMode("spell"); play("tap"); }}>🧩 拼读音</button>
