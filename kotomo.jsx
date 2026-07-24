@@ -2173,9 +2173,8 @@ function Library({ ctx }) {
     {!tipping && tipMsg && <div style={{ ...S.setNote, marginBottom: 10, color: C.grapeDk || "var(--grape-dk)", fontWeight: 800 }}>{tipMsg}</div>}
     {/* 「词源」项暂时去除(创始人：有点多余)。逻辑 genOrigin/runOrigins 保留，想开回来把此按钮恢复即可 */}
     <div style={{ ...S.filterRow, marginBottom: 8 }}>
-      <span style={{ fontSize: 12.5, fontWeight: 800, color: "var(--ink-mid)", alignSelf: "center", marginRight: 2 }}>排序</span>
-      <Chip on={order === "new"} onClick={() => { setOrder("new"); play("tap"); }}>🆕 从新到旧</Chip>
-      <Chip on={order === "old"} onClick={() => { setOrder("old"); play("tap"); }}>📜 从旧到新</Chip>
+      {/* 排序：一个键来回切（创始人：删「排序」二字，两键并一键） */}
+      <Chip on={false} onClick={() => { setOrder(order === "new" ? "old" : "new"); play("tap"); }}>{order === "new" ? "🆕 新→旧" : "📜 旧→新"}</Chip>
       <Chip on={selectMode} onClick={() => { if (selectMode) exitSelect(); else { setSelectMode(true); setEditing(null); } play("tap"); }}>{selectMode ? "✕ 退出多选" : "☑️ 多选删除"}</Chip>
     </div>
     {selectMode && <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, padding: "9px 11px", background: "var(--surface-sel)", borderRadius: 12, flexWrap: "wrap" }}>
