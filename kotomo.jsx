@@ -931,6 +931,34 @@ export default function App() {
   // 点猫"心情+1"：必须走 patch 才能持久化+重渲染（曾经就地 mutation 导致不生效）
   const petLove = useCallback(() => patch((s) => ({ ...s, pet: { ...s.pet, mood: Math.min(100, (s.pet.mood ?? 75) + 1) } })), []);
 
+  // ── 全自动词典核实（原词库页「用词典核实」按钮改为系统自动，创始人）──
+  // 词库一变(加词/改写法/启动积压)就后台静默核实待核词：JMdict → kuromoji 还原原形再查。
+  // tried 按 id:term 记（改了写法会自动重核）；词典下载失败(离线)不标已试，下次再来。
+  const wordsRef = useRef(st.words); wordsRef.current = st.words;
+  const autoVerTried = useRef(new Set()), autoVerRunning = useRef(false);
+  const autoVerify = useCallback(async () => {
+    if (autoVerRunning.current) return;
+    const keyOf = (w) => w.id + ":" + (w.term || "");
+    const pick = () => wordsRef.current.filter((w) => w.verified !== "verified" && (w.term || "").trim() && /[ぁ-んァ-ヶ一-鿿々ーｦ-ﾟ]/.test(w.term) && !autoVerTried.current.has(keyOf(w)));
+    if (!pick().length) return;
+    autoVerRunning.current = true;
+    try {
+      try { await loadJmdict(); } catch (e) { return; }
+      let ok = 0, n = 0, list;
+      while ((list = pick()).length) {           // 循环再取：跑的过程中新加的词也一并核掉
+        for (const w of list) {
+          autoVerTried.current.add(keyOf(w)); n++;
+          try {
+            const r = await dictVerify(w.term);
+            if (r && r.verified === "verified" && r.reading) { updateWord(w.id, (x) => ({ ...x, reading: r.reading, basicForm: r.basicForm || x.basicForm || "", verified: "verified", verifySrc: { ...(x.verifySrc || {}), ...(r.verifySrc || {}) }, jmId: r.jmId || x.jmId || null, glossEn: r.glossEn || x.glossEn || null })); ok++; }
+          } catch (e) {}
+        }
+      }
+      if (n) logEvent("info", "自动词典核实", ok + "/" + n + " 个升 ✅");
+    } finally { autoVerRunning.current = false; }
+  }, [updateWord]);
+  useEffect(() => { const t = setTimeout(autoVerify, 1000); return () => clearTimeout(t); }, [st.words, autoVerify]);
+
   // 自己添加的词数（非种子），用于将来的注册触发（第0步仅展示）
   const ownWordCount = useMemo(() => st.words.filter((w) => !w.isSeed).length, [st.words]);
 
@@ -2137,8 +2165,7 @@ function Library({ ctx }) {
     {aiReal && transable.length > 0 && <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.matchaDk, boxShadow: "0 5px 0 var(--bevel)", opacity: translating ? 0.75 : 1 }} disabled={translating} onClick={runZhMeaning}>{translating ? (transMsg || "翻译中…") : "🈺 把只有英文的意思翻成中文 · " + transable.length + " 个"}</button>}
     {!aiReal && transable.length > 0 && <div style={{ ...S.setNote, marginBottom: 10, color: C.blush, fontWeight: 700 }}>有 {transable.length} 个词的意思只有英文。去「设置」贴 AI 密钥并开真AI，这里就能一键翻成中文。</div>}
     {!translating && transMsg && <div style={{ ...S.setNote, marginBottom: 10, color: C.matchaDk, fontWeight: 800 }}>{transMsg}</div>}
-    {verifiable.length > 0 && <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.sky, boxShadow: "0 5px 0 var(--bevel)", opacity: verifying ? 0.75 : 1 }} disabled={verifying} onClick={runVerify}>{verifying ? (verifyMsg || "词典核实中…") : "🔍 用词典核实读音·写法 · " + verifiable.length + " 个待核实"}</button>}
-    {!verifying && verifyMsg && <div style={{ ...S.setNote, marginBottom: 10, color: C.sky, fontWeight: 800 }}>{verifyMsg}</div>}
+    {/* 「用词典核实」按钮已删(创始人)：核实改为系统全自动(根组件 autoVerify，加词/改写法/启动时后台静默跑)。runVerify 逻辑保留可手动恢复 */}
     {aiReal && fixable.length > 0 && <button className="pressable" style={{ ...S.bigBtn, marginBottom: 12, background: C.honey, boxShadow: "0 5px 0 " + C.honeyDk, opacity: fixing ? 0.75 : 1 }} disabled={fixing} onClick={runFix}>{fixing ? (fixMsg || "AI 补全中…") : "🈶 用 AI 补全 " + fixable.length + " 个词的汉字/读音"}</button>}
     {!aiReal && fixable.length > 0 && <div style={{ ...S.setNote, marginBottom: 10 }}>有 {fixable.length} 个词只有假名/罗马音；去「设置」贴上 AI 密钥并开真AI，这里就能一键补成汉字+读音。</div>}
     {!fixing && fixMsg && <div style={{ ...S.setNote, marginBottom: 10, color: C.matchaDk, fontWeight: 800 }}>{fixMsg}</div>}
