@@ -206,7 +206,7 @@ const setVoiceMuted = (m) => { _voiceMuted = m; };
 const stopVoice = () => { try { speechSynthesis.cancel(); } catch {} try { if (_voiceSrc) _voiceSrc.stop(); } catch {} _voiceSrc = null; };
 const systemSpeak = (t) => { try { stopVoice(); const u = new SpeechSynthesisUtterance(t); u.lang = "ja-JP"; if (!_jaVoice) _jaVoice = pickJaVoice(); if (_jaVoice) u.voice = _jaVoice; u.rate = 0.95; u.pitch = 1.0; speechSynthesis.speak(u); } catch {} };
 // 单个假名发音：用系统声(清晰、即时、离线)。VOICEVOX 角色声读单音节会很怪、且联网有延迟，故不走它
-const speakKana = (k) => { if (_voiceMuted) return; stopVoice(); const u = (() => { try { const x = new SpeechSynthesisUtterance(k); x.lang = "ja-JP"; if (!_jaVoice) _jaVoice = pickJaVoice(); if (_jaVoice) x.voice = _jaVoice; x.rate = 0.8; x.pitch = 1.05; return x; } catch { return null; } })(); if (u) { try { speechSynthesis.speak(u); } catch {} } };
+const speakKana = (k) => { if (_voiceMuted) return; try { const u = new SpeechSynthesisUtterance(k); u.lang = "ja-JP"; u.rate = 0.8; u.pitch = 1.05; speechSynthesis.speak(u); } catch {} }; // 同 speakJa:不 cancel 不挑 voice,即点即读
 
 const _voiceCache = new Map(); // text -> AudioBuffer(已就绪) | Promise<AudioBuffer>(加载中)
 const VOICE_CACHE_MAX = 60; // 解码后的 PCM 很大(~200KB/秒)，FIFO 淘汰最旧，防止长会话吃掉几十 MB 内存
@@ -238,7 +238,8 @@ function loadVoice(t, ctx) {
 // 语音回退最初版：本地系统 TTS 即点即读(创始人：VOICEVOX 网络合成延迟严重，先要最快的，音色以后再修饰)
 // VOICEVOX 管线(fetchVoiceBuffer/loadVoice/playVoiceBuffer/_voiceCache)原样保留未删；要恢复萌音把下面两个函数换回旧实现即可
 const warmJa = (t) => {};                                          // 本地 TTS 零延迟，无需预热
-const speakJa = (t) => { if (!t || _voiceMuted) return; systemSpeak(t); };
+// 第0步原始实现：不 cancel、不挑 voice、建好就播 —— iOS 上「先 cancel 再 speak」正是延迟大头
+const speakJa = (t) => { if (!t || _voiceMuted) return; try { const u = new SpeechSynthesisUtterance(t); u.lang = "ja-JP"; u.rate = 0.85; speechSynthesis.speak(u); } catch {} };
 // 陪伴模式：按设备本地时间/月份算「昼夜 × 春夏秋冬」
 function ambient() { const d = new Date(); const h = d.getHours(); const m = d.getMonth(); const tod = (h >= 6 && h < 18) ? "day" : "night"; const season = (m >= 2 && m <= 4) ? "spring" : (m >= 5 && m <= 7) ? "summer" : (m >= 8 && m <= 10) ? "autumn" : "winter"; return { tod, season }; }
 const SEASON_CH = { spring: "🌸", summer: "🍃", autumn: "🍁", winter: "❄️" };
@@ -829,6 +830,7 @@ export default function App() {
   const [reviewWrongOnly, setReviewWrongOnly] = useState(false);
   const [reviewPreset, setReviewPreset] = useState(null); // 特训「单词消除/句子填空」直达复习模式(word/sentence)，消费后即清
   const [expandTarget, setExpandTarget] = useState(null); // 从词库点"展开学习"传给加词页的目标词
+  const [libFocus, setLibFocus] = useState(null); // 「全部加入」后跳词库并自动打开这条词的编辑面板(那里有✨展开学习)
   const [tick, setTick] = useState(0);
   const [naughty, setNaughty] = useState(null); // 回归盲盒消息
   const [saveErr, setSaveErr] = useState(false); // 本地保存失败提示
@@ -1003,7 +1005,7 @@ export default function App() {
   const setHgBest = (n) => setSt((s) => (n > (s.hgBest || 0) ? { ...s, hgBest: n } : s)); // 冲刺最高纪录
   const setMode = (m) => setSt((s) => ({ ...s, mode: m })); // 五十音图模式 ⇄ 词汇模式
   const setNickname = (n) => setSt((s) => ({ ...s, nickname: n })); // 昵称
-  const ctx = { st, play, petReact, throwReact, bonusFish, setHgBest, setMode, setNickname, mastered, seg, decor, mood, nav, addWords, updateWord, delWord, delWords, restoreWord, appendWords, petLove, buyItem, setWearing, setSetting, finishReview, ownWordCount, reviewWrongOnly, setReviewWrongOnly, reviewPreset, setReviewPreset, setView, expandTarget, setExpandTarget, amb };
+  const ctx = { st, play, petReact, throwReact, bonusFish, setHgBest, setMode, setNickname, mastered, seg, decor, mood, nav, addWords, updateWord, delWord, delWords, restoreWord, appendWords, petLove, buyItem, setWearing, setSetting, finishReview, ownWordCount, reviewWrongOnly, setReviewWrongOnly, reviewPreset, setReviewPreset, setView, expandTarget, setExpandTarget, libFocus, setLibFocus, amb };
 
   return (
     <div style={S.shell}>
@@ -1662,21 +1664,20 @@ function AddWords({ ctx }) {
   // ✨展开：先把当前这批待确认词存进库（被点的那条带固定 id，其余正常入库），再进入"展开学习"对它深挖/推荐关联词，避免丢草稿
   const expandDraft = (i) => { const r = draft[i]; if (!r || !r.term || !r.term.trim()) return; const id = uid(); addWords([{ ...r, id }]); setDraft((d) => d.filter((_, idx) => idx !== i)); setExpandWord({ ...r, id }); setTab("expand"); play("tap"); }; // 只把被点的这条入库，其余待确认保留
   // 入库后：词汇模式直达「学新词」承接"加后就学"(可跳过)；五十音模式(收词袋)只收不学,回袋子看一眼
-  const commit = () => { addWords(draft); setDraft([]); play("win"); ctx.setView(st.mode === "kana" ? "library" : "learn"); };
+  // 全部加入 → 跳到词库并自动打开最后一条词的编辑面板(含「✨展开学习」)——创始人:先加完词,再选择是否展开
+  const commit = () => {
+    const rows = draft.filter((r) => (r.term || "").trim()).map((r) => ({ ...r, id: r.id || uid() }));
+    addWords(rows); setDraft([]); play("win");
+    if (rows.length) ctx.setLibFocus(rows[rows.length - 1].id);
+    ctx.setView("library");
+  };
   return (<div className="fade-in"><BackRow ctx={ctx} title="🎙️ 加词" onBack={tab === "expand" ? () => { if (expandBackRef.current && expandBackRef.current()) return; setExpandWord(null); setTab("type"); } : undefined} />
     {!aiReal && <div style={{ background: "var(--warn-bg)", border: "3px solid var(--pix-border)", padding: "9px 12px", marginBottom: 10, fontSize: 12.5, lineHeight: 1.7, color: "var(--ink-mid)", fontWeight: 700 }}>
       🔕 当前是「AI拟」离线模式：只自动补<b>读音</b>，<b>不会自动补中文意思</b>。想恢复自动补全 → <span style={{ color: C.matchaDk, fontWeight: 800, cursor: "pointer", textDecoration: "underline" }} onClick={() => ctx.setView("settings")}>去设置贴 AI 密钥</span>（换设备/加到主屏幕后密钥要重新贴一次，两边存档是分开的）。</div>}
     {tab !== "expand" && tab !== "photo" && <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>{[["ja", "日 → 中（输入日语）"], ["zh", "中 → 日（输入中文）"]].map(([k, l]) => (
       <button key={k} className="pressable" style={{ ...S.seg, flex: 1, ...(dir === k ? S.segOn : {}) }} onClick={() => { setDir(k); play("tap"); }}>{l}</button>))}</div>}
     <div style={S.segRow}>{[["type", "⌨️ 打字"], ["voice", "🎙️ 语音"], ["photo", "📷 拍照/图"], ["expand", "✨ 展开"]].map(([k, l]) => (
-      <button key={k} style={{ ...S.seg, ...(tab === k ? S.segOn : {}) }} onClick={() => {
-        // 点「✨展开」时待确认里还有词 → 自动把最新那条入库并直接展开它(创始人:刚搜的词曾两头够不着——展开页只认已入库的词,待确认区又被藏起来)
-        if (k === "expand" && tab !== "expand" && draft.length) {
-          const i = draft.length - 1;
-          if (draft[i] && draft[i].term && draft[i].term.trim() && draft[i].type !== "sentence" && draft[i].type !== "grammar") { expandDraft(i); return; }
-        }
-        setTab(k); setExpandWord(null); play("tap");
-      }}>{l}</button>))}</div>
+      <button key={k} style={{ ...S.seg, ...(tab === k ? S.segOn : {}) }} onClick={() => { setTab(k); setExpandWord(null); play("tap"); }}>{l}</button>))}</div>
     {tab === "type" && <TypeInput aiReal={aiReal} dir={dir} onRows={addDraft} play={play} />}
     {tab === "voice" && <VoiceInput aiReal={aiReal} dir={dir} onRows={addDraft} play={play} />}
     {tab === "photo" && <PhotoInput aiReal={aiReal} onRows={addDraft} play={play} />}
@@ -1693,7 +1694,7 @@ function AddWords({ ctx }) {
               : <span style={{ ...S.draftBadge, background: "var(--warn-bg)", border: "2px solid var(--warn-bg)", color: "var(--ink-mid)" }}>⚠️待核</span>}
             {isTransparentKanji(r) && <span style={{ ...S.draftBadge, background: "var(--surface-sel)", border: "2px solid var(--surface-sel)", color: C.honeyDk }}>👀秒懂</span>}
             <select value={r.pos} onChange={(e) => editD(i, "pos", e.target.value)} style={S.draftPos}>{POS.map((p) => <option key={p.key} value={p.key}>{p.emoji}{p.label}</option>)}</select>
-            {r.type !== "sentence" && r.type !== "grammar" && <button style={S.draftExpand} onClick={() => expandDraft(i)}>✨ 展开</button>}
+            {/* 待确认行的「✨展开」已撤(创始人:先加完词,入库后在词条页再选择展开)。expandDraft 逻辑保留可恢复 */}
             {r.type !== "sentence" && <button style={{ ...S.draftStar, ...(r.type === "grammar" ? S.draftStarOn : {}) }} onClick={() => editD(i, "type", r.type === "grammar" ? "word" : "grammar")}>📐 语法</button>}
             <button style={{ ...S.draftStar, ...(r.freq ? S.draftStarOn : {}) }} onClick={() => editD(i, "freq", !r.freq)}>⭐ 高频</button>
             <button style={S.draftDel} onClick={() => delD(i)}>✕ 删</button>
@@ -2048,6 +2049,7 @@ function Library({ ctx }) {
   const [search, setSearch] = useState("");
   const [order, setOrder] = useState("new"); // new=从新到旧（默认，先看最近加的）, old=从旧到新
   const [editing, setEditing] = useState(null);
+  useEffect(() => { if (ctx.libFocus) { setEditing(ctx.libFocus); ctx.setLibFocus(null); } }, []); // 「全部加入」直达:自动打开这条词的编辑面板(含✨展开学习)
   const [selectMode, setSelectMode] = useState(false), [sel, setSel] = useState([]); // 多选删除
   const toggleSel = (id) => setSel((s) => s.includes(id) ? s.filter((x) => x !== id) : [...s, id]);
   const exitSelect = () => { setSelectMode(false); setSel([]); };
