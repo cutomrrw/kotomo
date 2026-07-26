@@ -235,16 +235,10 @@ function loadVoice(t, ctx) {
   _voiceCache.set(t, p);
   return p;
 }
-// 预加载：趁用户读题时后台先合成好，等点 🔊 时秒播(失败静默，点的时候再兜底)
-const warmJa = (t) => { try { if (!t || _voiceMuted) return; const ctx = Sfx.getCtx && Sfx.getCtx(); if (ctx) loadVoice(t, ctx).catch(() => {}); } catch {} };
-const speakJa = (t) => {
-  if (!t || _voiceMuted) return; // 🔕 静音时不出声
-  const ctx = Sfx.getCtx(); // 手势内 resume，保证之后能播
-  if (!ctx) { systemSpeak(t); return; } // 没有 Web Audio 就直接系统声
-  const e = _voiceCache.get(t);
-  if (e && !e.then) { playVoiceBuffer(e, ctx); return; } // 已就绪 → 秒播
-  loadVoice(t, ctx).then((buf) => playVoiceBuffer(buf, ctx)).catch(() => { if (!_voiceMuted) systemSpeak(t); }); // 在途则复用，失败回退系统声
-};
+// 语音回退最初版：本地系统 TTS 即点即读(创始人：VOICEVOX 网络合成延迟严重，先要最快的，音色以后再修饰)
+// VOICEVOX 管线(fetchVoiceBuffer/loadVoice/playVoiceBuffer/_voiceCache)原样保留未删；要恢复萌音把下面两个函数换回旧实现即可
+const warmJa = (t) => {};                                          // 本地 TTS 零延迟，无需预热
+const speakJa = (t) => { if (!t || _voiceMuted) return; systemSpeak(t); };
 // 陪伴模式：按设备本地时间/月份算「昼夜 × 春夏秋冬」
 function ambient() { const d = new Date(); const h = d.getHours(); const m = d.getMonth(); const tod = (h >= 6 && h < 18) ? "day" : "night"; const season = (m >= 2 && m <= 4) ? "spring" : (m >= 5 && m <= 7) ? "summer" : (m >= 8 && m <= 10) ? "autumn" : "winter"; return { tod, season }; }
 const SEASON_CH = { spring: "🌸", summer: "🍃", autumn: "🍁", winter: "❄️" };
@@ -1675,7 +1669,14 @@ function AddWords({ ctx }) {
     {tab !== "expand" && tab !== "photo" && <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>{[["ja", "日 → 中（输入日语）"], ["zh", "中 → 日（输入中文）"]].map(([k, l]) => (
       <button key={k} className="pressable" style={{ ...S.seg, flex: 1, ...(dir === k ? S.segOn : {}) }} onClick={() => { setDir(k); play("tap"); }}>{l}</button>))}</div>}
     <div style={S.segRow}>{[["type", "⌨️ 打字"], ["voice", "🎙️ 语音"], ["photo", "📷 拍照/图"], ["expand", "✨ 展开"]].map(([k, l]) => (
-      <button key={k} style={{ ...S.seg, ...(tab === k ? S.segOn : {}) }} onClick={() => { setTab(k); setExpandWord(null); play("tap"); }}>{l}</button>))}</div>
+      <button key={k} style={{ ...S.seg, ...(tab === k ? S.segOn : {}) }} onClick={() => {
+        // 点「✨展开」时待确认里还有词 → 自动把最新那条入库并直接展开它(创始人:刚搜的词曾两头够不着——展开页只认已入库的词,待确认区又被藏起来)
+        if (k === "expand" && tab !== "expand" && draft.length) {
+          const i = draft.length - 1;
+          if (draft[i] && draft[i].term && draft[i].term.trim() && draft[i].type !== "sentence" && draft[i].type !== "grammar") { expandDraft(i); return; }
+        }
+        setTab(k); setExpandWord(null); play("tap");
+      }}>{l}</button>))}</div>
     {tab === "type" && <TypeInput aiReal={aiReal} dir={dir} onRows={addDraft} play={play} />}
     {tab === "voice" && <VoiceInput aiReal={aiReal} dir={dir} onRows={addDraft} play={play} />}
     {tab === "photo" && <PhotoInput aiReal={aiReal} onRows={addDraft} play={play} />}
