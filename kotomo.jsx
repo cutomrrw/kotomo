@@ -1683,7 +1683,7 @@ function AddWords({ ctx }) {
     {tab === "photo" && <PhotoInput aiReal={aiReal} onRows={addDraft} play={play} />}
     {tab === "expand" && <ExpandTool ctx={ctx} initialWord={expandWord} backRef={expandBackRef} onDone={() => { setExpandWord(null); setTab("type"); }} />}
     {draft.length > 0 && tab !== "expand" && (<div style={{ marginTop: 16 }}>
-      <div style={S.sectTitle}>📥 待确认 ({draft.length}) · 点⭐标高频，🔤标外来词</div>
+      <div style={S.sectTitle}>📥 待确认 ({draft.length})</div>
       <div style={S.list}>{draft.map((r, i) => (
         <div key={i} className="card" style={S.draftRow}>
           <div style={S.draftHead}>
@@ -1694,9 +1694,7 @@ function AddWords({ ctx }) {
               : <span style={{ ...S.draftBadge, background: "var(--warn-bg)", border: "2px solid var(--warn-bg)", color: "var(--ink-mid)" }}>⚠️待核</span>}
             {isTransparentKanji(r) && <span style={{ ...S.draftBadge, background: "var(--surface-sel)", border: "2px solid var(--surface-sel)", color: C.honeyDk }}>👀秒懂</span>}
             <select value={r.pos} onChange={(e) => editD(i, "pos", e.target.value)} style={S.draftPos}>{POS.map((p) => <option key={p.key} value={p.key}>{p.emoji}{p.label}</option>)}</select>
-            {/* 待确认行的「✨展开」已撤(创始人:先加完词,入库后在词条页再选择展开)。expandDraft 逻辑保留可恢复 */}
-            {r.type !== "sentence" && <button style={{ ...S.draftStar, ...(r.type === "grammar" ? S.draftStarOn : {}) }} onClick={() => editD(i, "type", r.type === "grammar" ? "word" : "grammar")}>📐 语法</button>}
-            <button style={{ ...S.draftStar, ...(r.freq ? S.draftStarOn : {}) }} onClick={() => editD(i, "freq", !r.freq)}>⭐ 高频</button>
+            {/* 待确认行的「✨展开」「📐语法」「⭐高频」按键均已撤(创始人:页面做简。freq 仍由 AI/词典自动判,语法词走语法包) */}
             <button style={S.draftDel} onClick={() => delD(i)}>✕ 删</button>
           </div>
           <label style={S.draftField}><span style={S.draftLabel}>{r.type === "sentence" ? "句子" : r.type === "grammar" ? "句型" : "单词"}</span><input style={S.draftIn} value={r.term} placeholder={r.type === "sentence" ? "日语整句" : r.type === "grammar" ? "语法句型 如 ～たいです" : "日语"} onChange={(e) => editD(i, "term", e.target.value)} /></label>
