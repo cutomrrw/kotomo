@@ -63,12 +63,13 @@ const DAY = 864e5;
 const todayStr = () => new Date().toDateString();
 const now = () => Date.now();
 
-// ── 猫 IP「日狗 NICHIGO」：像素手绘英短，多表情(创始人 GPT 设计稿，抠图自素材表) ──
-// 表情：idle普通 / praise得意 / scorn斜眼 / happy开心 / think思考 / sleepy困 / beg拜托 / study学习中 / angry生气
+// ── 猫 IP「臭喵」三花版(创始人手稿→定稿主视觉,已替换日狗)：表情差分/各面/动作待做,先全用主视觉 ──
+// 旧日狗表情映射(素材还在 assets/cat/,恢复即换回)：idle/praise/scorn/happy/think/sleepy/beg/study/angry .png
 const CAT_DIR = "assets/cat/";
-const CAT_EXP = { idle: "idle.png", praise: "praise.png", scorn: "scorn.png", happy: "happy.png", think: "think.png", sleepy: "sleepy.png", beg: "beg.png", study: "study.png", angry: "angry.png" };
+const SANHUA = "sanhua.png";
+const CAT_EXP = { idle: SANHUA, praise: SANHUA, scorn: SANHUA, happy: SANHUA, think: SANHUA, sleepy: SANHUA, beg: SANHUA, study: SANHUA, angry: SANHUA };
 const Cat = ({ size = 100, bob = true, exp = "idle" }) => (
-  <img src={CAT_DIR + (CAT_EXP[exp] || CAT_EXP.idle)} alt="日狗" draggable={false}
+  <img src={CAT_DIR + (CAT_EXP[exp] || CAT_EXP.idle)} alt="臭喵" draggable={false}
     style={{ width: size, height: "auto", display: "inline-block", objectFit: "contain", animation: bob ? "bob 3.5s ease-in-out infinite" : "none", pointerEvents: "none" }} />
 );
 // 猫窝家具装饰：从 assets/room/ 加载像素图，绝对定位;文件不存在则自动隐藏(缺图不破版)
@@ -1087,7 +1088,7 @@ function TopBar({ st, seg, mastered, onSettings }) {
   const name = (st.nickname || "").trim() || "词崽训练员";
   return (<header style={S.top}>
     <div style={S.profile} className="pressable no-pix" onClick={onSettings}>
-      <img src={CAT_DIR + "avatar.png"} alt="头像" draggable={false} style={S.avatar} />
+      <img src={CAT_DIR + "sanhua_avatar.png"} alt="头像" draggable={false} style={S.avatar} />
       <div style={{ minWidth: 0 }}>
         <div style={S.pName}>{name}<span style={S.pSeg}>{seg.emoji}{seg.title}</span></div>
         <div style={S.pLvRow}>
@@ -1130,7 +1131,7 @@ function PetTips({ play }) {
     onClick={() => { setN((x) => (x + 1) % KANA_TIPS.length); play("tap"); }}>
     <div style={{ flexShrink: 0 }}><Cat size={42} bob={false} /></div>
     <div style={{ flex: 1 }}>
-      <div style={{ fontSize: 10.5, color: C.honeyDk, fontWeight: 800 }}>📻 日狗小广播 · 假名冷知识</div>
+      <div style={{ fontSize: 10.5, color: C.honeyDk, fontWeight: 800 }}>📻 臭喵小广播 · 假名冷知识</div>
       <div key={n} className="fade-in" style={{ fontSize: 13, color: "var(--ink)", fontWeight: 700, lineHeight: 1.6, marginTop: 2 }}>{KANA_TIPS[n]}</div>
     </div>
     <span style={{ fontSize: 12, color: "var(--ink-soft)", flexShrink: 0 }}>换一条 ›</span>
@@ -1221,7 +1222,7 @@ function Home({ ctx }) {
   // 猫窝大区(两模式共用同款同大小) + 监控弹窗，抽成变量，避免两处走样
   const monitorEl = monitor && (<div style={S.monOverlay} onClick={() => setMonitor(false)}>
       <div className="pop-in" style={S.monCard} onClick={(e) => e.stopPropagation()}>
-        <div style={{ fontSize: 11, color: C.honeyDk, fontWeight: 800, letterSpacing: 1 }}>📹 日狗监控 · REC ●</div>
+        <div style={{ fontSize: 11, color: C.honeyDk, fontWeight: 800, letterSpacing: 1 }}>📹 臭喵监控 · REC ●</div>
         <div style={{ margin: "8px 0" }}><Cat size={96} exp={(st.pet.mood ?? 75) >= 80 ? "happy" : mood.awayDays >= 1.5 ? "sleepy" : "idle"} /></div>
         <div style={{ fontWeight: 800, fontSize: 15 }}>{mood.word}</div>
         <div style={{ display: "flex", gap: 6, alignItems: "center", justifyContent: "center", margin: "10px 0 4px" }}>
@@ -2616,7 +2617,7 @@ function RhythmChant({ idx, play, ctx }) {
       {phase === "end" ? (<>
         <div style={{ fontSize: 40 }}>{r >= 0.85 ? "🏆" : r >= 0.55 ? "🎉" : r < 0.35 ? "💩" : "🏁"}</div>
         <div style={{ fontSize: 20, fontWeight: 800, marginTop: 4 }}>跟上 {score}/{total} 拍 · 最大连击 {maxComboRef.current}</div>
-        <div style={{ fontSize: 13, color: "var(--ink-mid)", fontWeight: 800, marginTop: 6 }}>{r >= 0.85 ? "S · 跟拍之神！+2🐟" : r >= 0.7 ? "A · 节奏不错 +1🐟" : r >= 0.55 ? "B · 再顺一点 +1🐟" : r >= 0.35 ? "C · 多练练" : "D · 拍子呢？被日狗嫌弃了"}</div>
+        <div style={{ fontSize: 13, color: "var(--ink-mid)", fontWeight: 800, marginTop: 6 }}>{r >= 0.85 ? "S · 跟拍之神！+2🐟" : r >= 0.7 ? "A · 节奏不错 +1🐟" : r >= 0.55 ? "B · 再顺一点 +1🐟" : r >= 0.35 ? "C · 多练练" : "D · 拍子呢？被臭喵嫌弃了"}</div>
       </>) : (<>
         <div style={{ fontSize: 40 }}>🥁</div>
         <div style={{ fontSize: 15, fontWeight: 800, marginTop: 4 }}>节奏跟读 · 跟着鼓点念假名</div>
@@ -3003,7 +3004,7 @@ function Shop({ ctx }) {
       <div style={{ fontWeight: 800, fontSize: 16, color: C.ink }}>你有 <span style={{ color: C.grape, fontSize: 24 }}>{fish}</span> 🐟</div>
       <div style={{ fontSize: 12.5, color: "var(--ink-soft)", marginTop: 3 }}>再答对 <b style={{ color: C.honeyDk }}>{FISH_PER - (st.fishProg || 0)}</b> 题 +1🐟（每答对 10 题换 1 条鱼）</div>
     </div>
-    <div style={{ fontSize: 12.5, color: "var(--ink-soft)", textAlign: "center", margin: "0 0 12px" }}>买完点「穿上」戴到日狗身上，点「脱下」取下 · 一次戴一件 🐱</div>
+    <div style={{ fontSize: 12.5, color: "var(--ink-soft)", textAlign: "center", margin: "0 0 12px" }}>买完点「穿上」戴到臭喵身上，点「脱下」取下 · 一次戴一件 🐱</div>
     <div style={S.shopGrid}>{SHOP_ITEMS.map((it) => {
       const have = owned.includes(it.id), worn = wearing === it.id, afford = fish >= it.price;
       return (<div key={it.id} className="card" style={{ ...S.shopItem, ...(worn ? S.shopItemWorn : {}) }}>
