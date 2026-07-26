@@ -63,11 +63,11 @@ const DAY = 864e5;
 const todayStr = () => new Date().toDateString();
 const now = () => Date.now();
 
-// ── 猫 IP「臭喵」三花版(创始人手稿→定稿主视觉,已替换日狗)：表情差分/各面/动作待做,先全用主视觉 ──
-// 旧日狗表情映射(素材还在 assets/cat/,恢复即换回)：idle/praise/scorn/happy/think/sleepy/beg/study/angry .png
+// ── 猫 IP「臭喵」三花·像素定稿(创始人)：主视觉 sanhua.png(像素版),表情差分切自动作总表 ──
+// 另有 view_*(立体各面7张)/pose_*(动作28张)在 assets/cat/ 备用;旧日狗素材保留,恢复旧映射即回退
 const CAT_DIR = "assets/cat/";
 const SANHUA = "sanhua.png";
-const CAT_EXP = { idle: SANHUA, praise: SANHUA, scorn: SANHUA, happy: SANHUA, think: SANHUA, sleepy: SANHUA, beg: SANHUA, study: SANHUA, angry: SANHUA };
+const CAT_EXP = { idle: SANHUA, praise: "pose_proud.png", scorn: "pose_wordless.png", happy: "pose_happy.png", think: "pose_confused.png", sleepy: "pose_sleep.png", beg: "pose_pet.png", study: "pose_crossleg.png", angry: "pose_angry.png" };
 const Cat = ({ size = 100, bob = true, exp = "idle" }) => (
   <img src={CAT_DIR + (CAT_EXP[exp] || CAT_EXP.idle)} alt="臭喵" draggable={false}
     style={{ width: size, height: "auto", display: "inline-block", objectFit: "contain", animation: bob ? "bob 3.5s ease-in-out infinite" : "none", pointerEvents: "none" }} />
